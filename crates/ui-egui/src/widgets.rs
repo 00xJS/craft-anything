@@ -397,16 +397,37 @@ pub fn thinking(ui: &mut Ui) {
     animate(ui, FRAME);
 }
 
+/// How long a run may say nothing before the note points it out.
+const QUIET_NOTE_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn wait_note(secs: u64, quiet: Option<std::time::Duration>) -> Option<String> {
+    match quiet {
+        Some(q) if q >= QUIET_NOTE_AFTER => Some(crate::i18n::trf(
+            "Nothing new for {time}. Long steps can be quiet; if it stays like this, press Pause.",
+            &[("time", &crate::usage::duration_words(q))],
+        )),
+        Some(_) => None,
+        None => match secs {
+            0..20 => None,
+            20..90 => Some(tr("Still working. Bigger jobs can take a few minutes.")),
+            _ => Some(tr("This is a big one. You can leave this open and come back later.")),
+        },
+    }
+}
+
 /// "Still working" for waits longer than a moment: a spinning arc, what's happening, how long
 /// it has taken, and a calm note once it runs long (so a quiet wait never looks stuck).
 /// `title` is translated here; `detail` arrives already in the user's words.
 pub fn working(ui: &mut Ui, title: &str, detail: Option<&str>) {
-    working_since(ui, title, detail, None);
+    working_since(ui, title, detail, None, None);
 }
 
 /// [`working`] with its clock from `began` (a build's start), so it doesn't restart each time the
 /// row comes back; without it, from when the row was last shown.
-pub fn working_since(ui: &mut Ui, title: &str, detail: Option<&str>, began: Option<std::time::Instant>) {
+///
+/// `quiet` is how long since the work last had anything to say, when that's known: then the note
+/// says so plainly, because a calm note can't tell a long step from one that has stopped.
+pub fn working_since(ui: &mut Ui, title: &str, detail: Option<&str>, began: Option<std::time::Instant>, quiet: Option<std::time::Duration>) {
     let t = Tokens::get(ui.ctx());
     let now = ui.input(|i| i.time);
     // The clock restarts when the row wasn't on screen a moment ago.
@@ -415,11 +436,7 @@ pub fn working_since(ui: &mut Ui, title: &str, detail: Option<&str>, began: Opti
     let since = if now - seen > 1.0 { now } else { since };
     ui.data_mut(|d| d.insert_temp(id, (since, now)));
     let secs = began.map_or((now - since) as u64, |b| b.elapsed().as_secs());
-    let note = match secs {
-        0..20 => None,
-        20..90 => Some(tr("Still working. Bigger jobs can take a few minutes.")),
-        _ => Some(tr("This is a big one. You can leave this open and come back later.")),
-    };
+    let note = wait_note(secs, quiet);
     let sub = [detail.map(str::to_string), note].into_iter().flatten().collect::<Vec<_>>().join("  ·  ");
     card(&t).inner_margin(Margin::symmetric(16, 12)).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -459,4 +476,18 @@ pub fn working_since(ui: &mut Ui, title: &str, detail: Option<&str>, began: Opti
 pub fn open_log_button(ui: &mut Ui, path: &std::path::Path) -> bool {
     ui.add_space(6.0);
     secondary(ui, None, "Open log").on_hover_text(path.display().to_string()).clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn the_wait_note_says_when_nothing_is_happening() {
+        let quiet = wait_note(4000, Some(Duration::from_secs(150))).unwrap();
+        assert!(quiet.contains("Nothing new for") && !quiet.contains("big one"), "{quiet}");
+        assert_eq!(wait_note(4000, Some(Duration::from_secs(5))), None, "it's visibly moving: nothing to add");
+        assert!(wait_note(4000, None).unwrap().contains("big one"), "without news to go on, the old note");
+    }
 }

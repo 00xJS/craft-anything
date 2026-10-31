@@ -102,14 +102,40 @@ pub(super) struct FeedLog {
     root: PathBuf,
     feed: Vec<FeedItem>,
     saved_at: Option<std::time::Instant>,
+    activity: Arc<Activity>,
+}
+
+/// When a run last had anything to say, readable while drawing without taking any lock.
+#[derive(Debug)]
+pub(super) struct Activity {
+    began: std::time::Instant,
+    last_ms: std::sync::atomic::AtomicU64,
+}
+
+impl Activity {
+    fn touch(&self) {
+        let ms = u64::try_from(self.began.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.last_ms.store(ms, Ordering::Relaxed);
+    }
+
+    /// How long it has been since the last event.
+    pub(super) fn quiet_for(&self) -> Duration {
+        self.began.elapsed().saturating_sub(Duration::from_millis(self.last_ms.load(Ordering::Relaxed)))
+    }
 }
 
 impl FeedLog {
     pub(super) fn open(ws: &Workspace) -> FeedLog {
-        FeedLog { root: ws.root.clone(), feed: load(ws), saved_at: None }
+        let activity = Arc::new(Activity { began: std::time::Instant::now(), last_ms: 0.into() });
+        FeedLog { root: ws.root.clone(), feed: load(ws), saved_at: None, activity }
+    }
+
+    pub(super) fn activity(&self) -> Arc<Activity> {
+        self.activity.clone()
     }
 
     pub(super) fn record(&mut self, e: &RunEvent) {
+        self.activity.touch();
         apply(&mut self.feed, e);
         self.save(matches!(e, RunEvent::Finished { .. }));
     }
@@ -151,6 +177,18 @@ impl FeedLog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_event_counts_as_activity() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = Workspace::create(d.path(), "x", "y", TargetRef::None).unwrap();
+        let mut log = FeedLog::open(&ws);
+        let activity = log.activity();
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(activity.quiet_for() >= Duration::from_millis(30));
+        log.record(&RunEvent::Step { step: Step::Study, text: "Looking".into() });
+        assert!(activity.quiet_for() < Duration::from_millis(30));
+    }
 
     #[test]
     fn the_builders_checklist_is_one_list_updated_in_place() {
