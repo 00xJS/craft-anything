@@ -1076,7 +1076,7 @@ Launch checklist (source-only first; signed installers can follow):
 - [ ] Build the new DMG on a Mac (release dry run) and look at the window once
 - [ ] The first release: run the release workflow with the signing secrets (a Windows
       code-signing certificate and Apple notarization) set on the repository the maintainers
-      release from
+      release from — claimed: Claude, branch chore/release-repo-links
 - [x] **decision**: the free, open-source release doesn't wait on Anthropic. Each person runs their
       own Claude Code under their own account and Anthropic's terms (claude-code.md)
 - [ ] Managed tier: account backend, usage metering (Claude API under our own key only)

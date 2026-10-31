@@ -187,7 +187,7 @@ sudo apt-get install libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev li
 Then:
 
 ```sh
-git clone https://github.com/storytold/craft-anything && cd craft-anything
+git clone https://github.com/storytold/craftanything && cd craftanything
 cargo run --release -p craft-anything                # the desktop app
 cargo install --path apps/craft-anything-cli         # the CLI, as `craft-anything-cli`
 craft-anything-cli doctor                            # checks the install, coding agents and engines
@@ -241,7 +241,7 @@ permission.
 
 ## Downloads
 
-On GitHub, the [latest release](https://github.com/storytold/craft-anything/releases/latest) has every build listed below, and [all releases](https://github.com/storytold/craft-anything/releases) has earlier versions and their notes. `<ver>` in the file names is the version number, and `SHA256SUMS.txt` lists a checksum for every file.
+On GitHub, the [latest release](https://github.com/storytold/craftanything/releases/latest) has every build listed below, and [all releases](https://github.com/storytold/craftanything/releases) has earlier versions and their notes. `<ver>` in the file names is the version number, and `SHA256SUMS.txt` lists a checksum for every file.
 
 ### Windows
 
@@ -303,7 +303,7 @@ RISC-V (riscv64): `craft-anything-<ver>-linux-riscv64.tar.gz`, a tarball only.
   <a href="https://discord.gg/artcraft"><b>discord.gg/artcraft</b></a> ·
   <a href="https://getartcraft.com/">getartcraft.com</a> ·
   <a href="https://getartcraft.com/apps">The Crafting Apps</a> ·
-  <a href="https://github.com/storytold/craft-anything">Craft Anything</a>
+  <a href="https://github.com/storytold/craftanything">Craft Anything</a>
 </p>
 
 ---

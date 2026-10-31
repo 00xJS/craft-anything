@@ -6,7 +6,7 @@ one is `release/cut-a-release.md` there. That repo is private; you don't need it
 page. In short: a release is whatever is on the `release` branch. Pushing to it makes
 `.github/workflows/release.yml` build, sign and package every platform and attach the files to a
 draft GitHub Release, which a maintainer publishes once every job is green. Signing needs the
-maintainers' certificates (repository secrets), so a fork's run produces unsigned packages.
+maintainers' certificates (secrets of the `release` environment, which only the `release` branch can read), so a fork's run produces unsigned packages.
 
 `ci.yml` checks every pull request and every push to `main` once the repository is public; while
 it's private its jobs are skipped (they would cost Actions minutes), so run it by hand before a
