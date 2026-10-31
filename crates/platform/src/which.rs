@@ -8,9 +8,42 @@ pub fn which(name: &str) -> Option<PathBuf> {
     which_all(name).into_iter().next()
 }
 
-/// Every match for `name` on `PATH`, in order (useful to spot duplicate installs).
+/// Every match for `name` on [`search_path`], in order (useful to spot duplicate installs).
 pub fn which_all(name: &str) -> Vec<PathBuf> {
-    which_in(name, std::env::var_os("PATH"))
+    which_in(name, search_path())
+}
+
+/// Folders, under the home folder and then system-wide, where coding agents, npm, Homebrew and
+/// other installers put command-line programs.
+#[cfg(unix)]
+const USUAL_HOME_DIRS: &[&str] = &[".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin"];
+#[cfg(unix)]
+const USUAL_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+#[cfg(not(unix))]
+const USUAL_HOME_DIRS: &[&str] = &[];
+#[cfg(not(unix))]
+const USUAL_DIRS: &[&str] = &[];
+
+/// `PATH` plus the usual folders for command-line programs, after it so the person's own order
+/// wins. An app opened from the Dock or a desktop launcher gets the system's short `PATH`, not the
+/// shell's, and would miss a coding agent installed in `~/.local/bin`. Unchanged on Windows, where
+/// apps get the full `PATH`.
+pub fn search_path() -> Option<OsString> {
+    with_usual_dirs(std::env::var_os("PATH"), std::env::var_os("HOME").map(PathBuf::from))
+}
+
+fn with_usual_dirs(path: Option<OsString>, home: Option<PathBuf>) -> Option<OsString> {
+    let mut dirs: Vec<PathBuf> = path.as_ref().map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
+    let before = dirs.len();
+    for d in home.iter().flat_map(|h| USUAL_HOME_DIRS.iter().map(move |d| h.join(d))).chain(USUAL_DIRS.iter().map(PathBuf::from)) {
+        if !dirs.contains(&d) {
+            dirs.push(d);
+        }
+    }
+    if dirs.len() == before {
+        return path;
+    }
+    std::env::join_paths(&dirs).ok().or(path)
 }
 
 /// Like [`which_all`] with an explicit search path.
@@ -114,6 +147,26 @@ mod tests {
         assert!(which("sh").is_some());
         assert!(which("definitely-not-a-program-xyz").is_none());
         assert!(which("").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn usual_dirs_come_after_path() {
+        let home = PathBuf::from("/home/u");
+        let path = std::env::join_paths([PathBuf::from("/usr/bin"), home.join(".local/bin")]).unwrap();
+        let dirs: Vec<PathBuf> = std::env::split_paths(&with_usual_dirs(Some(path), Some(home.clone())).unwrap()).collect();
+        assert_eq!(dirs[..3], [PathBuf::from("/usr/bin"), home.join(".local/bin"), home.join(".claude/local")]);
+        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len() + USUAL_DIRS.len(), "nothing twice");
+        assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
+        // No PATH and no home folder: the system-wide folders still.
+        assert_eq!(with_usual_dirs(None, None), std::env::join_paths(USUAL_DIRS).ok());
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn path_is_unchanged_off_unix() {
+        let path = OsString::from(r"C:\Windows;C:\tools");
+        assert_eq!(with_usual_dirs(Some(path.clone()), Some(PathBuf::from(r"C:\Users\u"))), Some(path));
     }
 
     #[cfg(unix)]

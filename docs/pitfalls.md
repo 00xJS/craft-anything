@@ -125,6 +125,12 @@ real Deep-mode run (the CLI never shows it: it already has a console). Every chi
 the windowed app gets `CREATE_NO_WINDOW`; check the desktop app, not only the CLI, after adding a
 program.
 
+**A Mac app that couldn't find Claude Code, and offered a GitHub key instead.** An app opened from
+the Dock gets the system's short `PATH`, not the shell's, so `claude` in `~/.local/bin` wasn't
+found; "Built by" then fell back to "Claude Code on github.com-work", an `~/.ssh/config` alias
+for a second GitHub key, read as a computer to build on. Look programs up and start them with
+`which::search_path` (`Process` and `Launch` do), and leave git servers out of SSH hosts.
+
 **A first analysis that waited for a lock it could never take.** Ghidra's analysis lock is created
 with `create_new` in `ghidra-cache/`, which only existed on machines that had used it before; on a
 fresh store the create failed and the loop read that as "someone else holds it" until the
