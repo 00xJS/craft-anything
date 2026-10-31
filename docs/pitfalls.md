@@ -68,6 +68,10 @@ what happens without a program builds its session in the mode the tool runs in.
 `a`, so `b`'s tests never ran; the rerun was filtered to the failing test, and a broken engine id
 reached `main`. Run with `--no-fail-fast`, and after a fix rerun the whole crates, not a filter.
 
+**A test that changes the whole process.** A UI test raised the process-wide stuck-lock banner; in
+CI the banner moved the layout under another test running beside it, and its click missed. It passed
+25 runs on a Mac. Anything a test sets for the whole process goes in a test program of its own.
+
 **Fixtures that leak into each other.** A "nothing here" path sat beside a fake game folder in the
 same temp directory, and game detection walked up and found the game. Give each case its own
 `tempfile::tempdir()`.
