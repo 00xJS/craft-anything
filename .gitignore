@@ -1,0 +1,16 @@
+*~
+plan/
+plans/
+/target
+/log/
+corpus/
+/dist/
+.claude/worktrees/
+# Secrets and local settings (`cargo xtask secrets` refuses them too)
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+.claude/settings.local.json

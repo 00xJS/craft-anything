@@ -1,0 +1,95 @@
+# Builds and tests the workspace on FreeBSD, inside a FreeBSD VM on a Linux runner
+# (GitHub has no FreeBSD runners). The `package` job checks packaging/freebsd/package.sh (the
+# release job runs it for real), so a broken FreeBSD package fails here before it can fail a
+# release. Nothing is uploaded from the build job and no secrets are used.
+name: FreeBSD
+
+# Pushes to main, pull requests that touch FreeBSD packaging or dependencies, and by hand. While
+# the repository is private the jobs are skipped unless started by hand, so they cost nothing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - "**/Cargo.toml"
+      - .github/workflows/freebsd.yml
+      - packaging/freebsd/**
+      - packaging/env.sh
+  workflow_dispatch:
+
+concurrency:
+  group: freebsd-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  freebsd:
+    name: FreeBSD 14 (build + test)
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    # A private repo's ubuntu-latest (2 vCPUs, 7 GB) is too small for this VM; the org's 16-core
+    # larger runner fits it (craftrules learnings/ci-and-release.md).
+    runs-on: github-ubuntu-16core
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test in a FreeBSD VM
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1
+        with:
+          release: "14.3"
+          usesh: true
+          cpu: 4
+          mem: 12288
+          # Nothing to bring back; copying the target dir out of the VM fails on large builds.
+          copyback: false
+          prepare: |
+            pkg install -y git curl pkgconf cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2
+            curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
+          run: |
+            set -e
+            . "$HOME/.cargo/env"
+            # The checkout is synced in under another owner; let tests that call git read it.
+            git config --global --add safe.directory "*"
+            rustc --version
+            CARGO_PROFILE_DEV_DEBUG=0 cargo build --workspace --all-targets --locked
+            CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked
+
+  package:
+    name: FreeBSD 14 (package)
+    # The release build takes a while: only for pull requests that touch FreeBSD packaging (or
+    # dependencies) and on demand, not on every push to main.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: github-ubuntu-16core
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package in a FreeBSD VM
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1
+        with:
+          release: "14.3"
+          usesh: true
+          cpu: 4
+          mem: 12288
+          prepare: |
+            pkg install -y bash curl git pkgconf cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          run: |
+            set -e
+            . "$HOME/.cargo/env"
+            git config --global --add safe.directory "$PWD"
+            # Build outside the checkout so only dist/ is copied back out of the VM.
+            export CARGO_TARGET_DIR=/var/tmp/craft-anything-target CARGO_BUILD_JOBS=4
+            bash packaging/freebsd/package.sh
+            # Every part the package must have.
+            tar -tzf dist/release/craft-anything-*-freebsd-x86_64.tar.gz >/var/tmp/contents.txt
+            for want in '/bin/craft-anything$' '/bin/craft-anything-cli$' '/share/applications/ai\.storyteller\.craft-anything\.desktop$' '/share/icons/hicolor/' '/share/doc/craft-anything/LICENSE-MIT$' '/share/doc/craft-anything/NOTICE$'; do
+              grep -Eq "$want" /var/tmp/contents.txt || { echo "missing from the package: $want"; exit 1; }
+            done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freebsd-package
+          path: dist/release/*
+          if-no-files-found: error
