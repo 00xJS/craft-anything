@@ -31,12 +31,78 @@ fn ssh_dir() -> Option<PathBuf> {
 /// Host aliases from `~/.ssh/config` (and files it includes), without wildcard patterns.
 pub fn ssh_hosts() -> Vec<String> {
     match ssh_dir() {
-        Some(d) => hosts_from_file(&d.join("config"), &d, 0),
+        Some(d) => hosts_from_file(&d.join("config"), &d, 0, parse_hosts),
         None => Vec::new(),
     }
 }
 
-fn hosts_from_file(path: &Path, base: &Path, depth: u32) -> Vec<String> {
+/// `host` is a git server, by its name or by what `~/.ssh/config` says about it. An AI saved before
+/// such hosts stopped being offered can still be set to one.
+pub fn is_git_server(host: &str) -> bool {
+    is_git_host(host) || ssh_dir().is_some_and(|d| hosts_from_file(&d.join("config"), &d, 0, git_aliases).iter().any(|h| h == host))
+}
+
+/// A plain explanation of why a program couldn't run over ssh.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshFailure {
+    pub what: String,
+    pub fix: String,
+}
+
+/// What ssh's own failure messages mean: (text in ssh's output, what happened, what to do).
+const SSH_FAILURES: &[(&str, &str, &str)] = &[
+    (
+        "exec request failed",
+        "the computer accepted the login but wouldn't start the program",
+        "Check that this computer lets you run programs over ssh and hasn't run out of processes or memory.",
+    ),
+    ("permission denied", "the login was refused", "Set up an ssh key or agent for this computer; Craft Anything can't type a password."),
+    ("host key verification failed", "this computer's identity isn't trusted yet", "Connect once from a terminal and accept its host key."),
+    ("could not resolve hostname", "that computer's name wasn't found", "Check the name in Settings → AI and in ~/.ssh/config."),
+    ("connection refused", "the computer refused the connection", "Check that its ssh server is running and the port is right."),
+    ("timed out", "the computer didn't answer in time", "Check that it's on and reachable from this network."),
+    ("no route to host", "the computer can't be reached from this network", "Check that it's on and reachable from this network."),
+    ("connection closed", "the connection dropped", "Try again; if it keeps happening, check the computer's ssh server."),
+    ("connection reset", "the connection dropped", "Try again; if it keeps happening, check the computer's ssh server."),
+    ("broken pipe", "the connection dropped", "Try again; if it keeps happening, check the computer's ssh server."),
+];
+
+/// ssh's own exit code for "ssh failed"; any other code is the remote program's.
+const SSH_FAILED: i32 = 255;
+/// A POSIX shell's exit code for "command not found".
+const NOT_FOUND: i32 = 127;
+
+/// Why running `program` on `host` failed, when the failure says. A git server comes first because
+/// it fails in many ways.
+pub fn diagnose(host: &str, program: &str, git_server: bool, code: Option<i32>, stderr: &str) -> Option<SshFailure> {
+    if git_server {
+        return Some(SshFailure {
+            what: format!("{host} is a git server, not a computer that can run {program}"),
+            fix: format!("In Settings → AI, remove the AI that uses {host}, then add one on this computer or on a computer you can log in to."),
+        });
+    }
+    match code {
+        Some(NOT_FOUND) => Some(SshFailure {
+            what: format!("{program} wasn't found on {host}"),
+            fix: format!(
+                "Install it there. If it's already installed, ssh sessions may not load your shell's PATH: set the full path in Settings → AI, or add it to the PATH in your shell's startup file on {host}."
+            ),
+        }),
+        Some(SSH_FAILED) => {
+            let text = stderr.to_ascii_lowercase();
+            let (_, what, fix) = SSH_FAILURES.iter().find(|(needle, _, _)| text.contains(needle))?;
+            Some(SshFailure { what: (*what).to_string(), fix: (*fix).to_string() })
+        }
+        _ => None,
+    }
+}
+
+/// A command that tests `program` on `host`, without any prompt.
+pub fn check_command(host: &str, program: &str) -> String {
+    format!("ssh -o BatchMode=yes -T {} -- {} --version", shell_quote(host), shell_quote(program))
+}
+
+fn hosts_from_file(path: &Path, base: &Path, depth: u32, parse: fn(&str) -> Vec<String>) -> Vec<String> {
     if depth > 4 {
         return Vec::new();
     }
@@ -44,7 +110,7 @@ fn hosts_from_file(path: &Path, base: &Path, depth: u32) -> Vec<String> {
         Ok(m) if m.len() <= 1024 * 1024 => std::fs::read_to_string(path).unwrap_or_default(),
         _ => return Vec::new(),
     };
-    let mut out = parse_hosts(&text);
+    let mut out = parse(&text);
     for inc in includes(&text) {
         let p = if inc.starts_with('/') {
             PathBuf::from(&inc)
@@ -60,7 +126,7 @@ fn hosts_from_file(path: &Path, base: &Path, depth: u32) -> Vec<String> {
             vec![p]
         };
         for f in files {
-            for h in hosts_from_file(&f, base, depth + 1) {
+            for h in hosts_from_file(&f, base, depth + 1, parse) {
                 if !out.contains(&h) {
                     out.push(h);
                 }
@@ -105,7 +171,24 @@ fn is_git_host(name: &str) -> bool {
 /// Concrete `Host` names in an ssh config text, without git servers: a host named after one, or
 /// whose block has a git server's `HostName` or `User git`.
 pub fn parse_hosts(text: &str) -> Vec<String> {
-    // One entry per `Host` (or `Match`) line: its names, and whether it points at a git server.
+    let blocks = host_blocks(text);
+    let git: Vec<&String> = blocks.iter().filter(|b| b.1).flat_map(|b| &b.0).collect();
+    let mut out: Vec<String> = Vec::new();
+    for name in blocks.iter().filter(|b| !b.1).flat_map(|b| &b.0) {
+        if !git.contains(&name) && !out.contains(name) {
+            out.push(name.clone());
+        }
+    }
+    out
+}
+
+/// The `Host` names in an ssh config text that lead to a git server.
+fn git_aliases(text: &str) -> Vec<String> {
+    host_blocks(text).into_iter().filter(|b| b.1).flat_map(|b| b.0).collect()
+}
+
+/// One entry per `Host` (or `Match`) line: its names, and whether it points at a git server.
+fn host_blocks(text: &str) -> Vec<(Vec<String>, bool)> {
     let mut blocks: Vec<(Vec<String>, bool)> = Vec::new();
     for line in text.lines() {
         let l = line.trim();
@@ -126,14 +209,7 @@ pub fn parse_hosts(text: &str) -> Vec<String> {
             *git |= (k.eq_ignore_ascii_case("hostname") && is_git_host(v)) || (k.eq_ignore_ascii_case("user") && v == "git");
         }
     }
-    let git: Vec<&String> = blocks.iter().filter(|b| b.1).flat_map(|b| &b.0).collect();
-    let mut out: Vec<String> = Vec::new();
-    for name in blocks.iter().filter(|b| !b.1).flat_map(|b| &b.0) {
-        if !git.contains(&name) && !out.contains(name) {
-            out.push(name.clone());
-        }
-    }
-    out
+    blocks
 }
 
 /// A local port forwarded to a server on a remote host (`ssh -N -L`), owned and killed on drop.
@@ -210,12 +286,37 @@ mod tests {
     }
 
     #[test]
+    fn an_alias_for_a_git_server_is_known_as_one() {
+        let cfg = "Host github.com-work\n  HostName github.com\nHost forge\n  HostName git.example.org\n  User git\nHost gpu\n  HostName 10.0.0.2\n";
+        assert_eq!(git_aliases(cfg), ["github.com-work", "forge"]);
+    }
+
+    #[test]
+    fn failures_are_explained_in_plain_words() {
+        // Reproduced against GitHub: it logs you in, then refuses to start anything.
+        let git = diagnose("github.com-work", "claude", true, Some(255), "exec request failed on channel 0").unwrap();
+        assert!(git.what.contains("github.com-work is a git server"), "{}", git.what);
+        assert!(git.fix.contains("Settings → AI"));
+        // So does its other answer, which exits 1.
+        assert!(diagnose("g", "claude", true, Some(1), "Invalid command: claude").is_some());
+
+        let refused = diagnose("gpu", "claude", false, Some(255), "exec request failed on channel 0\n").unwrap();
+        assert!(refused.what.contains("wouldn't start the program"));
+        assert!(diagnose("gpu", "claude", false, Some(255), "me@gpu: Permission denied (publickey).").unwrap().fix.contains("ssh key"));
+        assert!(diagnose("gpu", "claude", false, Some(127), "sh: claude: command not found").unwrap().what.contains("wasn't found on gpu"));
+        // The remote program's own failure, or ssh's unknown one, isn't guessed at.
+        assert!(diagnose("gpu", "claude", false, Some(1), "Permission denied").is_none());
+        assert!(diagnose("gpu", "claude", false, Some(255), "something new").is_none());
+        assert_eq!(check_command("gpu", "claude"), "ssh -o BatchMode=yes -T gpu -- claude --version");
+    }
+
+    #[test]
     fn includes_are_followed() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("config.d")).unwrap();
         std::fs::write(dir.path().join("config.d").join("work"), "Host work-box\n").unwrap();
         std::fs::write(dir.path().join("config"), "Include config.d/*\nHost home\n").unwrap();
-        assert_eq!(hosts_from_file(&dir.path().join("config"), dir.path(), 0), vec!["home", "work-box"]);
+        assert_eq!(hosts_from_file(&dir.path().join("config"), dir.path(), 0, parse_hosts), vec!["home", "work-box"]);
     }
 
     #[test]

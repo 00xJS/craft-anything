@@ -158,7 +158,10 @@ fn adb_failed(what: &str, out: &Output) -> ToolError {
     };
     let msg = tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("no output").trim().to_string();
     ToolError::new(ErrorCode::ProgramFailed, format!("{what} failed: {msg}"))
-        .with_remediation("Run the adb command by hand to see the full message; check the device is connected and authorised.")
+        .with_remediation(format!(
+            "Check the device is connected and authorised (`adb devices`). What adb printed last:\n{}",
+            craft_anything_platform::process::output_excerpt(&tail)
+        ))
         .with_details(serde_json::json!({"exit_code": out.code, "stderr_tail": tail}))
 }
 

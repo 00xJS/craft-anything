@@ -12,6 +12,7 @@ pub mod cli_agents;
 pub mod config;
 pub mod context;
 pub mod detect;
+pub mod failure_log;
 pub mod http;
 pub mod key_tools;
 pub mod keys;
@@ -172,6 +173,8 @@ pub enum AgentEvent {
     Error {
         message: String,
         remediation: Option<String>,
+        /// A log with everything known about the failure, to open and inspect.
+        log: Option<std::path::PathBuf>,
     },
 }
 
@@ -460,7 +463,11 @@ impl AiHub {
         };
         if first.config.kind == BackendKind::AgentCli {
             let spec = cli_agents::CliSpec::new(first.config.clone(), first.options.clone(), beginner, self.project_root());
-            return Ok(cli_agents::conversation(cli_agents::CliSpec { deep: !self.engine.session().clean_room(), ..spec }));
+            let (deep, logs) = {
+                let session = self.engine.session();
+                (!session.clean_room(), failure_log::dir_in(&session.config_dir()))
+            };
+            return Ok(cli_agents::conversation(cli_agents::CliSpec { deep, logs: Some(logs), ..spec }));
         }
         let mut chain = vec![self.build_model(&first)?];
         for name in cfg.chain_from(&first.config.name).into_iter().skip(1) {

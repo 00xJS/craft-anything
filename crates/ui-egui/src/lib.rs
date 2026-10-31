@@ -836,6 +836,13 @@ impl CraftApp {
         }
     }
 
+    /// Show a failure log in the system's viewer for text files.
+    pub(crate) fn open_log(&mut self, path: &std::path::Path) {
+        if let Err(e) = craft_anything_platform::open_path(path) {
+            self.toast(format!("{}: {}", e.message, path.display()), true);
+        }
+    }
+
     /// Open a file or folder as the active target.
     pub fn open_path(&mut self, path: PathBuf) {
         let path = if path.is_absolute() { path } else { std::env::current_dir().map(|d| d.join(&path)).unwrap_or(path) };
@@ -1004,7 +1011,7 @@ impl CraftApp {
         if self.state.backend.is_some() && self.conversation.is_none() {
             match self.hub.start(self.state.backend.as_deref(), self.beginner()) {
                 Ok(c) => self.conversation = Some(c),
-                Err(e) => self.state.chat.push(ChatItem::Error { message: e.message, remediation: e.remediation }),
+                Err(e) => self.state.chat.push(ChatItem::Error { message: e.message, remediation: e.remediation, log: None }),
             }
         }
         if let Some(c) = self.conversation.as_mut() {
@@ -1328,7 +1335,7 @@ impl CraftApp {
                         self.state.modal = Some(state::Modal::DeepMode);
                         return;
                     }
-                    Err(e) => self.state.chat.push(ChatItem::Error { message: e.message, remediation: e.remediation }),
+                    Err(e) => self.state.chat.push(ChatItem::Error { message: e.message, remediation: e.remediation, log: None }),
                 }
                 if cta {
                     self.state.chat.push(ChatItem::AddBrain);

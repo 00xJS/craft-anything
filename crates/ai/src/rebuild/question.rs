@@ -56,7 +56,14 @@ pub struct Answered {
 /// the caller, which may hold the session: a tool does while it runs, so locking it here would
 /// wait forever). Blocks until it's answered, `cancel` is set, or [`WAIT`] passes: call it off
 /// the UI thread.
-pub fn ask(hub: &AiHub, settings: &craft_anything_engine::Settings, ws: &Workspace, question: &str, cancel: &CancelToken) -> Result<Answered, ToolError> {
+pub fn ask(
+    hub: &AiHub,
+    settings: &craft_anything_engine::Settings,
+    logs: Option<std::path::PathBuf>,
+    ws: &Workspace,
+    question: &str,
+    cancel: &CancelToken,
+) -> Result<Answered, ToolError> {
     let question = question.trim();
     if question.is_empty() || question.len() > MAX_QUESTION {
         return Err(ToolError::invalid(format!("A question is 1 to {MAX_QUESTION} characters.")));
@@ -71,6 +78,7 @@ pub fn ask(hub: &AiHub, settings: &craft_anything_engine::Settings, ws: &Workspa
             let spec = CliSpec {
                 question: true,
                 deep,
+                logs,
                 resume: session,
                 preamble: Some(PREAMBLE.into()),
                 ..CliSpec::new(entry.config.clone(), entry.options.clone(), false, Some(ws.root.clone()))
@@ -111,7 +119,7 @@ fn collect(conv: &mut dyn Conversation, cancel: &CancelToken, wait: Duration) ->
             match e {
                 AgentEvent::TextDelta { text: t } => text.push_str(&t),
                 AgentEvent::TurnDone { cost_usd, .. } => return Ok((text.trim().to_string(), cost_usd)),
-                AgentEvent::Error { message, remediation } => {
+                AgentEvent::Error { message, remediation, .. } => {
                     let e = ToolError::new(ErrorCode::ProgramFailed, message);
                     return Err(match remediation {
                         Some(r) => e.with_remediation(r),
@@ -242,7 +250,7 @@ mod tests {
         let done = AgentEvent::TurnDone { backend: "A".into(), input_tokens: 1, output_tokens: 1, cost_usd: Some(0.02) };
         let mut ok = Scripted(vec![words("They're in "), words("app/src."), done]);
         assert_eq!(collect(&mut ok, &CancelToken::default(), WAIT).unwrap(), ("They're in app/src.".to_string(), Some(0.02)));
-        let mut bad = Scripted(vec![AgentEvent::Error { message: "not signed in".into(), remediation: Some("Sign in".into()) }]);
+        let mut bad = Scripted(vec![AgentEvent::Error { message: "not signed in".into(), remediation: Some("Sign in".into()), log: None }]);
         let e = collect(&mut bad, &CancelToken::default(), WAIT).unwrap_err();
         assert_eq!((e.message.as_str(), e.remediation.as_deref()), ("not signed in", Some("Sign in")));
         let mut slow = Scripted(Vec::new());

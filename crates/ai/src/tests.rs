@@ -239,7 +239,7 @@ fn anthropic_refusal_and_http_errors() {
     assert!(ev.iter().any(|e| matches!(e, AgentEvent::Error { message, .. } if message.contains("declined"))));
     let ev = run(&mut c, "q2");
     assert!(
-        ev.iter().any(|e| matches!(e, AgentEvent::Error { message, remediation: Some(r) } if message.contains("invalid x-api-key") && r.contains("key"))),
+        ev.iter().any(|e| matches!(e, AgentEvent::Error { message, remediation: Some(r), .. } if message.contains("invalid x-api-key") && r.contains("key"))),
         "{ev:?}"
     );
 }

@@ -251,7 +251,7 @@ impl AgentAdapter for ClaudeCode {
                 }
                 if v.get("is_error").and_then(Value::as_bool).unwrap_or(false) {
                     let why = if s("result").is_empty() { s("subtype") } else { s("result") };
-                    out.push(AgentEvent::Error { message: format!("Claude Code stopped: {why}"), remediation: sign_in_hint(&why) });
+                    out.push(AgentEvent::Error { message: format!("Claude Code stopped: {why}"), remediation: sign_in_hint(&why), log: None });
                 }
             }
             _ => {}
@@ -346,7 +346,7 @@ impl AgentAdapter for Codex {
             }
             ("turn.failed", _) | ("error", _) => {
                 let m = v.pointer("/error/message").or_else(|| v.get("message")).and_then(Value::as_str).unwrap_or("unknown error");
-                out.push(AgentEvent::Error { message: format!("Codex: {m}"), remediation: None });
+                out.push(AgentEvent::Error { message: format!("Codex: {m}"), remediation: None, log: None });
             }
             _ => {}
         }
@@ -392,7 +392,7 @@ impl AgentAdapter for GeminiCli {
                 let text = v.get("output").map(content_text).unwrap_or_default();
                 out.push(p.finished(&id, ok, &text));
             }
-            "error" => out.push(AgentEvent::Error { message: format!("Gemini CLI: {}", s("message")), remediation: None }),
+            "error" => out.push(AgentEvent::Error { message: format!("Gemini CLI: {}", s("message")), remediation: None, log: None }),
             "result" => {
                 p.saw_result = true;
                 if let Some(st) = v.get("stats") {

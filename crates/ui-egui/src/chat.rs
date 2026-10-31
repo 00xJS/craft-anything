@@ -70,12 +70,12 @@ pub fn apply_event(chat: &mut Vec<ChatItem>, e: AgentEvent) {
                 }
             }
         }
-        AgentEvent::Error { message, remediation } => {
+        AgentEvent::Error { message, remediation, log } => {
             end_streaming(chat);
             if matches!(chat.last(), Some(ChatItem::Status(_))) {
                 chat.pop();
             }
-            chat.push(ChatItem::Error { message, remediation });
+            chat.push(ChatItem::Error { message, remediation, log });
         }
     }
 }
@@ -274,6 +274,7 @@ fn history(app: &mut CraftApp, ui: &mut Ui, dense: bool, pad: f32, max_w: f32) {
                 for a in actions {
                     match a {
                         ChatAction::Consent(id, ans) => app.answer_consent(&id, ans),
+                        ChatAction::OpenLog(path) => app.open_log(&path),
                         ChatAction::AddBrain => {
                             app.state.settings_open = true;
                             app.state.settings_tab = crate::state::SettingsTab::Ai;
@@ -344,6 +345,7 @@ fn composer(app: &mut CraftApp, ui: &mut Ui, width: f32, dense: bool) {
 enum ChatAction {
     Consent(String, ConsentAnswer),
     AddBrain,
+    OpenLog(std::path::PathBuf),
 }
 
 pub(crate) fn bubble(t: &Tokens, user: bool, dense: bool) -> egui::Frame {
@@ -465,7 +467,7 @@ fn item_ui(ui: &mut Ui, item: &ChatItem, beginner: bool, dense: bool, open: bool
                 }
             });
         }
-        ChatItem::Error { message, remediation } => {
+        ChatItem::Error { message, remediation, log } => {
             egui::Frame::new()
                 .fill(t.card)
                 .stroke(egui::Stroke::new(1.0, t.danger.gamma_multiply(0.6)))
@@ -479,6 +481,11 @@ fn item_ui(ui: &mut Ui, item: &ChatItem, beginner: bool, dense: bool, open: bool
                     });
                     if let Some(r) = remediation {
                         ui.add(egui::Label::new(RichText::new(r).color(t.text_dim)).wrap());
+                    }
+                    if let Some(l) = log
+                        && widgets::open_log_button(ui, l)
+                    {
+                        actions.push(ChatAction::OpenLog(l.clone()));
                     }
                 });
         }

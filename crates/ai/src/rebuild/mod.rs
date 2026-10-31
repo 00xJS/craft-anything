@@ -558,6 +558,7 @@ impl Worker {
         let spec = CliSpec {
             builder: Some(Builder { investigation: Some(ws.investigation_dir()), inbox: ws.inbox_dir() }),
             deep: !self.engine.session().clean_room(),
+            logs: Some(crate::failure_log::dir_in(&self.engine.session().config_dir())),
             resume: ws.manifest.agent_session.clone(),
             preamble: Some(
                 "You work inside Craft Anything for a person who doesn't code. The message below is your task.
@@ -751,7 +752,7 @@ impl Worker {
                     {
                         self.decompiled = true
                     }
-                    AgentEvent::Error { message, remediation } => failed = Some((message.clone(), remediation.clone())),
+                    AgentEvent::Error { message, remediation, .. } => failed = Some((message.clone(), remediation.clone())),
                     _ => {}
                 }
                 if let AgentEvent::TurnDone { input_tokens, output_tokens, cost_usd, .. } = &e {

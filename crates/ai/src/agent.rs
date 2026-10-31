@@ -294,6 +294,7 @@ impl AgentLoop {
                 self.emit(AgentEvent::Error {
                     message: format!("Stopped after {max_turns} steps without a final answer."),
                     remediation: Some("Ask it to continue, or narrow the question.".into()),
+                    log: None,
                 });
                 break;
             }
@@ -329,6 +330,7 @@ impl AgentLoop {
                     self.emit(AgentEvent::Error {
                         message: "The model declined to answer this request.".into(),
                         remediation: Some("Rephrase the question, say why you're examining the software, or try another backend.".into()),
+                        log: None,
                     });
                     self.host.journal("error", json!({"kind": "refusal", "backend": slot_name}));
                     // Drop the refused turn so the conversation stays usable.
@@ -472,7 +474,7 @@ impl AgentLoop {
                         self.emit(AgentEvent::Status { text: format!("{name} failed ({}). Trying {next}…", e.message) });
                         continue;
                     }
-                    self.emit(AgentEvent::Error { message: format!("{name}: {}", e.message), remediation: e.remediation });
+                    self.emit(AgentEvent::Error { message: format!("{name}: {}", e.message), remediation: e.remediation, log: None });
                     return None;
                 }
             }
@@ -647,6 +649,7 @@ impl ApiConversation {
                         let _ = etx.send(AgentEvent::Error {
                             message: "The assistant hit a bug and stopped safely.".into(),
                             remediation: Some("Start a new chat.".into()),
+                            log: None,
                         });
                     }
                     busy2.store(false, Ordering::SeqCst);
@@ -667,7 +670,11 @@ impl Conversation for ApiConversation {
         self.busy.store(true, Ordering::SeqCst);
         if self.to_worker.send(text.to_string()).is_err() {
             self.busy.store(false, Ordering::SeqCst);
-            self.queued.push(AgentEvent::Error { message: "The assistant isn't running any more.".into(), remediation: Some("Start a new chat.".into()) });
+            self.queued.push(AgentEvent::Error {
+                message: "The assistant isn't running any more.".into(),
+                remediation: Some("Start a new chat.".into()),
+                log: None,
+            });
         }
     }
 

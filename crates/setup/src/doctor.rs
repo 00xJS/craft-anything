@@ -202,7 +202,7 @@ pub fn mcp_self_test(program: &str, args: &[String], timeout: Duration) -> Check
         Ok(o) => o,
         Err(e) => {
             return Check::new(name, CheckStatus::Fail, format!("The MCP server didn't answer: {}", e.message))
-                .fix(e.remediation.unwrap_or_else(|| "Run `craft-anything-cli mcp` by hand to see the error.".into()));
+                .fix(e.remediation.unwrap_or_else(|| "Run this in a terminal to see the error: craft-anything-cli mcp".into()));
         }
     };
     let mut init = None;
@@ -217,7 +217,7 @@ pub fn mcp_self_test(program: &str, args: &[String], timeout: Duration) -> Check
     }
     let Some(init) = init else {
         return Check::new(name, CheckStatus::Fail, "The MCP server sent no reply to initialize.")
-            .fix("Run `craft-anything-cli mcp` by hand to see the error.");
+            .fix("Run this in a terminal to see the error: craft-anything-cli mcp");
     };
     let server = init["result"]["serverInfo"]["name"].as_str().unwrap_or_default();
     let protocol = init["result"]["protocolVersion"].as_str().unwrap_or_default();

@@ -656,6 +656,11 @@ Deep mode is its own switch, not tied to Ghidra.
 - [ ] A live Clean room build of a website and of an app, checked end to end
 - [ ] A remote (SSH) builder needs a craft-anything-cli that knows `--deep` and `--clean-room`:
       check its version first and say so when it's older
+- [ ] A remote (SSH) builder doesn't get the time limits or effort set through `Process::env`
+      (`MCP_TOOL_TIMEOUT`, `CLAUDE_CODE_EFFORT_LEVEL`…): they're set on the local `ssh`, which doesn't
+      pass them on. Set them in the remote command
+- [ ] Failure logs for the other ways an AI stops (API backends, MCP server start-up), like the
+      ones agent CLIs write to `logs/` in the config folder
 
 ### R2.9 Everyday use: typing, projects, settings
 Owner: maintainers · Status: in progress

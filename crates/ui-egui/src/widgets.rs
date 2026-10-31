@@ -454,3 +454,9 @@ pub fn working_since(ui: &mut Ui, title: &str, detail: Option<&str>, began: Opti
     });
     animate(ui, FRAME);
 }
+
+/// The button that opens a failure's log; hovering shows where the log is. True when clicked.
+pub fn open_log_button(ui: &mut Ui, path: &std::path::Path) -> bool {
+    ui.add_space(6.0);
+    secondary(ui, None, "Open log").on_hover_text(path.display().to_string()).clicked()
+}

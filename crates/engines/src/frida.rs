@@ -247,7 +247,10 @@ fn cli_failed(what: &str, out: &Output) -> ToolError {
     };
     let msg = tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("no output").trim().to_string();
     ToolError::new(ErrorCode::ProgramFailed, format!("{what} failed: {msg}"))
-        .with_remediation("Check the device is reachable and frida-server is running on it; run the command by hand to see the full message.")
+        .with_remediation(format!(
+            "Check the device is reachable and frida-server is running on it. What Frida printed last:\n{}",
+            craft_anything_platform::process::output_excerpt(&tail)
+        ))
         .with_details(serde_json::json!({"exit_code": out.code, "stderr_tail": tail}))
 }
 

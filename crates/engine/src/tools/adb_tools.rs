@@ -590,7 +590,7 @@ fn exec_error(what: &str, out: &Output) -> ToolError {
     let tail = tail_text(&out.stderr_text());
     let msg = tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("no output").trim().to_string();
     ToolError::new(ErrorCode::ProgramFailed, format!("{what} failed: {msg}"))
-        .with_remediation("Run the adb command by hand to see the full message.")
+        .with_remediation(format!("What adb printed last:\n{}", craft_anything_platform::process::output_excerpt(&tail)))
         .with_details(json!({"exit_code": out.code, "stderr_tail": tail}))
 }
 
@@ -990,8 +990,10 @@ fn adb_app_download(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
 }
 
 pub(crate) fn pull_error(path: &str, out: &Output) -> ToolError {
-    ToolError::new(ErrorCode::ProgramFailed, format!("adb pull of {path} failed: {}", tail_text(&out.stderr_text()).trim()))
-        .with_remediation("Check the device path exists and is readable; run adb pull by hand to see the full message.")
+    ToolError::new(ErrorCode::ProgramFailed, format!("adb pull of {path} failed: {}", tail_text(&out.stderr_text()).trim())).with_remediation(format!(
+        "Check the device path exists and is readable. To try it yourself, run:\nadb pull {}",
+        craft_anything_platform::process::printable_command(std::ffi::OsStr::new(path), &[] as &[&str])
+    ))
 }
 
 fn adb_file_download(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {

@@ -132,12 +132,15 @@ pub fn chat(cli: &Cli, a: &ChatArgs) -> u8 {
                     }
                     conv.answer_consent(call_id, cli.allow_run);
                 }
-                AgentEvent::Error { message, remediation } => {
+                AgentEvent::Error { message, remediation, log } => {
                     code = 1;
                     if !jsonl {
                         eprintln!("error: {message}");
                         if let Some(r) = remediation {
                             eprintln!("fix: {r}");
+                        }
+                        if let Some(l) = log {
+                            eprintln!("log: {}", l.display());
                         }
                     }
                 }
