@@ -272,6 +272,8 @@ impl Process {
             cmd.args(&self.args);
             if self.env_clear {
                 cmd.env_clear();
+            } else {
+                use_search_path(cmd);
             }
             for (k, v) in &self.env {
                 match v {
@@ -351,6 +353,14 @@ impl Process {
             return Err(ToolError::new(ErrorCode::ProgramFailed, format!("Could not start a thread to watch {name}: {e}")));
         }
         Ok(RunningProcess { pid, name, stdin: user_stdin, kill, rx, result: None, hands_off: self.hands_off })
+    }
+}
+
+/// The child gets [`search_path`](crate::which::search_path), which is also where a bare program
+/// name is looked up on Unix, so an app opened from the Dock starts what a shell would.
+fn use_search_path(cmd: &mut std::process::Command) {
+    if let Some(p) = crate::which::search_path() {
+        cmd.env("PATH", p);
     }
 }
 
@@ -764,6 +774,7 @@ impl Launch {
         let name = self.display();
         let mut cmd = std::process::Command::new(&self.program);
         cmd.args(&self.args).stdin(Stdio::null());
+        use_search_path(&mut cmd);
         match &self.log {
             Some(path) => {
                 let out = std::fs::File::create(path).map_err(|e| ToolError::io(path.display(), e))?;
