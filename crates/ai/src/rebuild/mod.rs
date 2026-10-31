@@ -508,6 +508,29 @@ impl Worker {
         }
     }
 
+    /// How the builder's agent runs. Reads the session once: a lock taken twice in one statement
+    /// is held by the first until the statement ends, and the second then waits forever.
+    fn agent_spec(&self, ws: &Workspace, entry: &crate::BackendEntry, opts: &RunOptions) -> CliSpec {
+        let (deep, config_dir) = {
+            let session = self.engine.session();
+            (!session.clean_room(), session.config_dir())
+        };
+        CliSpec {
+            builder: Some(Builder { investigation: Some(ws.investigation_dir()), inbox: ws.inbox_dir() }),
+            deep,
+            logs: Some(crate::failure_log::dir_in(&config_dir)),
+            resume: ws.manifest.agent_session.clone(),
+            preamble: Some(
+                "You work inside Craft Anything for a person who doesn't code. The message below is your task.
+
+"
+                .into(),
+            ),
+            adapters: opts.adapters.clone(),
+            ..CliSpec::new(entry.config.clone(), entry.options.clone(), opts.beginner, Some(ws.root.clone()))
+        }
+    }
+
     fn run(
         &mut self,
         ws: &mut Workspace,
@@ -555,20 +578,7 @@ impl Worker {
         let api_loop = api.is_some();
         // A coding agent that never saved a session starts over, so it needs the brief.
         let has_history = resumable && (api_loop || ws.manifest.agent_session.is_some());
-        let spec = CliSpec {
-            builder: Some(Builder { investigation: Some(ws.investigation_dir()), inbox: ws.inbox_dir() }),
-            deep: !self.engine.session().clean_room(),
-            logs: Some(crate::failure_log::dir_in(&self.engine.session().config_dir())),
-            resume: ws.manifest.agent_session.clone(),
-            preamble: Some(
-                "You work inside Craft Anything for a person who doesn't code. The message below is your task.
-
-"
-                .into(),
-            ),
-            adapters: opts.adapters.clone(),
-            ..CliSpec::new(entry.config.clone(), entry.options.clone(), opts.beginner, Some(ws.root.clone()))
-        };
+        let spec = self.agent_spec(ws, &entry, opts);
         let mut agent: Box<dyn Conversation> = match api {
             Some(a) => Box::new(a),
             None => crate::cli_agents::builder_conversation(spec, self.approver(ws)),
