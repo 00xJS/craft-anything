@@ -1,10 +1,11 @@
-//! `cargo xtask <layers | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>`
+//! `cargo xtask <layers | locks | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>`
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 mod ico;
+mod locks;
 mod secrets;
 
 /// Workspace crates and their layer. A crate may depend only on strictly lower layers
@@ -35,6 +36,7 @@ fn main() -> ExitCode {
     let root = workspace_root();
     let ok = match args.first().map(String::as_str) {
         Some("layers") => layers(&root),
+        Some("locks") => locks::check(&root),
         Some("tools") => tools(&root, args.iter().any(|a| a == "--check")),
         Some("schemas") => schemas(&root, args.iter().any(|a| a == "--check")),
         Some("wasm") => wasm(),
@@ -48,6 +50,7 @@ fn main() -> ExitCode {
         }
         Some("ci") => {
             layers(&root)
+                && locks::check(&root)
                 && secrets::secrets(&root, false)
                 && run("cargo", &["fmt", "--all", "--check"])
                 && run("cargo", &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])
@@ -60,7 +63,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: cargo xtask <layers | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>"
+                "usage: cargo xtask <layers | locks | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>"
             );
             false
         }

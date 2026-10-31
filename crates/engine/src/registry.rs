@@ -36,7 +36,8 @@ impl RuntimeTool {
 
 /// A run-time group's id kept for the process, once per distinct id.
 pub fn custom_toolset(id: &str) -> Option<Toolset> {
-    use std::sync::{Mutex, OnceLock, PoisonError};
+    use craft_anything_platform::sync::Mutex;
+    use std::sync::{OnceLock, PoisonError};
     static SEEN: OnceLock<Mutex<Vec<&'static str>>> = OnceLock::new();
     if let Some(t) = Toolset::from_id(id) {
         return Some(t);

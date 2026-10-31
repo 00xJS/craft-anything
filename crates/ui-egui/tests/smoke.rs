@@ -706,6 +706,20 @@ fn mode_switch_and_deep_toggle() {
 }
 
 #[test]
+fn a_stuck_lock_is_shown_with_a_way_out() {
+    use craft_anything_platform::sync;
+    let mut h = harness(|| demo::app(demo::engine(Mode::Beginner, true)));
+    let summary = "smoke test: a lock taken at x.rs:1 is stuck";
+    sync::report(sync::ProblemKind::Stuck, summary);
+    h.run_steps(4);
+    h.get_by_label("Restart");
+    h.get_by_label("Dismiss").click();
+    h.run_steps(4);
+    assert!(!sync::problems().iter().any(|p| p.summary == summary));
+    assert!(h.query_by_label("Restart").is_none());
+}
+
+#[test]
 fn a_failure_with_a_log_offers_to_open_it_and_one_without_does_not() {
     let mut h = harness(|| {
         let mut a = demo::app(demo::engine(Mode::Beginner, true));

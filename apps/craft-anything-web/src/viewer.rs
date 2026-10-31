@@ -3,6 +3,7 @@
 use crate::triage::{Look, MAX_BYTES, look};
 use craft_anything_evidence::Confidence;
 use egui::{Color32, RichText};
+#[allow(clippy::disallowed_types)] // The browser has one thread: nothing can wait here.
 use std::sync::{Arc, Mutex, PoisonError};
 
 // A few tokens copied from the desktop app's Studio theme (crates/ui-egui/src/theme.rs).
@@ -21,6 +22,7 @@ const BEST_GUESS: Color32 = Color32::from_rgb(0xe0, 0xa2, 0x3a);
 
 /// A file handed over from outside a frame (the browser's file picker).
 /// A file (name and contents), or a plain message saying why it couldn't be read.
+#[allow(clippy::disallowed_types)]
 pub type Inbox = Arc<Mutex<Option<Result<(String, Vec<u8>), String>>>>;
 
 pub struct Viewer {

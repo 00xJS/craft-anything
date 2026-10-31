@@ -9,6 +9,7 @@
 
 use super::{McpCommand, display_for};
 use crate::{AgentEvent, Conversation};
+use craft_anything_platform::sync::Mutex;
 use craft_anything_platform::{Process, RunningProcess, StdinMode};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -17,7 +18,7 @@ use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 /// Agents known to speak ACP, and the arguments that start them in that mode.
@@ -458,7 +459,7 @@ impl AcpConversation {
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Shared>> {
+    fn lock(&self) -> craft_anything_platform::sync::MutexGuard<'_, Option<Shared>> {
         self.shared.lock().unwrap_or_else(PoisonError::into_inner)
     }
 

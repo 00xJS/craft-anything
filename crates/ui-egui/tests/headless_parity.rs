@@ -129,6 +129,7 @@ const ACTIONS: &[Action] = &[
 /// `CraftApp` methods that aren't person-facing actions: callbacks, polling, drawing, helpers.
 #[rustfmt::skip]
 const PLUMBING: &[(&str, &str)] = &[
+    ("stuck_banner", "draws what the lock watchdog found; `sync::problems` and its log are the headless side"),
     ("act", "runs a button's tool on a worker (play, preview, open folder)"),
     ("waiting_question", "finds the question an answer is for"),
     ("acted", "shows a button tool's result (toast, open the preview)"),

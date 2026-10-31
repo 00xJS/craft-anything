@@ -24,14 +24,15 @@ pub use client::Client;
 pub use protocol::{GhidraError, Request, Response, ct_eq};
 
 use craft_anything_platform::process::{Process, RunningProcess, StdinMode};
+use craft_anything_platform::sync::Mutex;
 use craft_anything_platform::write_atomic_private;
 use serde::Serialize;
 use serde_json::Value;
 use std::ffi::OsString;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::PoisonError;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 /// The Java post-script we ship and run inside Ghidra (our own code).
@@ -571,7 +572,7 @@ impl Session {
         })
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Client> {
+    fn lock(&self) -> craft_anything_platform::sync::MutexGuard<'_, Client> {
         self.client.lock().unwrap_or_else(PoisonError::into_inner)
     }
 

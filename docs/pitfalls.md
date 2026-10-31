@@ -296,6 +296,13 @@ and run `cargo xtask secrets` before every commit (the `.githooks/pre-commit` ho
 Update STATUS, the roadmap and generated docs (`cargo xtask tools`, `cargo xtask schemas`) in the
 same PR as the change.
 
+**A second lock in one statement.** `CliSpec { deep: !engine.session().clean_room(), logs: engine.session().config_dir(), … }`
+looked like two quick reads, but an unbound guard lives to the end of the statement, so the second
+waited on the first forever. Every build froze after studying its target while the card calmly
+said "This is a big one", and no test ran that line. Read the session once; `cargo xtask locks`
+and `platform::sync` now catch this. A wait message must not reassure about what it can't see:
+say how long it's been since anything happened. Find a hang with `sample <pid>`: it names the lock.
+
 **An error that points at nothing.** "Check the output below; run Claude Code by hand" came with no
 output below (the event carried only message and remediation) and no command, and the program
 that failed was really ssh, talking to a git alias from `~/.ssh/config` that had been offered as a

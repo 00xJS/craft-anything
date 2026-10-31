@@ -5,8 +5,9 @@
 use crate::inbox::now_ms;
 use crate::workspace::Workspace;
 use craft_anything_evidence::ToolError;
+use craft_anything_platform::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, PoisonError};
+use std::sync::PoisonError;
 
 /// Where they're kept in the project folder.
 pub const QUESTIONS_FILE: &str = "questions.json";

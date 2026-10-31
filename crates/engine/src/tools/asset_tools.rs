@@ -374,7 +374,7 @@ mod tests {
 
     /// Stands in for fal.ai: records each request's endpoint and answers with a few bytes.
     #[derive(Default)]
-    struct StandIn(std::sync::Mutex<Vec<String>>);
+    struct StandIn(craft_anything_platform::sync::Mutex<Vec<String>>);
 
     impl craft_anything_engines::assets::AssetProvider for StandIn {
         fn id(&self) -> &'static str {

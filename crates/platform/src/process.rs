@@ -20,6 +20,7 @@
 //! Never call [`Process::run`] on a UI thread: it blocks until the child finishes or a deadline hits.
 //! Use [`Process::spawn`] and poll [`RunningProcess::try_result`] instead.
 
+use crate::sync::Mutex;
 use craft_anything_evidence::{ErrorCode, ToolError};
 use process_wrap::std::{ChildWrapper, CommandWrap};
 use std::ffi::{OsStr, OsString};
@@ -28,7 +29,7 @@ use std::path::PathBuf;
 use std::process::{ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -993,6 +994,12 @@ pub fn system_opener() -> &'static str {
     } else {
         "xdg-open"
     }
+}
+
+/// Start this program again, for a restart: the caller then closes itself.
+pub fn start_another_copy() -> Result<u32, ToolError> {
+    let exe = std::env::current_exe().map_err(|e| ToolError::new(ErrorCode::FileError, format!("Couldn't find this program to restart it: {e}")))?;
+    Launch::new(exe).start()
 }
 
 /// Show a file or folder with the system's default handler (a folder opens in the file manager).

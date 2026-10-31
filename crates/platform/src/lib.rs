@@ -11,6 +11,7 @@ pub mod fs;
 pub mod process;
 pub mod serve;
 pub mod standin_server;
+pub mod sync;
 pub mod which;
 pub mod window;
 

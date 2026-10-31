@@ -20,13 +20,14 @@ use crate::inbox::now_ms;
 use crate::versioned;
 use crate::workspace::{self, Workspace};
 use craft_anything_evidence::{ErrorCode, ToolError};
+use craft_anything_platform::sync::Mutex;
 use craft_anything_platform::{Ended, Launch, Launched};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::PoisonError;
 use std::time::Duration;
 
 /// The folder in a project that holds its pins.

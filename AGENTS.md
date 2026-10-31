@@ -70,6 +70,12 @@ Layering is enforced by `cargo xtask layers`. Register new crates in `xtask/src/
     - a missing program, non-zero exit, bad output or timeout is a `ToolError` with a plain-English remediation,
       never a panic or a hang;
     - nothing slow ever runs on the UI thread: the UI sends work to background threads and polls results.
+11. **Never lock up on a lock.** Use `craft_anything_platform::sync::Mutex`, never `std::sync::Mutex` (clippy
+    refuses it). It stops a real deadlock as soon as it forms, the waiter's work unwinding to its `catch_unwind` as
+    an error; the watchdog reports anything held too long. Long jobs are fine: label the guard (`guard.label(id)`,
+    as `Engine::call` does for tools) and they're waited for, not treated as stuck. A guard that isn't bound to a
+    name lives until the statement ends, so read the session once: `cargo xtask locks` refuses a second
+    `.session()` in reach of the first.
 
 ## Working rules (mandatory)
 
@@ -147,6 +153,7 @@ cargo fmt --all
 cargo test -p <crates you touched>
 cargo clippy -p <crates> --all-targets -- -D warnings
 cargo xtask layers
+cargo xtask locks
 cargo xtask secrets       # no keys, tokens or local paths in what you commit
 cargo xtask wasm          # if you touched L0–L2
 cargo xtask tools         # if you added tools (commit docs/tools.md)

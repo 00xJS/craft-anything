@@ -5,6 +5,7 @@
 //! by id and turn results into evidence.
 
 use craft_anything_evidence::{ErrorCode, ToolError};
+use craft_anything_platform::sync::Mutex;
 use craft_anything_platform::{Process, RunningProcess, StdinMode};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -12,7 +13,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ChildStdin;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
 /// Unread lines kept per session; older ones are dropped.

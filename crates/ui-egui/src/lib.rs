@@ -836,6 +836,37 @@ impl CraftApp {
         }
     }
 
+    /// Says when a lock got stuck (crates/platform/src/sync.rs), with a way out.
+    fn stuck_banner(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        use craft_anything_platform::sync::{self, ProblemKind};
+        let Some(problem) = sync::problems().into_iter().find(|p| p.kind != ProblemKind::SlowJob) else { return };
+        let t = theme::Tokens::get(ctx);
+        let text = match problem.kind {
+            ProblemKind::Broken => "Part of the app got stuck, so it was stopped and the rest carried on. Your work is kept.",
+            _ => "Part of the app is stuck. Restarting clears it, and your work is kept.",
+        };
+        egui::Panel::top("stuck-banner").frame(egui::Frame::new().fill(t.card).inner_margin(egui::Margin::symmetric(14, 8))).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                icons::show(ui, "triangle-alert", 16.0, t.danger);
+                ui.label(egui::RichText::new(i18n::tr(text)).color(t.text)).on_hover_text(problem.summary.clone());
+                if let Some(path) = &problem.log
+                    && widgets::secondary(ui, None, "Open log").on_hover_text(path.display().to_string()).clicked()
+                {
+                    self.open_log(path);
+                }
+                if widgets::secondary(ui, None, "Restart").clicked() {
+                    match craft_anything_platform::process::start_another_copy() {
+                        Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                        Err(e) => self.toast(e.message, true),
+                    }
+                }
+                if widgets::secondary(ui, None, "Dismiss").clicked() {
+                    sync::dismiss(&problem.summary);
+                }
+            });
+        });
+    }
+
     /// Show a failure log in the system's viewer for text files.
     pub(crate) fn open_log(&mut self, path: &std::path::Path) {
         if let Err(e) = craft_anything_platform::open_path(path) {
@@ -1428,6 +1459,7 @@ impl CraftApp {
         egui::Panel::top("titlebar").exact_size(titlebar::HEIGHT).frame(egui::Frame::new().fill(t.chrome)).show(ui, |ui| {
             guard_ui(ui, "title bar", |ui| titlebar::show(self, ui));
         });
+        self.stuck_banner(ui, &ctx);
         if !self.settings.first_run_done {
             egui::CentralPanel::default().frame(egui::Frame::new().fill(t.canvas)).show(ui, |ui| guard_ui(ui, "first run", |ui| first_run::show(self, ui)));
             titlebar::window_edge(&ctx);

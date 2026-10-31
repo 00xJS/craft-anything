@@ -43,6 +43,11 @@ against a stand-in server, not yet a real Cutter). Every tool is listed in `docs
 
 ## Known limits
 
+- Locks: every mutex but the browser viewer's goes through `platform::sync`. A deadlock on one thread or across
+  threads is broken when it forms, with an error and a report in `logs/`; a watchdog looks every 5 s; a holder
+  that isn't a labelled job is reported after 2 minutes and waited on for 15 at most. Tools are labelled, so they
+  may run as long as they need. Checked by unit tests of each case, not by a live deadlock in the desktop app.
+  Waits on channels and `join` aren't watched; each child program has its own deadlines.
 - A failed agent CLI run says what ran and what it printed, and writes a private log to `logs/` in the
   config folder (the newest 50 are kept; the person's message is left out; **Open log** in the app, `log:`
   in the CLI). Checked live against a GitHub ssh alias from the CLI; the button by a UI test, not by

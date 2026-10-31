@@ -71,7 +71,7 @@ const LOG_MAX: u64 = 512 * 1024;
 /// panics, which would otherwise vanish with the window.
 fn log_to_file() {
     use std::io::Write as _;
-    struct FileLog(std::sync::Mutex<Option<std::fs::File>>);
+    struct FileLog(craft_anything_platform::sync::Mutex<Option<std::fs::File>>);
     impl log::Log for FileLog {
         fn enabled(&self, m: &log::Metadata<'_>) -> bool {
             m.level() <= log::Level::Warn || (m.level() <= log::Level::Info && m.target().starts_with("craft_anything"))
@@ -94,7 +94,7 @@ fn log_to_file() {
     let _ = std::fs::create_dir_all(&dir);
     let fresh = std::fs::metadata(&path).is_ok_and(|m| m.len() > LOG_MAX);
     let file = std::fs::OpenOptions::new().create(true).append(!fresh).write(true).truncate(fresh).open(&path).ok();
-    if log::set_logger(Box::leak(Box::new(FileLog(std::sync::Mutex::new(file))))).is_ok() {
+    if log::set_logger(Box::leak(Box::new(FileLog(craft_anything_platform::sync::Mutex::new(file))))).is_ok() {
         log::set_max_level(log::LevelFilter::Info);
     }
     let default_hook = std::panic::take_hook();
@@ -102,4 +102,5 @@ fn log_to_file() {
         log::error!("panic: {info}");
         default_hook(info);
     }));
+    craft_anything_platform::sync::start_watchdog(craft_anything_engine::settings::config_dir().join("logs"));
 }
