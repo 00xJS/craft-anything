@@ -392,7 +392,9 @@ mod tests {
         let r = call(&e, "build_file_write", json!({"path": "/app/package.json", "content": "{}"})).unwrap();
         assert_eq!((r["written"].as_str(), r.get("note")), (Some("app/package.json"), None));
         assert!(ws.app_dir().join("package.json").is_file());
-        assert_eq!(call(&e, "build_file_read", json!({"path": "\\app\\package.json"})).unwrap()["text"], "{}\n");
+        // Backslashes separate folders only on Windows; elsewhere they're part of a name.
+        let read = if cfg!(windows) { "\\app\\package.json" } else { "/app/package.json" };
+        assert_eq!(call(&e, "build_file_read", json!({"path": read})).unwrap()["text"], "{}\n");
         assert!(call(&e, "build_files_list", json!({"path": "/app"})).unwrap()["entries"].to_string().contains("app/package.json"));
         // A folder the project doesn't have stays outside it.
         assert!(call(&e, "build_file_read", json!({"path": "/etc/passwd"})).is_err());
