@@ -14,6 +14,10 @@
 <h1 align="center">Craft Anything</h1>
 
 <p align="center">
+  <b>English</b> · <a href="README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <b>See how any website, app or game works, then have AI build your own version; an open-source, clean-room engine in pure Rust.</b><br>
   Point it at a target, say what you want, and it studies the original with real inspection tools,<br>
   has a coding agent build a new project, checks the result against the original and refines it.
