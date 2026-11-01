@@ -923,12 +923,36 @@ fn truncate_utf8(s: &str, max: usize) -> &str {
 }
 
 /// Drop everything a visitor can't see: the page's metadata, CSS variables and breakpoints, the
-/// stylesheets, scripts, fonts and requests it loaded, and where its pictures come from (their sizes
-/// stay). Screenshots, visible text, the measured layout and styles, links and forms are kept.
+/// stylesheets, scripts, fonts and requests it loaded, where its pictures come from (their sizes
+/// stay), its class names, and the query strings (deployment ids, tokens) on the addresses it
+/// shows (#156). Screenshots, visible text, the measured layout and styles, links and forms are kept.
 fn visitor_view(blueprint: &mut Value) {
     let Value::Object(b) = blueprint else { return };
     for k in ["meta", "breakpoints", "unreadable_stylesheets", "health"] {
         b.remove(k);
+    }
+    let bare = |v: &mut Value| {
+        if let Some(s) = v.as_str() {
+            *v = Value::String(s.split(['?', '#']).next().unwrap_or_default().to_string());
+        }
+    };
+    if let Some(Value::Array(items)) = b.get_mut("outline") {
+        for item in items.iter_mut().filter_map(Value::as_object_mut) {
+            item.remove("class");
+            item.get_mut("src").map(bare);
+            item.get_mut("href").map(bare);
+        }
+    }
+    if let Some(Value::Array(links)) = b.get_mut("links") {
+        links.iter_mut().filter_map(|l| l.get_mut("href")).for_each(bare);
+    }
+    // "button.btn-primary" → "button": the element, not the page's class for it.
+    if let Some(Value::Array(examples)) = b.get_mut("a11y").and_then(|a| a.get_mut("unnamed_examples")) {
+        for e in examples.iter_mut() {
+            if let Some(s) = e.as_str() {
+                *e = Value::String(s.split('.').next().unwrap_or_default().to_string());
+            }
+        }
     }
     if let Some(Value::Object(d)) = b.get_mut("design") {
         d.remove("css_variables");
@@ -1229,9 +1253,19 @@ mod tests {
             "title": "Plans", "meta": {"description": "hidden"}, "breakpoints": [{"query": "min-width 768px"}], "unreadable_stylesheets": 1,
             "health": {"errors": [{"text": "boom"}]}, "design": {"fonts": [{"value": "Inter", "count": 9}], "css_variables": {"--brand": "#123"}, "font_faces": [{"family": "Inter"}]},
             "assets": {"images": [{"src": "https://cdn.test/a.png", "w": 40, "h": 30, "alt": "logo"}], "scripts": ["https://cdn.test/app.js"], "requests": [{"url": "https://api.test/x"}]},
-            "headings": [{"level": 1, "text": "Plans"}], "text": "Plans Pricing", "layouts": [{"width": 1440, "page_w": 1440}]
+            "headings": [{"level": 1, "text": "Plans"}], "text": "Plans Pricing", "layouts": [{"width": 1440, "page_w": 1440}],
+            "outline": [{"tag": "img", "class": "w-full rounded-xl", "src": "https://cdn.test/hero.webp?dpl=dpl_abc123#x"}, {"tag": "a", "class": "btn", "href": "https://shop.test/plans?ref=sk-test-123"}],
+            "links": [{"text": "Plans", "href": "https://shop.test/plans?session=abc"}],
+            "a11y": {"unnamed_examples": ["button.icon-btn", "a"]}
         });
         visitor_view(&mut b);
+        // #156: the page's class names and the query strings on its addresses aren't a visitor's view.
+        assert!(b["outline"].as_array().unwrap().iter().all(|i| i.get("class").is_none()));
+        assert_eq!(b["outline"][0]["src"], "https://cdn.test/hero.webp");
+        assert_eq!(b["outline"][1]["href"], "https://shop.test/plans");
+        assert_eq!(b["links"][0]["href"], "https://shop.test/plans");
+        assert_eq!(b["a11y"]["unnamed_examples"], json!(["button", "a"]));
+        assert!(!b.to_string().contains("dpl_") && !b.to_string().contains("sk-test"));
         for gone in [
             "/meta",
             "/breakpoints",
