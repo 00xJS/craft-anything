@@ -695,6 +695,10 @@ fn cpp_tools(p: &Places) -> bool {
 
 /// The Godot release Craft Anything downloads.
 pub const GODOT_VERSION: &str = "4.4.1-stable";
+/// Largest file unpacked from Godot's download: the macOS app's universal program is over the
+/// 256 MB other engines' files are held to (#100). The download is checked against Godot's own
+/// SHA-512 list first.
+const GODOT_MAX_FILE: u64 = 1 << 30;
 
 /// The official page to get `b` by hand (used where we can't download it for the person).
 pub fn download_page(b: Builder) -> &'static str {
@@ -813,7 +817,7 @@ pub fn install_godot(store: &Path, cancel: Option<Cancel>, progress: &dyn Fn(u64
         return Err(ToolError::new(ErrorCode::FileHashMismatch, "The Godot download didn't match its official checksum, so it wasn't used.")
             .with_remediation("Try again, or get Godot from godotengine.org."));
     }
-    crate::install::unpack_zip_into(&data, &dir, cancel.as_ref())?;
+    crate::install::unpack_zip_into(&data, &dir, GODOT_MAX_FILE, cancel.as_ref())?;
     let path = dir.join(&program);
     if !path.exists() {
         return Err(ToolError::new(ErrorCode::GarbledOutput, "Godot was unpacked, but its program wasn't where we expected."));
