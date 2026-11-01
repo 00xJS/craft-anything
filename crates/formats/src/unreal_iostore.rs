@@ -172,9 +172,13 @@ pub fn toc(data: &[u8]) -> Result<Toc, FormatError> {
             method: b[11],
         })
         .collect();
-    let methods = (0..header.method_count)
+    // A block names its method in one byte, so only the first 255 names can be used; the rest are
+    // skipped, never collected (a zero name length would otherwise read billions of empty names).
+    let named = header.method_count.min(u32::from(u8::MAX));
+    let methods = (0..named)
         .map(|_| c.take(header.method_length as usize, "compression method").map(|b| String::from_utf8_lossy(b).trim_end_matches('\0').to_string()))
         .collect::<Result<Vec<_>, _>>()?;
+    c.take(((header.method_count - named) as usize).saturating_mul(header.method_length as usize), "compression methods")?;
     if header.flags.signed {
         let hash = c.count("signature size", 2)?;
         c.take(hash * 2, "signatures")?;
@@ -307,5 +311,27 @@ mod tests {
             let t = toc(&craft_anything_testkit::games::unreal_utoc(0x9, sibling)).unwrap();
             assert_eq!(files(&t, 10).unwrap().2, 3, "sibling {sibling}");
         }
+    }
+
+    #[test]
+    fn a_huge_count_of_empty_method_names_is_not_collected() {
+        let mut d = sample(0x9);
+        d[36..40].copy_from_slice(&0x8000_0000u32.to_le_bytes());
+        d[40..44].copy_from_slice(&0u32.to_le_bytes());
+        let t = toc(&d).unwrap();
+        assert_eq!(t.methods.len(), 255);
+        // Names past the 255 a block can point at are skipped, so the directory index still reads.
+        // The sample's one 32-byte name (after the header, chunks, seed and blocks) is taken out.
+        let mut d = sample(0x9);
+        assert_eq!(&d[262..267], b"Oodle");
+        d.drain(262..294);
+        d[36..40].copy_from_slice(&300u32.to_le_bytes());
+        d[40..44].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(files(&toc(&d).unwrap(), 10).unwrap().2, 3);
+        // More names than the file holds is refused, not read past the end.
+        let mut d = sample(0x9);
+        d[36..40].copy_from_slice(&300u32.to_le_bytes());
+        d[40..44].copy_from_slice(&32u32.to_le_bytes());
+        assert!(toc(&d).is_err());
     }
 }

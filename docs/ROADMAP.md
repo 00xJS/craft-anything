@@ -144,6 +144,9 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
 - [x] Checked arithmetic on file offsets in `elf.rs`: `va_to_off` adds a segment's file offset to an
       address delta unchecked, so a `PT_LOAD` at offset `u64::MAX` overflows, found by a lint scan
       of `crates/formats` (#43)
+- [x] Capped allocation in `unreal_iostore.rs`: a `.utoc` header naming 2^31 compression methods of
+      length 0 collected empty names until memory ran out (6 GiB from a 559-byte file); only the
+      255 a block can point at are read, the rest skipped. Found by mutation fuzzing of `crates/formats`
 - [x] `cargo xtask layers` also scans `apps/`
 - [x] Engines in `KNOWN` without a `ToolPaths` override (tshark, objdump, rizin, java)
 - [x] Missing `database` icon for SQLite in the UI (`kind_icon`)
