@@ -41,7 +41,8 @@ Plus `SHA256SUMS.txt`.
   scheme on any platform. It appears in Windows' "Open with" list and accepts paths on the
   command line. Projects (`*.cany`) are folders.
 - **The macOS executable** is `Craft Anything.app/Contents/MacOS/craft-anything`. Only the bundle
-  carries the display name.
+  carries the display name. `craft-anything-cli` sits beside it, as it does in the Windows zip: the
+  app starts it as the coding agents' MCP server, so an app without it can't build (#91).
 - **Windows portable mode:** the portable zip ships `portable.txt`. While it sits next to the exe,
   settings live in `CraftAnythingData\` (`crates/engine/src/settings.rs`).
 - **Flatpak** grants `--share=network` (AI backends, engine downloads) and `--filesystem=home:ro`

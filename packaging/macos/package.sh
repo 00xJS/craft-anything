@@ -106,6 +106,9 @@ echo "==> assembling $APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # The executable keeps the machine name (CFBundleExecutable); the bundle carries the display name.
 cp "$WORK/bin/craft-anything" "$APP/Contents/MacOS/craft-anything"
+# The CLI goes beside it: the app starts it as the MCP server its coding agents use, and finds it
+# next to its own executable (`self_cli_path`). Without it every Claude Code build fails (#91).
+if [ "$HAS_CLI" = 1 ]; then cp "$WORK/bin/craft-anything-cli" "$APP/Contents/MacOS/craft-anything-cli"; fi
 cp "$ICNS" "$APP/Contents/Resources/craft-anything.icns"
 # Licences of the embedded fonts (assets/fonts, OFL-1.1).
 mkdir -p "$APP/Contents/Resources/Licenses"
@@ -117,7 +120,11 @@ plutil -lint "$APP/Contents/Info.plist"
 printf 'APPL????' >"$APP/Contents/PkgInfo"
 
 # Sign inside-out: nested code first, then the bundle itself (no --deep on the final signature).
-# Today the only nested code is the main executable; frameworks/helpers would be signed here too.
+# The nested code is the main executable and the CLI; frameworks/helpers would be signed here too.
+# The CLI keeps the identifier its zip has.
+if [ "$HAS_CLI" = 1 ]; then
+  sign --options runtime --identifier ai.storyteller.craft-anything-cli "$APP/Contents/MacOS/craft-anything-cli"
+fi
 sign --options runtime --entitlements "$HERE/entitlements.plist" "$APP/Contents/MacOS/craft-anything"
 sign --options runtime --entitlements "$HERE/entitlements.plist" "$APP"
 codesign --verify --strict --deep --verbose=2 "$APP"
@@ -169,6 +176,11 @@ rm -rf "$MOUNT"
 mkdir -p "$MOUNT"
 hdiutil_retry attach attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null
 if ! codesign --verify --strict --deep --verbose=2 "$MOUNT/Craft Anything.app"; then
+  hdiutil_retry detach detach "$MOUNT" >/dev/null || true
+  exit 1
+fi
+if [ "$HAS_CLI" = 1 ] && ! "$MOUNT/Craft Anything.app/Contents/MacOS/craft-anything-cli" --version; then
+  echo "error: the app in the DMG has no working craft-anything-cli beside its executable" >&2
   hdiutil_retry detach detach "$MOUNT" >/dev/null || true
   exit 1
 fi
