@@ -75,7 +75,7 @@ pub fn markdown(chat: &[ChatItem], target: Option<&TargetInfo>, clean_room: bool
                 };
                 let _ = writeln!(out, "- Permission to run *{title}*: {a}\n");
             }
-            ChatItem::Error { message, remediation } => {
+            ChatItem::Error { message, remediation, .. } => {
                 let _ = writeln!(out, "> ⚠ {message}{}\n", remediation.as_ref().map(|r| format!(" {r}")).unwrap_or_default());
             }
             ChatItem::Status(_) | ChatItem::AddBrain => {}

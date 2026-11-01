@@ -296,6 +296,13 @@ and run `cargo xtask secrets` before every commit (the `.githooks/pre-commit` ho
 Update STATUS, the roadmap and generated docs (`cargo xtask tools`, `cargo xtask schemas`) in the
 same PR as the change.
 
+**An error that points at nothing.** "Check the output below; run Claude Code by hand" came with no
+output below (the event carried only message and remediation) and no command, and the program
+that failed was really ssh, talking to a git alias from `~/.ssh/config` that had been offered as a
+computer. Say what ran and what it printed, write the rest to a log the person can open (a failed
+agent run does: `crate::failure_log`), and never name a next step you don't spell out. Exit 255
+from ssh is ssh's own failure: don't blame the remote program. Test a message by causing the failure.
+
 **A filter written for one kind of text, run on another.** The stand-in's secret scan was written for
 API answers, then also ran on recorded scripts: `this.token=t` became `[dropped]` and the scripts
 broke, and "Basic Membership" lost a word. It also tested whole tokens, so a secret inside a URL or

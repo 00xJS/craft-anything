@@ -181,7 +181,7 @@ impl AcpCore {
 
     fn fail(&mut self, message: String, remediation: Option<String>) -> Vec<Out> {
         self.queued.clear();
-        vec![Out::Event(AgentEvent::Error { message, remediation }), self.turn_done(), Out::TurnEnded]
+        vec![Out::Event(AgentEvent::Error { message, remediation, log: None }), self.turn_done(), Out::TurnEnded]
     }
 
     fn turn_done(&self) -> Out {
@@ -413,9 +413,16 @@ pub struct AcpConversation {
     busy: Arc<AtomicBool>,
     approver: Option<Approver>,
     preamble: String,
+    logs: Option<PathBuf>,
 }
 
 impl AcpConversation {
+    /// Where to write a log if the agent stops unexpectedly ([`crate::failure_log`]).
+    pub fn with_logs(mut self, logs: Option<PathBuf>) -> Self {
+        self.logs = logs;
+        self
+    }
+
     /// Text put before each message, as the CLI runs do (who it works for, how to use our tools).
     pub fn with_preamble(mut self, preamble: String) -> Self {
         self.preamble = preamble;
@@ -447,6 +454,7 @@ impl AcpConversation {
             busy: Arc::default(),
             approver: None,
             preamble: String::new(),
+            logs: None,
         }
     }
 
@@ -518,6 +526,7 @@ impl Conversation for AcpConversation {
             let _ = self.tx.send(AgentEvent::Error {
                 message: "Still working on the last message.".into(),
                 remediation: Some("Wait for it to finish or press stop.".into()),
+                log: None,
             });
             return;
         }
@@ -526,7 +535,7 @@ impl Conversation for AcpConversation {
             let _ = self.tx.send(AgentEvent::Status { text: format!("Starting {}…", display_for(&self.agent)) });
             if let Err(e) = self.spawn() {
                 self.busy.store(false, Ordering::SeqCst);
-                let _ = self.tx.send(AgentEvent::Error { message: e.message, remediation: e.remediation });
+                let _ = self.tx.send(AgentEvent::Error { message: e.message, remediation: e.remediation, log: None });
                 let _ = self.tx.send(AgentEvent::TurnDone { backend: self.backend.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None });
                 return;
             }
@@ -546,9 +555,27 @@ impl Conversation for AcpConversation {
             self.busy.store(false, Ordering::SeqCst);
             let tail = self.lock().as_ref().map(|s| s.stderr.iter().cloned().collect::<Vec<_>>().join("\n")).unwrap_or_default();
             events.extend(self.rx.try_iter());
+            let command = craft_anything_platform::process::printable_command(std::ffi::OsStr::new(&self.program), &self.args);
+            let check = format!("{} --version", crate::ssh::shell_quote(&self.program));
+            let log = self.logs.as_ref().and_then(|dir| {
+                let report = crate::failure_log::Report {
+                    what: format!("{} ({})", display_for(&self.agent), self.backend),
+                    command: command.clone(),
+                    check: check.clone(),
+                    error: Some("It stopped in the middle of a message.".into()),
+                    cwd: Some(self.cwd.clone()),
+                    stderr: tail.clone().into_bytes(),
+                    ..Default::default()
+                };
+                crate::failure_log::write(dir, &report).map_err(|e| log::warn!("couldn't write a failure log: {e}")).ok()
+            });
             events.push(AgentEvent::Error {
                 message: format!("{} stopped unexpectedly.{}", display_for(&self.agent), if tail.is_empty() { String::new() } else { format!("\n{tail}") }),
-                remediation: Some(format!("Check that {} is installed and signed in: run it once in a terminal.", display_for(&self.agent))),
+                remediation: Some(format!(
+                    "Check that {} is installed and signed in. To test it, run:\n{check}\n\nWhat ran:\n{command}",
+                    display_for(&self.agent)
+                )),
+                log,
             });
             events.push(AgentEvent::TurnDone { backend: self.backend.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None });
         }
@@ -663,7 +690,7 @@ mod tests {
         c.prompt("hi");
         let outs = c.line(r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Authentication required"}}"#);
         assert!(outs.contains(&Out::TurnEnded));
-        assert!(matches!(&events(outs)[0], AgentEvent::Error { message, remediation: Some(_) } if message.contains("Authentication required")));
+        assert!(matches!(&events(outs)[0], AgentEvent::Error { message, remediation: Some(_), .. } if message.contains("Authentication required")));
         let refused = sent(&c.line(r#"{"jsonrpc":"2.0","id":9,"method":"fs/read_text_file","params":{"path":"/etc/passwd"}}"#));
         assert_eq!(refused[0]["error"]["code"], -32601);
         assert!(c.line("not json").is_empty());

@@ -149,9 +149,15 @@ fn run(cli: &Cli, a: &RebuildArgs) -> Result<bool, ToolError> {
                     end_line(&mut line_open);
                     println!("  · {tool}");
                 }
-                RunEvent::Agent(AgentEvent::Error { message, .. }) => {
+                RunEvent::Agent(AgentEvent::Error { message, remediation, log }) => {
                     end_line(&mut line_open);
                     println!("  ! {message}");
+                    if let Some(r) = remediation {
+                        println!("{r}");
+                    }
+                    if let Some(l) = log {
+                        println!("  log: {}", l.display());
+                    }
                 }
                 RunEvent::Agent(_) => {}
                 RunEvent::Note(text) => {

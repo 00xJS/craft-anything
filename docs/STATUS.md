@@ -43,6 +43,10 @@ against a stand-in server, not yet a real Cutter). Every tool is listed in `docs
 
 ## Known limits
 
+- A failed agent CLI run says what ran and what it printed, and writes a private log to `logs/` in the
+  config folder (the newest 50 are kept; the person's message is left out; **Open log** in the app, `log:`
+  in the CLI). Checked live against a GitHub ssh alias from the CLI; the button by a UI test, not by
+  clicking it in the desktop app. API backends and MCP start-up don't write these logs yet.
 - Live end-to-end runs (2026-10-18, Windows 10, headless CLI): a website clone reached Ready
   at 96% likeness in 1.5 min; a small desktop app rebuilt in Rust + egui reached Ready in 9 min (checked
   only by building); a game rebuild in Rust reached Build and was stopped before Check. The

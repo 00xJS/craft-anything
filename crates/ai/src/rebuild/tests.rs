@@ -1134,6 +1134,46 @@ impl Conversation for ChecksItsWork {
 }
 
 #[test]
+fn preparing_the_builders_agent_does_not_lock_up() {
+    let d = tempfile::tempdir().unwrap();
+    let ws = Workspace::create(d.path(), "Arena", "Recreate this game", TargetRef::None).unwrap();
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let w = Worker {
+        wake: Default::default(),
+        engine: Arc::new(Engine::new(craft_anything_engine::testing::session())),
+        tx,
+        stop: CancelToken::default(),
+        preview: Arc::default(),
+        seen: HashSet::new(),
+        inbox: Inbox::new(ws.inbox_dir()),
+        editor: None,
+        notes: Arc::default(),
+        feed: Arc::new(Mutex::new(feed::FeedLog::open(&ws))),
+        assets: false,
+        decompiled: false,
+        usage: None,
+        self_check: None,
+    };
+    let entry = crate::BackendEntry {
+        config: crate::BackendConfig {
+            name: "x".into(),
+            kind: crate::BackendKind::AgentCli,
+            model: "claude-code".into(),
+            base_url: None,
+            ssh_host: None,
+            enabled: true,
+        },
+        options: Default::default(),
+    };
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(w.agent_spec(&ws, &entry, &RunOptions::default()).logs);
+    });
+    let logs = finished.recv_timeout(std::time::Duration::from_secs(20)).expect("it took the session lock twice and waited on itself");
+    assert!(logs.is_some());
+}
+
+#[test]
 fn the_run_answers_the_builders_own_check_during_its_turn() {
     let d = tempfile::tempdir().unwrap();
     let mut ws = Workspace::create(d.path(), "Arena", "Recreate this game", TargetRef::None).unwrap();

@@ -254,7 +254,8 @@ fn rebuild_question_ask(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, 
     // The session is this call's while it runs: the question gets its settings from here.
     let mut settings = ctx.session.settings.clone();
     settings.deep_mode = !ctx.session.clean_room();
-    let answered = super::question::ask(&AiHub::new(engine), &settings, &ws, &p.question, &ctx.cancel)?;
+    let answered =
+        super::question::ask(&AiHub::new(engine), &settings, Some(crate::failure_log::dir_in(&ctx.session.config_dir())), &ws, &p.question, &ctx.cancel)?;
     let question = p.question.trim();
     let from_session = answered.from == super::question::AnsweredFrom::BuildersSession;
     let asked = AskedQuestion::new(question.to_string(), answered.answer.clone(), from_session, answered.backend.clone(), answered.cost_usd, after);

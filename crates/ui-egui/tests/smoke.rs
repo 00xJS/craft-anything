@@ -706,6 +706,22 @@ fn mode_switch_and_deep_toggle() {
 }
 
 #[test]
+fn a_failure_with_a_log_offers_to_open_it_and_one_without_does_not() {
+    let mut h = harness(|| {
+        let mut a = demo::app(demo::engine(Mode::Beginner, true));
+        demo::fill_ask(&mut a);
+        a.state.chat = vec![ChatItem::Error { message: "It failed.".into(), remediation: Some("ssh printed: no".into()), log: None }];
+        a
+    });
+    h.run_steps(4);
+    h.get_by_label_contains("ssh printed: no");
+    assert!(h.query_by_label("Open log").is_none());
+    h.state_mut().state.chat = vec![ChatItem::Error { message: "It failed.".into(), remediation: None, log: Some("/tmp/agent.log".into()) }];
+    h.run_steps(4);
+    h.get_by_label("Open log");
+}
+
+#[test]
 fn ask_screen_renders_every_chat_item_and_consent_answers() {
     let mut h = harness(|| {
         let mut a = demo::app(demo::engine(Mode::Beginner, true));

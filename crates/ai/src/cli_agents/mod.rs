@@ -16,9 +16,11 @@ pub use adapters::{AgentAdapter, AgentAdapters, ArgsCx};
 use crate::config::BackendOptions;
 use crate::model::Stop;
 use crate::{AgentEvent, BackendConfig, Conversation};
+use craft_anything_evidence::ToolError;
 use craft_anything_platform::process::Process;
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -273,6 +275,8 @@ pub struct CliSpec {
     /// builder's own session is never changed. Only adapters that
     /// [answer questions](adapters::AgentAdapter::answers_questions) take it.
     pub question: bool,
+    /// Where a failed run writes what's known about it ([`crate::failure_log`]). None writes no log.
+    pub logs: Option<PathBuf>,
 }
 
 /// What a building run needs besides the working folder.
@@ -309,6 +313,7 @@ impl CliSpec {
             resume: None,
             deep: false,
             preamble: None,
+            logs: None,
             adapters: AgentAdapters::built_in(),
             question: false,
         }
@@ -346,7 +351,7 @@ fn acp_for(spec: &CliSpec) -> Option<AcpConversation> {
     let cwd = spec.project.clone().or_else(|| std::env::current_dir().ok()).unwrap_or_else(std::env::temp_dir);
     let mcp = mcp_for(spec, false);
     let preamble = spec.preamble.clone().unwrap_or_else(|| crate::prompt::cli_preamble(spec.beginner));
-    Some(AcpConversation::new(&spec.config.name, &agent, program, args, cwd, mcp, spec.resume.clone()).with_preamble(preamble))
+    Some(AcpConversation::new(&spec.config.name, &agent, program, args, cwd, mcp, spec.resume.clone()).with_preamble(preamble).with_logs(spec.logs.clone()))
 }
 
 /// A conversation backed by an agent CLI. Each message is one CLI run; Claude Code runs resume
@@ -405,6 +410,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
         let _ = tx.send(AgentEvent::Error {
             message: format!("{name} can't be kept to only reading here, so it isn't asked questions about a build."),
             remediation: Some("Ask with Claude Code, or with an AI that has an API key.".into()),
+            log: None,
         });
         return;
     }
@@ -416,6 +422,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
         (None, _, false) => Access::Analyse,
     };
     let args = build_args(adapter.as_ref(), &spec.options, text, &preamble, &mcp, if adapter.resumes() { resume.as_deref() } else { None }, access);
+    let shown = FailureContext::new(&program, &args, text, remote.as_deref(), spec);
     let (prog, argv) = match &remote {
         Some(host) => {
             let mut remote_cmd = vec![program.clone()];
@@ -467,18 +474,139 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
     }
     match result {
         Ok(out) if !out.success && !p.saw_result => {
-            let e = craft_anything_platform::process::nonzero_error(&display_for(&agent), &out);
-            let _ = tx.send(AgentEvent::Error { message: e.message, remediation: e.remediation });
+            let _ = tx.send(shown.exit_event(&agent, &out));
+        }
+        Ok(out) if !out.success => {
+            // The agent already said what went wrong; keep the rest for anyone looking into it.
+            if let Some(path) = shown.save(&agent, Some(&out), None).0 {
+                let _ = tx.send(AgentEvent::Status { text: format!("The details are in {}", path.display()) });
+            }
         }
         Ok(_) => {}
         Err(e) if e.code == craft_anything_evidence::ErrorCode::Cancelled => {
             let _ = tx.send(AgentEvent::Status { text: "Stopped.".into() });
         }
         Err(e) => {
-            let _ = tx.send(AgentEvent::Error { message: e.message, remediation: e.remediation });
+            let _ = tx.send(shown.error_event(&agent, e));
         }
     }
     let _ = tx.send(AgentEvent::TurnDone { backend: name, input_tokens: p.input_tokens, output_tokens: p.output_tokens, cost_usd: p.cost_usd });
+}
+
+/// What's needed to explain a failed CLI run: the command with the person's message left out, and
+/// where to write the log.
+struct FailureContext {
+    command: String,
+    check: String,
+    program: String,
+    host: Option<String>,
+    backend: String,
+    cwd: Option<PathBuf>,
+    logs: Option<PathBuf>,
+}
+
+impl FailureContext {
+    fn new(program: &str, args: &[String], message: &str, host: Option<&str>, spec: &CliSpec) -> Self {
+        use craft_anything_platform::process::printable_command;
+        let message = message.trim();
+        let args: Vec<String> = args
+            .iter()
+            .map(|a| if !message.is_empty() && a.contains(message) { format!("[your message, {} characters]", message.chars().count()) } else { a.clone() })
+            .collect();
+        let local = printable_command(OsStr::new(program), &args);
+        let (command, check) = match host {
+            Some(h) => {
+                let options = crate::ssh::SSH_OPTIONS.join(" ");
+                (format!("ssh {options} -T {} -- {local}", crate::ssh::shell_quote(h)), crate::ssh::check_command(h, program))
+            }
+            None => (local, format!("{} --version", crate::ssh::shell_quote(program))),
+        };
+        FailureContext {
+            command,
+            check,
+            program: program.to_string(),
+            host: host.map(str::to_string),
+            backend: spec.config.name.clone(),
+            cwd: spec.project.clone().filter(|_| host.is_none()),
+            logs: spec.logs.clone(),
+        }
+    }
+
+    /// Why this run failed, when it was ssh (or the remote computer) that says so.
+    fn ssh_failure(&self, out: &craft_anything_platform::Output) -> Option<crate::ssh::SshFailure> {
+        let host = self.host.as_deref()?;
+        crate::ssh::diagnose(host, &self.program, crate::ssh::is_git_server(host), out.code, &out.stderr_text())
+    }
+
+    /// Write the log. Returns its path, or what to tell the person when it couldn't be written.
+    fn save(&self, agent: &str, out: Option<&craft_anything_platform::Output>, diagnosis: Option<&str>) -> (Option<PathBuf>, Option<String>) {
+        self.save_with(agent, out, diagnosis, None)
+    }
+
+    fn save_with(
+        &self,
+        agent: &str,
+        out: Option<&craft_anything_platform::Output>,
+        diagnosis: Option<&str>,
+        error: Option<&str>,
+    ) -> (Option<PathBuf>, Option<String>) {
+        let Some(dir) = &self.logs else { return (None, None) };
+        let report = crate::failure_log::Report {
+            what: format!("{} ({})", display_for(agent), self.backend),
+            command: self.command.clone(),
+            check: self.check.clone(),
+            diagnosis: diagnosis.map(str::to_string),
+            error: error.map(str::to_string),
+            cwd: self.cwd.clone(),
+            exit_code: out.and_then(|o| o.code),
+            duration: out.map(|o| o.duration),
+            stdout: out.map(|o| o.stdout.clone()).unwrap_or_default(),
+            stderr: out.map(|o| o.stderr.clone()).unwrap_or_default(),
+        };
+        match crate::failure_log::write(dir, &report) {
+            Ok(path) => {
+                log::warn!("{} failed; details in {}", display_for(agent), path.display());
+                (Some(path), None)
+            }
+            Err(e) => {
+                log::warn!("couldn't write a failure log: {e}");
+                (None, Some(format!("The details couldn't be saved: {e}")))
+            }
+        }
+    }
+
+    fn exit_event(&self, agent: &str, out: &craft_anything_platform::Output) -> AgentEvent {
+        let name = display_for(agent);
+        let plain = craft_anything_platform::process::nonzero_error_with(&name, out, Some(&self.command));
+        let excerpt = craft_anything_platform::process::output_excerpt(&String::from_utf8_lossy(if out.stderr.is_empty() { &out.stdout } else { &out.stderr }));
+        let (message, mut remediation) = match self.ssh_failure(out) {
+            Some(f) => {
+                let host = self.host.as_deref().unwrap_or_default();
+                let said = if excerpt.is_empty() { String::new() } else { format!("\n\nssh printed:\n{excerpt}") };
+                (format!("Couldn't run {name} on {host}: {}.", f.what), format!("{}{said}\n\nTo test it yourself, run:\n{}", f.fix, self.check))
+            }
+            None => (plain.message, plain.remediation.unwrap_or_default()),
+        };
+        let (log, unsaved) = self.save(agent, Some(out), Some(&message));
+        if let Some(u) = unsaved {
+            remediation.push_str(&format!("\n\n{u}"));
+        }
+        AgentEvent::Error { message, remediation: Some(remediation), log }
+    }
+
+    fn error_event(&self, agent: &str, e: ToolError) -> AgentEvent {
+        let details = e.details.as_ref().map(ToString::to_string);
+        let text = match details {
+            Some(d) => format!("{}\n{d}", e.message),
+            None => e.message.clone(),
+        };
+        let (log, unsaved) = self.save_with(agent, None, None, Some(&text));
+        let remediation = match (e.remediation, unsaved) {
+            (Some(r), Some(u)) => Some(format!("{r}\n\n{u}")),
+            (r, u) => r.or(u),
+        };
+        AgentEvent::Error { message: e.message, remediation, log }
+    }
 }
 
 impl Conversation for CliConversation {
@@ -491,6 +619,7 @@ impl Conversation for CliConversation {
             let _ = self.tx.send(AgentEvent::Error {
                 message: "Still working on the last message.".into(),
                 remediation: Some("Wait for it to finish or press stop.".into()),
+                log: None,
             });
             return;
         }
@@ -501,14 +630,14 @@ impl Conversation for CliConversation {
         let spawned = std::thread::Builder::new().name("ai-cli".into()).spawn(move || {
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_cli(&spec, &text, &tx, &stop, &session, &verified)));
             if r.is_err() {
-                let _ = tx.send(AgentEvent::Error { message: "The agent runner hit a bug and stopped safely.".into(), remediation: None });
+                let _ = tx.send(AgentEvent::Error { message: "The agent runner hit a bug and stopped safely.".into(), remediation: None, log: None });
                 let _ = tx.send(AgentEvent::TurnDone { backend: spec.config.name.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None });
             }
             busy.store(false, Ordering::SeqCst);
         });
         if spawned.is_err() {
             self.busy.store(false, Ordering::SeqCst);
-            let _ = self.tx.send(AgentEvent::Error { message: "Couldn't start a worker thread.".into(), remediation: None });
+            let _ = self.tx.send(AgentEvent::Error { message: "Couldn't start a worker thread.".into(), remediation: None, log: None });
         }
     }
 
@@ -595,12 +724,77 @@ mod tests {
         assert_eq!(dropped, ["CLAUDECODE", "CLAUDE_AGENT_SDK_VERSION", "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH", "CLAUDE_CODE_SESSION_ID"]);
     }
 
+    fn failed(code: i32, stderr: &str) -> craft_anything_platform::Output {
+        craft_anything_platform::Output {
+            code: Some(code),
+            success: false,
+            stdout: Vec::new(),
+            stderr: stderr.as_bytes().to_vec(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            duration: Duration::from_millis(400),
+        }
+    }
+
+    fn context(host: Option<&str>, logs: Option<PathBuf>) -> FailureContext {
+        let config = BackendConfig {
+            name: "Mine".into(),
+            kind: BackendKind::AgentCli,
+            model: "claude-code".into(),
+            base_url: None,
+            ssh_host: host.map(str::to_string),
+            enabled: true,
+        };
+        let spec = CliSpec { logs, ..CliSpec::new(config, BackendOptions::default(), false, None) };
+        let args = ["-p".to_string(), "PRE private plans for my app".to_string(), "--verbose".to_string()];
+        FailureContext::new("claude", &args, "private plans for my app", host, &spec)
+    }
+
+    #[test]
+    fn a_failed_ssh_run_says_what_happened_and_saves_a_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let ev = context(Some("github.com"), Some(dir.path().to_path_buf())).exit_event("claude-code", &failed(255, "exec request failed on channel 0\n"));
+        let AgentEvent::Error { message, remediation, log } = ev else { panic!("not an error") };
+        let help = remediation.unwrap();
+        assert!(message.contains("Couldn't run Claude Code on github.com: github.com is a git server"), "{message}");
+        assert!(help.contains("exec request failed on channel 0") && help.contains("ssh -o BatchMode=yes -T github.com -- claude --version"), "{help}");
+        assert!(!help.contains("by hand") && !help.contains("below"), "{help}");
+        let text = std::fs::read_to_string(log.unwrap()).unwrap();
+        for part in ["Exit code: 255", "exec request failed on channel 0", "git server", "claude --version", "--verbose", "[your message, 24 characters]"] {
+            assert!(text.contains(part), "{part} is missing from:\n{text}");
+        }
+        assert!(!text.contains("private plans"), "the message stays out of the log:\n{text}");
+    }
+
+    #[test]
+    fn a_failed_local_run_shows_its_output_and_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let ev = context(None, Some(dir.path().to_path_buf())).exit_event("claude-code", &failed(3, "first\nreal reason\n"));
+        let AgentEvent::Error { message, remediation, log } = ev else { panic!("not an error") };
+        let help = remediation.unwrap();
+        assert!(message.contains("exit code 3: real reason"), "{message}");
+        assert!(help.contains("first\nreal reason") && help.contains("claude -p '[your message, 24 characters]' --verbose"), "{help}");
+        assert!(log.is_some());
+    }
+
+    #[test]
+    fn without_a_log_folder_nothing_is_written_and_a_failed_write_is_reported() {
+        let ev = context(None, None).exit_event("claude-code", &failed(1, "x"));
+        assert!(matches!(ev, AgentEvent::Error { log: None, .. }));
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a-file");
+        std::fs::write(&file, "").unwrap();
+        let AgentEvent::Error { remediation, log, .. } = context(None, Some(file)).exit_event("claude-code", &failed(1, "x")) else { panic!("not an error") };
+        assert!(log.is_none());
+        assert!(remediation.unwrap().contains("The details couldn't be saved"));
+    }
+
     #[test]
     fn sign_in_failures_get_a_plain_fix() {
         let mut p = StreamParser::new(adapter_for("claude-code"));
         let ev = p.line(&json!({"type":"result","subtype":"success","is_error":true,"result":"Failed to authenticate: OAuth session expired"}).to_string());
         match &ev[0] {
-            AgentEvent::Error { message, remediation } => {
+            AgentEvent::Error { message, remediation, .. } => {
                 assert_eq!(message, "Claude Code stopped: Failed to authenticate: OAuth session expired");
                 assert!(remediation.as_deref().unwrap_or_default().contains("claude auth login"));
             }

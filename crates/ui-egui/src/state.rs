@@ -162,6 +162,9 @@ pub enum ChatItem {
     Error {
         message: String,
         remediation: Option<String>,
+        /// A log with everything known about the failure, to open and inspect.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        log: Option<std::path::PathBuf>,
     },
     /// "Add a brain" and similar calls to action.
     AddBrain,

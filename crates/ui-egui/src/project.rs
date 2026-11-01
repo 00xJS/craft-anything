@@ -150,7 +150,7 @@ impl CraftApp {
         match self.launch(ws.clone(), opts) {
             Ok(Started::Running) => {}
             Ok(Started::Queued { .. }) => self.toast(tr("Another build is working, so this one waits its turn."), false),
-            Err(e) => self.state.feed.push(FeedItem::Error { message: e.message, remediation: e.remediation }),
+            Err(e) => self.state.feed.push(FeedItem::Error { message: e.message, remediation: e.remediation, log: None }),
         }
         self.workspace = Some(ws);
         self.refresh_projects();
@@ -1019,7 +1019,7 @@ fn draw_items(
                 }
             }
             FeedItem::Check(c) => check_card(app, ui, ctx, ws, c),
-            FeedItem::Error { message, remediation } => {
+            FeedItem::Error { message, remediation, log } => {
                 egui::Frame::new()
                     .fill(t.card)
                     .stroke(egui::Stroke::new(1.0, t.danger.gamma_multiply(0.6)))
@@ -1033,6 +1033,11 @@ fn draw_items(
                         });
                         if let Some(r) = remediation {
                             ui.add(egui::Label::new(RichText::new(r).color(t.text_dim)).wrap());
+                        }
+                        if let Some(l) = log
+                            && widgets::open_log_button(ui, l)
+                        {
+                            app.open_log(l);
                         }
                         let last = i + 1 == items.len();
                         // A pause or a stop part-way gets the Continue card below instead.
@@ -1622,7 +1627,7 @@ mod tests {
         assert!(matches!(&feed[3], FeedItem::Agent { text, .. } if text == "Done."));
         assert!(matches!(&feed[4], FeedItem::Check(_)));
         assert_eq!(feed.len(), 5, "a successful finish adds nothing");
-        apply(&mut feed, &ev(AgentEvent::Error { message: "x".into(), remediation: None }));
+        apply(&mut feed, &ev(AgentEvent::Error { message: "x".into(), remediation: None, log: None }));
         apply(&mut feed, &RunEvent::Finished { ok: false, message: "x".into(), paused: false });
         assert_eq!(feed.iter().filter(|f| matches!(f, FeedItem::Error { .. })).count(), 1, "an explained failure isn't repeated");
         // A pause isn't a failure: a calm line, not an error card.

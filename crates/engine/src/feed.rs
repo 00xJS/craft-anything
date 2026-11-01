@@ -61,6 +61,9 @@ pub enum FeedItem {
     Error {
         message: String,
         remediation: Option<String>,
+        /// A log with everything known about the failure, to open and inspect.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        log: Option<std::path::PathBuf>,
     },
     /// The person paused the run (not a failure); a message or Continue carries on.
     Paused,
@@ -116,7 +119,7 @@ pub fn history(ws: &Workspace) -> Vec<FeedItem> {
         feed.push(FeedItem::Agent { text: m.last_reply.clone(), streaming: false });
     }
     if matches!(m.status, Status::NeedsYou) && !m.note.is_empty() {
-        feed.push(FeedItem::Error { message: m.note.clone(), remediation: None });
+        feed.push(FeedItem::Error { message: m.note.clone(), remediation: None, log: None });
     }
     feed.extend(Inbox::new(ws.inbox_dir()).pending().into_iter().map(|request| FeedItem::Ask { request, answer: None }));
     feed

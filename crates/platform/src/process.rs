@@ -261,8 +261,9 @@ impl Process {
     /// Run to completion; a non-zero exit becomes an `program_failed` error with the stderr tail.
     pub fn run_checked(self) -> Result<Output, ToolError> {
         let name = self.display();
+        let command = printable_command(&self.program, &self.args);
         let out = self.run()?;
-        if out.success { Ok(out) } else { Err(nonzero_error(&name, &out)) }
+        if out.success { Ok(out) } else { Err(nonzero_error_with(&name, &out, Some(&command))) }
     }
 
     /// Start the child and supervise it on a background thread.
@@ -380,17 +381,87 @@ fn tail(bytes: &[u8], n: usize) -> String {
     String::from_utf8_lossy(bytes.get(start..).unwrap_or_default()).into_owned()
 }
 
+/// Longest argument shown whole in [`printable_command`]; longer ones are usually prompts or
+/// generated data.
+const MAX_SHOWN_ARG: usize = 200;
+/// Lines of a failed program's output shown in its error.
+const SHOWN_OUTPUT_LINES: usize = 15;
+const SHOWN_OUTPUT_LINE_CHARS: usize = 300;
+
+/// A command as a person could type it, for errors and logs. Values of secret-looking flags are
+/// masked and very long arguments left out (each says what it replaced), so it's safe to show.
+pub fn printable_command<S: AsRef<OsStr>>(program: &OsStr, args: &[S]) -> String {
+    let mut words = vec![shell_word(&program.to_string_lossy())];
+    let mut mask_next = false;
+    for arg in args {
+        let arg = arg.as_ref().to_string_lossy();
+        let secret_flag = arg.starts_with('-') && is_secret_name(arg.split('=').next().unwrap_or_default());
+        words.push(if mask_next {
+            "<hidden>".to_string()
+        } else if let (true, Some((flag, _))) = (secret_flag, arg.split_once('=')) {
+            format!("{}=<hidden>", shell_word(flag))
+        } else if arg.chars().count() > MAX_SHOWN_ARG {
+            format!("<{} characters left out>", arg.chars().count())
+        } else {
+            shell_word(&arg)
+        });
+        mask_next = secret_flag && !arg.contains('=');
+    }
+    words.join(" ")
+}
+
+fn is_secret_name(flag: &str) -> bool {
+    let flag = flag.to_ascii_lowercase();
+    ["token", "secret", "password", "passwd", "api-key", "api_key", "apikey", "credential"].iter().any(|s| flag.contains(s))
+}
+
+fn shell_word(s: &str) -> String {
+    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_./=:@%+,\\".contains(c)) {
+        return s.to_string();
+    }
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// The last lines of what a program printed, each cut to a readable length.
+pub fn output_excerpt(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let from = lines.len().saturating_sub(SHOWN_OUTPUT_LINES);
+    lines
+        .get(from..)
+        .unwrap_or_default()
+        .iter()
+        .map(|l| {
+            if l.chars().count() > SHOWN_OUTPUT_LINE_CHARS {
+                format!("{}…", l.chars().take(SHOWN_OUTPUT_LINE_CHARS).collect::<String>())
+            } else {
+                l.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The error for a non-zero exit, with the last part of stderr (or stdout) for context.
 pub fn nonzero_error(name: &str, out: &Output) -> ToolError {
+    nonzero_error_with(name, out, None)
+}
+
+/// [`nonzero_error`], also saying what was run so the person can run it themselves.
+pub fn nonzero_error_with(name: &str, out: &Output, command: Option<&str>) -> ToolError {
     let code = out.code.map(|c| c.to_string()).unwrap_or_else(|| "a signal".into());
     let stderr_tail = tail(&out.stderr, 2000);
     let context = if stderr_tail.trim().is_empty() { tail(&out.stdout, 2000) } else { stderr_tail };
     let first_line = context.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or_default().trim().to_string();
     let msg =
         if first_line.is_empty() { format!("{name} stopped with exit code {code}.") } else { format!("{name} stopped with exit code {code}: {first_line}") };
+    let excerpt = output_excerpt(&context);
+    let mut said = if excerpt.is_empty() { format!("{name} printed nothing.") } else { format!("What {name} printed last:\n{excerpt}") };
+    if let Some(command) = command {
+        said.push_str(&format!("\n\nTo try it yourself, run:\n{command}"));
+    }
     ToolError::new(ErrorCode::ProgramFailed, msg)
-        .with_remediation(format!("Check the output below; run {name} by hand to see the full message."))
-        .with_details(serde_json::json!({"exit_code": out.code, "output_tail": context}))
+        .with_remediation(said)
+        .with_details(serde_json::json!({"exit_code": out.code, "output_tail": context, "command": command}))
 }
 
 /// A child being supervised on a background thread. Dropping it kills the child.
@@ -1055,6 +1126,9 @@ mod tests {
         assert_eq!(out.stdout_text(), "hello\n");
         assert_eq!(out.stderr_text(), "oops\n");
         let err = Process::new("sh").args(["-c", "echo bad thing >&2; exit 1"]).run_checked().unwrap_err();
+        let help = err.remediation.clone().unwrap();
+        assert!(help.contains("bad thing") && help.contains("sh -c 'echo bad thing >&2; exit 1'"), "says what it printed and what ran: {help}");
+        assert!(!help.contains("by hand"), "{help}");
         assert_eq!(err.code, ErrorCode::ProgramFailed);
         assert!(err.message.contains("bad thing"), "{}", err.message);
     }

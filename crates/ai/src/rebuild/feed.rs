@@ -52,9 +52,9 @@ pub fn apply(feed: &mut Vec<FeedItem>, e: &RunEvent) {
             Some(FeedItem::Work { notes, .. }) => notes.push(text.clone()),
             _ => feed.push(FeedItem::Work { tools: Vec::new(), notes: vec![text.clone()] }),
         },
-        RunEvent::Agent(AgentEvent::Error { message, remediation }) => {
+        RunEvent::Agent(AgentEvent::Error { message, remediation, log }) => {
             end_stream(feed);
-            feed.push(FeedItem::Error { message: message.clone(), remediation: remediation.clone() });
+            feed.push(FeedItem::Error { message: message.clone(), remediation: remediation.clone(), log: log.clone() });
         }
         RunEvent::Agent(_) => end_stream(feed),
         RunEvent::Note(shown) => {
@@ -71,7 +71,7 @@ pub fn apply(feed: &mut Vec<FeedItem>, e: &RunEvent) {
             if *paused {
                 feed.push(FeedItem::Paused);
             } else if !ok && !explained {
-                feed.push(FeedItem::Error { message: message.clone(), remediation: None });
+                feed.push(FeedItem::Error { message: message.clone(), remediation: None, log: None });
             }
         }
     }
