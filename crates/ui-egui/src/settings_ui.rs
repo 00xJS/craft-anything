@@ -305,6 +305,7 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
         ui.label(RichText::new(tr("No AI is set up yet. The built-in engines still work; an AI adds plain-words answers.")).color(t.text_dim));
     }
     let (mut pick, mut builds, mut extracts, mut toggle, mut remove) = (None, None, None, None, None);
+    let (mut choose_program, mut usual_program) = (None, None);
     // The AI whose Remove was pressed once: asked again before its key is deleted.
     let confirm_id = egui::Id::new("remove-ai");
     let confirming: Option<String> = ui.data(|d| d.get_temp(confirm_id));
@@ -325,6 +326,23 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
                         )
                         .truncate(),
                     );
+                    // An agent app on this computer: which program runs it, for one installed
+                    // where it isn't looked for (#53).
+                    if b.kind == BackendKind::AgentCli && b.ssh_host.as_deref().is_none_or(|h| h.trim().is_empty()) {
+                        let program = app.agent_programs.get(&b.name);
+                        ui.horizontal_wrapped(|ui| {
+                            // The links at the caption's size, so the line reads as one.
+                            ui.style_mut().override_font_id = Some(egui::FontId::proportional(theme::CAPTION));
+                            let text = program.map_or_else(|| tr("Program: found automatically"), |p| trf("Program: {path}", &[("path", p)]));
+                            ui.add(egui::Label::new(RichText::new(text).color(t.text_faint).size(theme::CAPTION)).truncate());
+                            if widgets::link(ui, "Choose…").clicked() {
+                                choose_program = Some(b.name.clone());
+                            }
+                            if program.is_some() && widgets::link(ui, "Find it automatically").clicked() {
+                                usual_program = Some(b.name.clone());
+                            }
+                        });
+                    }
                 });
             });
             ui.add_space(6.0);
@@ -385,6 +403,13 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
     }
     if let Some((name, on)) = toggle {
         app.set_backend_enabled(&name, on);
+    }
+    if let Some(name) = choose_program {
+        app.picking_program_for = Some(name);
+        app.pick(Pick::AgentProgram);
+    }
+    if let Some(name) = usual_program {
+        app.set_agent_program(&name, None);
     }
     if let Some(name) = remove {
         ui.data_mut(|d| d.remove::<String>(confirm_id));

@@ -360,6 +360,21 @@ impl AiHub {
         Ok(true)
     }
 
+    /// The program an agent app runs (`None` or empty: found by its usual name, on PATH and in the
+    /// usual install folders). Returns false when there was no such backend.
+    pub fn set_command(&self, name: &str, command: Option<&str>) -> Result<bool, ToolError> {
+        let mut cfg = self.config();
+        let Some(b) = cfg.backends.iter_mut().find(|b| b.config.name == name) else { return Ok(false) };
+        b.options.command = command.map(str::trim).filter(|c| !c.is_empty()).map(str::to_string);
+        self.save_config(&cfg)?;
+        Ok(true)
+    }
+
+    /// The program each agent app set to one runs, by backend name.
+    pub fn commands(&self) -> std::collections::BTreeMap<String, String> {
+        self.config().backends.into_iter().filter_map(|b| Some((b.config.name, b.options.command?))).collect()
+    }
+
     /// Remove a backend and its stored key. Returns false when there was no such backend.
     pub fn remove_backend(&self, name: &str) -> Result<bool, ToolError> {
         let mut cfg = self.config();

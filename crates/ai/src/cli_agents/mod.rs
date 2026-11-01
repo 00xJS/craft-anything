@@ -469,7 +469,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
                 let _ = tx_err.send(AgentEvent::Output { text: l.to_string() });
             }
         })
-        .remediation(format!("Install {} or set its path in Settings → AI.", display_for(&agent)));
+        .remediation(format!("Install {}, or choose its program in Settings → AI.", display_for(&agent)));
     if let Some(p) = spec.project.as_ref().filter(|_| remote.is_none()) {
         proc = proc.cwd(p);
     }

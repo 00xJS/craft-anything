@@ -503,7 +503,7 @@ impl AcpConversation {
                 }
             })
             .label(name.clone())
-            .remediation(format!("Install {name} or set its path in Settings → AI."))
+            .remediation(format!("Install {name}, or choose its program in Settings → AI."))
             .spawn()?;
         let stdin = proc.take_stdin();
         self.proc = Some(proc);
