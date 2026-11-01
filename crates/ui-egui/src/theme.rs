@@ -238,7 +238,7 @@ pub fn install_fonts(ctx: &egui::Context) {
         }
     }
     // Sans first: a mincho/serif fallback makes Japanese and Chinese UI text look like prose.
-    fallbacks.sort_by_key(|name| fallback_rank(name));
+    let fallbacks = sans_first(fallbacks);
     fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "DMSans".to_owned());
     fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "JetBrainsMono".to_owned());
     for fam in [FontFamily::Proportional, FontFamily::Monospace] {
@@ -253,20 +253,41 @@ pub fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-/// Fallback order: a Japanese UI sans first (BIZ UDPGothic), then other sans faces, then anything
-/// else, with mincho/serif last.
-fn fallback_rank(name: &str) -> u8 {
+/// Fallback faces, most wanted first. A stable sort keeps the manifest's order inside a rank.
+fn sans_first(fallbacks: Vec<String>) -> Vec<String> {
+    let mut ranked: Vec<(FallbackRank, String)> = fallbacks.into_iter().map(|n| (fallback_rank(&n), n)).collect();
+    ranked.sort_by_key(|(rank, _)| *rank);
+    ranked.into_iter().map(|(_, name)| name).collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum FallbackRank {
+    /// A face made for the interface's language (BIZ UDPGothic for Japanese).
+    Local,
+    /// One pan-CJK sans.
+    Cjk,
+    /// Any other sans or gothic.
+    Sans,
+    /// Nothing known about it.
+    Other,
+    /// A book face: last, because interface text set in one reads like prose.
+    Serif,
+}
+
+/// Which face a craft-fonts name looks like, from the family name: a face made for the interface's
+/// language first, a book face last.
+fn fallback_rank(name: &str) -> FallbackRank {
     let n = name.to_ascii_lowercase();
     if n.contains("udpgothic") {
-        0
+        FallbackRank::Local
     } else if n.contains("sans cjk") {
-        1
+        FallbackRank::Cjk
     } else if n.contains("gothic") || n.contains("sans") {
-        2
+        FallbackRank::Sans
     } else if n.contains("mincho") || n.contains("serif") {
-        4
+        FallbackRank::Serif
     } else {
-        3
+        FallbackRank::Other
     }
 }
 
@@ -427,11 +448,14 @@ mod tests {
     /// A Japanese sans comes before a serif, so interface text is not set like a book page.
     #[test]
     fn fallback_fonts_are_sans_first() {
-        let rank = |family: &str| fallback_rank(&format!("craft:{family}:Regular"));
-        assert!(rank("BIZ UDPGothic") < rank("Noto Sans CJK SC"));
-        assert!(rank("Noto Sans CJK SC") < rank("Shippori Mincho"));
-        assert!(rank("BIZ UDMincho") <= rank("Shippori Mincho"));
-        assert_eq!(rank("Shippori Mincho"), 4);
+        let names = |list: &[&str]| list.iter().map(|f| format!("craft:{f}:Regular")).collect::<Vec<_>>();
+        let ordered = sans_first(names(&["Shippori Mincho", "Noto Sans CJK SC", "BIZ UDPGothic", "NanumGothic"]));
+        assert_eq!(ordered[0], "craft:BIZ UDPGothic:Regular");
+        assert_eq!(ordered[1], "craft:Noto Sans CJK SC:Regular");
+        assert_eq!(ordered[2], "craft:NanumGothic:Regular");
+        assert_eq!(ordered[3], "craft:Shippori Mincho:Regular");
+        assert_eq!(fallback_rank("craft:BIZ UDMincho:Regular"), FallbackRank::Serif);
+        assert_eq!(fallback_rank("craft:BIZ UDPGothic:Regular"), FallbackRank::Local);
     }
 
     /// Releases are built with craft-fonts (#19), and so is CI; a build without them has only
