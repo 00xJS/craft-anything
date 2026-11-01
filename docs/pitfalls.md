@@ -115,6 +115,10 @@ after a live run check that the command returned and nothing it started is still
 was copied as `cli-r25.exe`; the CLI finds itself by name (`craft-anything-cli`) to start the
 builder's MCP server, so Claude Code saw no tools and stopped. Copy it under its own name into a
 folder of its own.
+It happened again in a release: the macOS app bundle had only `craft-anything`, with the CLI in
+a separate zip, so every Claude Code build from the 0.2.0 DMG failed the same way (#91). Every
+package that ships the app ships the CLI beside its executable, and the packaging script runs
+the CLI from the finished package before it's published.
 
 **A Windows path with forward slashes read as nothing.** rtl_433 decoded a recording in the shell
 but found no messages, and exited 0, when the test passed `C:/…/x.cu8`; it only reads Windows
