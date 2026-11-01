@@ -1378,6 +1378,64 @@ fn the_front_door_makes_something_or_just_looks_inside() {
 }
 
 #[test]
+fn a_running_build_says_what_it_is_on_and_opens_up_into_its_activity() {
+    use craft_anything_ai::rebuild::{RunEvent, RunSet, StandIns};
+    use craft_anything_ai::{AgentEvent, AiConfig, BackendConfig, BackendEntry, BackendKind, BackendOptions};
+    use craft_anything_engine::workspace::{Step, TargetRef, Workspace};
+    let d = tempfile::tempdir().unwrap();
+    let ws = Workspace::create(d.path(), "Alpha", "A notes app", TargetRef::None).unwrap();
+    let runs = StandIns::new();
+    let (dir, starter) = (d.path().to_path_buf(), runs.starter());
+    let mut h = harness(move || {
+        let engine = demo::engine(Mode::Beginner, true);
+        let mut cfg = AiConfig::default();
+        let agent = BackendConfig {
+            name: "Claude Code".into(),
+            kind: BackendKind::AgentCli,
+            model: "claude-code".into(),
+            base_url: None,
+            ssh_host: None,
+            enabled: true,
+        };
+        cfg.upsert(BackendEntry { config: agent, options: BackendOptions::default() });
+        engine.session().settings.ai = cfg.to_table().unwrap();
+        let mut app = demo::app(engine);
+        app.settings.projects_dir = Some(dir);
+        app.runs = RunSet::new(1).with_starter(starter);
+        app
+    });
+    h.run_steps(2);
+    h.state_mut().open_workspace(ws.clone());
+    h.state_mut().continue_build();
+    h.run_steps(2);
+    let tool = |id: &str, name: &str, input: serde_json::Value| RunEvent::Agent(AgentEvent::ToolStarted { call_id: id.into(), tool: name.into(), input });
+    assert!(runs.send(&ws.root, RunEvent::Step { step: Step::Build, text: "Building the first version…".into() }));
+    assert!(runs.send(&ws.root, tool("a", "Read", serde_json::json!({"file_path": "src/main.rs"}))));
+    assert!(runs.send(
+        &ws.root,
+        RunEvent::Agent(AgentEvent::ToolFinished { call_id: "a".into(), tool: "Read".into(), ok: true, summary: "fn main".into(), evidence_id: None })
+    ));
+    h.run_steps(2);
+    // Between actions it says what it did last.
+    assert!(h.query_all_by_label_contains("Last: Reading src/main.rs").count() >= 1);
+    assert!(runs.send(&ws.root, tool("b", "Bash", serde_json::json!({"command": "cargo test --quiet"}))));
+    h.run_steps(2);
+    assert!(h.query_all_by_label_contains("Now: Running cargo test --quiet").count() >= 1);
+    // Folded until it's wanted, then the lines and the log.
+    assert!(h.query_by_label("Open log").is_none());
+    h.get_by_label("More detail").click();
+    h.run_steps(3);
+    h.get_by_label("Open log");
+    h.get_by_label("Reading src/main.rs: fn main");
+    h.get_by_label("Running cargo test --quiet");
+    assert!(ws.root.join(craft_anything_engine::workspace::ACTIVITY_LOG).is_file());
+    // Finished: the record stays, named for what it is now.
+    assert!(runs.finish(&ws.root));
+    h.run_steps(3);
+    h.get_by_label("What happened in this build");
+}
+
+#[test]
 fn a_build_that_stopped_part_way_offers_to_continue() {
     use craft_anything_ai::rebuild::{RunSet, StandIns};
     use craft_anything_ai::{AiConfig, BackendConfig, BackendEntry, BackendKind, BackendOptions};

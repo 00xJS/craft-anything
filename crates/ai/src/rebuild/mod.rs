@@ -36,6 +36,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
+pub mod activity;
 mod brief;
 mod check;
 pub mod feed;
@@ -182,7 +183,7 @@ pub struct RebuildRun {
     feed: Arc<Mutex<feed::FeedLog>>,
     pub root: PathBuf,
     started: Instant,
-    activity: Arc<feed::Activity>,
+    activity: Arc<activity::Activity>,
 }
 
 impl RebuildRun {
@@ -354,6 +355,26 @@ impl RebuildRun {
     /// How long since the run last had anything to say. Cheap: safe to read while drawing.
     pub fn quiet_for(&self) -> Duration {
         self.activity.quiet_for()
+    }
+
+    /// What it's on now. Cheap: safe to read while drawing.
+    pub fn activity_now(&self) -> activity::ActivityNow {
+        self.activity.now()
+    }
+
+    /// How many lines of its activity are at hand for [`RebuildRun::activity_lines`].
+    pub fn activity_len(&self) -> usize {
+        self.activity.len()
+    }
+
+    /// Some of its latest activity. Cheap: safe to read while drawing.
+    pub fn activity_lines(&self, range: std::ops::Range<usize>) -> Vec<activity::ActivityLine> {
+        self.activity.lines_in(range)
+    }
+
+    /// The file with all of it.
+    pub fn activity_log(&self) -> PathBuf {
+        self.root.join(craft_anything_engine::workspace::ACTIVITY_LOG)
     }
 
     pub fn preview_url(&self) -> Option<String> {

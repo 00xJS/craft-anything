@@ -3,6 +3,7 @@
 
 pub use craft_anything_engine::feed::*;
 
+use super::activity::{Activity, ActivityFile};
 use super::*;
 
 /// Fold one workflow event into the feed.
@@ -52,6 +53,8 @@ pub fn apply(feed: &mut Vec<FeedItem>, e: &RunEvent) {
             Some(FeedItem::Work { notes, .. }) => notes.push(text.clone()),
             _ => feed.push(FeedItem::Work { tools: Vec::new(), notes: vec![text.clone()] }),
         },
+        // For the activity log; it doesn't interrupt what the builder is saying.
+        RunEvent::Agent(AgentEvent::Output { .. }) => {}
         RunEvent::Agent(AgentEvent::Error { message, remediation, log }) => {
             end_stream(feed);
             feed.push(FeedItem::Error { message: message.clone(), remediation: remediation.clone(), log: log.clone() });
@@ -103,31 +106,13 @@ pub(super) struct FeedLog {
     feed: Vec<FeedItem>,
     saved_at: Option<std::time::Instant>,
     activity: Arc<Activity>,
-}
-
-/// When a run last had anything to say, readable while drawing without taking any lock.
-#[derive(Debug)]
-pub(super) struct Activity {
-    began: std::time::Instant,
-    last_ms: std::sync::atomic::AtomicU64,
-}
-
-impl Activity {
-    fn touch(&self) {
-        let ms = u64::try_from(self.began.elapsed().as_millis()).unwrap_or(u64::MAX);
-        self.last_ms.store(ms, Ordering::Relaxed);
-    }
-
-    /// How long it has been since the last event.
-    pub(super) fn quiet_for(&self) -> Duration {
-        self.began.elapsed().saturating_sub(Duration::from_millis(self.last_ms.load(Ordering::Relaxed)))
-    }
+    log: ActivityFile,
 }
 
 impl FeedLog {
     pub(super) fn open(ws: &Workspace) -> FeedLog {
-        let activity = Arc::new(Activity { began: std::time::Instant::now(), last_ms: 0.into() });
-        FeedLog { root: ws.root.clone(), feed: load(ws), saved_at: None, activity }
+        let activity = Arc::new(Activity::new(vec![ws.app_dir(), ws.root.clone()]));
+        FeedLog { root: ws.root.clone(), feed: load(ws), saved_at: None, activity, log: ActivityFile::new(&ws.root) }
     }
 
     pub(super) fn activity(&self) -> Arc<Activity> {
@@ -135,7 +120,8 @@ impl FeedLog {
     }
 
     pub(super) fn record(&mut self, e: &RunEvent) {
-        self.activity.touch();
+        let lines = self.activity.record(e);
+        self.log.append(&lines, &self.activity);
         apply(&mut self.feed, e);
         self.save(matches!(e, RunEvent::Finished { .. }));
     }
@@ -184,10 +170,11 @@ mod tests {
         let ws = Workspace::create(d.path(), "x", "y", TargetRef::None).unwrap();
         let mut log = FeedLog::open(&ws);
         let activity = log.activity();
-        std::thread::sleep(Duration::from_millis(30));
-        assert!(activity.quiet_for() >= Duration::from_millis(30));
+        // Well apart: recording saves files, which takes a while on a busy machine.
+        std::thread::sleep(Duration::from_millis(1500));
+        assert!(activity.quiet_for() >= Duration::from_millis(1500));
         log.record(&RunEvent::Step { step: Step::Study, text: "Looking".into() });
-        assert!(activity.quiet_for() < Duration::from_millis(30));
+        assert!(activity.quiet_for() < Duration::from_millis(1500));
     }
 
     #[test]

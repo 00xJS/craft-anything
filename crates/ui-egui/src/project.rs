@@ -9,6 +9,7 @@ use crate::state::{FeedItem, MakeDraft, Modal, PlanStatus, PlanStep, Screen};
 use crate::theme::{self, Tokens};
 use crate::{CraftApp, Done, chat, icons, prompt_box, widgets};
 use craft_anything_ai::AgentEvent;
+use craft_anything_ai::rebuild::activity::{Action, ActivityNow, LineKind};
 use craft_anything_ai::rebuild::feed::{self, apply};
 use craft_anything_ai::rebuild::{self, AppKind, KindRegistry, KindWords, Note, RebuildRun, RunEvent, RunOptions, Started, Step, Stopped, TargetKind};
 use craft_anything_engine::inbox::{Answer, Inbox, Request, RequestKind};
@@ -947,7 +948,9 @@ fn feed(app: &mut CraftApp, ui: &mut Ui, ws: &Workspace) {
     let items = &app.state.feed;
     // With a plan pinned below, it shows the work and the clock; one progress display, not two.
     let pinned = plan(items).is_some();
-    if app.running() && !pinned && !matches!(items.last(), Some(FeedItem::Agent { streaming: true, .. }) | Some(FeedItem::Ask { answer: None, .. })) {
+    let status_row =
+        app.running() && !pinned && !matches!(items.last(), Some(FeedItem::Agent { streaming: true, .. }) | Some(FeedItem::Ask { answer: None, .. }));
+    if status_row {
         // What it's on (the latest step) and how much it has done since, so progress is visible
         // even in Simple mode where the tool-by-tool work is hidden.
         let step = items.iter().rposition(|i| matches!(i, FeedItem::Step { .. }));
@@ -966,28 +969,113 @@ fn feed(app: &mut CraftApp, ui: &mut Ui, ws: &Workspace) {
                 _ => 0,
             })
             .sum();
-        // The action under way, in words when it's one of ours.
-        let current = items[step.map_or(0, |s| s + 1)..].iter().rev().find_map(|i| match i {
-            FeedItem::Work { tools, .. } => tools.iter().rev().find(|(_, d)| d.is_none()).map(|(t, _)| t.as_str()),
-            _ => None,
-        });
-        let current = current.map(|t| app.engine.registry().canonical(t).and_then(|id| app.engine.registry().get(id)).map_or(t, |s| s.title));
-        let detail = [
-            current.map(|c| crate::i18n::trf("Now: {what}", &[("what", c)])),
-            (done > 0).then(|| crate::i18n::trf("{n} actions done so far", &[("n", &done.to_string())])),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join("  ·  ");
+        // The action under way: the command or file it's on, not only how many went before.
+        let now = app.open_run().map(RebuildRun::activity_now);
+        let detail =
+            [now.as_ref().and_then(|n| now_words(app, n)), (done > 0).then(|| crate::i18n::trf("{n} actions done so far", &[("n", &done.to_string())]))]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("  ·  ");
         let (began, quiet) = app.open_run().map_or((None, None), |r| (Some(r.started()), Some(r.quiet_for())));
         widgets::working_since(ui, title.unwrap_or("Working on it"), (!detail.is_empty()).then_some(detail.as_str()), began, quiet);
     }
+    run_details(app, ui, status_row);
     for (id, a, shown) in answers {
         app.answer_request(&id, a, shown);
     }
     if retry {
         app.follow_up(None);
+    }
+}
+
+/// How much of a command or a path fits on the status line; the details have the rest.
+const NOW_LENGTH: usize = 90;
+
+/// "Now: Running cargo test (42s)", or what finished last between actions.
+fn now_words(app: &CraftApp, now: &ActivityNow) -> Option<String> {
+    let words = |a: &Action| {
+        let registry = app.engine.registry();
+        let w = a.words_with(|tool| registry.canonical(tool).and_then(|id| registry.get(id)).map(|s| s.title.to_string()));
+        match w.char_indices().nth(NOW_LENGTH) {
+            Some((end, _)) => format!("{}…", w.get(..end).unwrap_or_default()),
+            None => w,
+        }
+    };
+    match (&now.current, &now.last) {
+        (Some((a, took)), _) => {
+            let line = trf("Now: {what} ({time})", &[("what", &words(a)), ("time", &crate::usage::duration_words(*took))]);
+            Some(if now.others > 0 { trf("{line}, and {n} more", &[("line", &line), ("n", &now.others.to_string())]) } else { line })
+        }
+        (None, Some(a)) => Some(trf("Last: {what}", &[("what", &words(a))])),
+        (None, None) => None,
+    }
+}
+
+/// The run's activity, folded away until it's wanted: its latest lines as they arrive, and the
+/// whole log to open. Inside the feed's scroll area, so it can never push the prompt box away.
+/// `status_row`: the row above already says what it's on.
+fn run_details(app: &mut CraftApp, ui: &mut Ui, status_row: bool) {
+    const LINE: f32 = 18.0;
+    const MOST_SHOWN: f32 = 260.0;
+    let t = Tokens::get(ui.ctx());
+    let running = app.running();
+    let Some(run) = app.open_run() else { return };
+    let count = run.activity_len();
+    if count == 0 {
+        return;
+    }
+    let title = if !running {
+        tr("What happened in this build")
+    } else if status_row {
+        tr("More detail")
+    } else {
+        now_words(app, &run.activity_now()).unwrap_or_else(|| tr("More detail"))
+    };
+    let log = run.activity_log();
+    let mut open_log = false;
+    egui::CollapsingHeader::new(RichText::new(title).color(t.text_dim).size(theme::CAPTION)).id_salt("run_details").icon(widgets::disclosure_icon).show(
+        ui,
+        |ui| {
+            widgets::card(&t).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                // The rows are exactly this tall, or the scroll area miscounts them.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.spacing_mut().interact_size.y = LINE;
+                egui::ScrollArea::vertical().id_salt("run_details_lines").max_height(MOST_SHOWN).auto_shrink([false, true]).stick_to_bottom(true).show_rows(
+                    ui,
+                    LINE,
+                    count,
+                    |ui, range| {
+                        for line in run.activity_lines(range) {
+                            let (colour, words) = match line.kind {
+                                LineKind::Failed | LineKind::Problem => (t.warning, t.text),
+                                LineKind::Done => (t.success, t.text_dim),
+                                LineKind::Stage => (t.accent_ink, t.text),
+                                LineKind::Started | LineKind::Said => (t.text_dim, t.text),
+                                LineKind::Note | LineKind::Output => (t.text_faint, t.text_dim),
+                            };
+                            ui.horizontal(|ui| {
+                                ui.set_height(LINE);
+                                ui.label(RichText::new(crate::usage::duration_words(line.at)).font(theme::mono(11.5)).color(t.text_faint));
+                                ui.label(RichText::new(line.kind.tag()).font(theme::mono(11.5)).color(colour));
+                                ui.add(egui::Label::new(RichText::new(&line.text).font(theme::mono(11.5)).color(words)).truncate()).on_hover_text(&line.text);
+                            });
+                        }
+                    },
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr("A command's output shows here when it finishes.")).color(t.text_faint).size(theme::CAPTION));
+                open_log = widgets::open_log_button(ui, &log);
+            });
+        },
+    );
+    if running {
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+    }
+    if open_log {
+        app.open_log(&log);
     }
 }
 

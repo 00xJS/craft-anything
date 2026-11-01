@@ -145,9 +145,9 @@ fn run(cli: &Cli, a: &RebuildArgs) -> Result<bool, ToolError> {
                     print!("{text}");
                     line_open = !text.ends_with('\n');
                 }
-                RunEvent::Agent(AgentEvent::ToolStarted { tool, .. }) => {
+                RunEvent::Agent(AgentEvent::ToolStarted { tool, input, .. }) => {
                     end_line(&mut line_open);
-                    println!("  · {tool}");
+                    println!("  · {}", rebuild::activity::describe(&tool, &input, &[]).words());
                 }
                 RunEvent::Agent(AgentEvent::Error { message, remediation, log }) => {
                     end_line(&mut line_open);

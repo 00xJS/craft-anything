@@ -779,6 +779,14 @@ Gaps found while using the app for real projects.
       so the project page says "AI cost (estimate)" with a note that it isn't the bill, and the
       title bar says "(estimate)"; what an API key was charged is kept apart (`api_billed_usd`
       in usage.json; older files count as estimates)
+- [x] A running build says what it's on ("Now: Running cargo test (42s)", the last action between
+      them), and "More detail" opens its activity as it arrives: stages, every command and file
+      with how it ended, what the builder said and what programs printed outside the
+      conversation, with secrets hidden. Kept in `build-activity.log` ("Open log",
+      `rebuild_activity_show`, and every tool the CLI's `rebuild` prints)
+- [ ] Show a command's output while it runs: Claude Code reports a tool's result only when it
+      ends, so a long `cargo build` is one quiet line until then. Watching the agent's child
+      processes from outside could say what's running and for how long
 - [ ] Sometimes starting the app shows nothing: find why from `desktop.log` (a GOG Galaxy Vulkan
       overlay layer loads into the app; try DX12 first on Windows if that's it)
 - [x] Try again picks up where a run stopped instead of starting over: a project whose builder

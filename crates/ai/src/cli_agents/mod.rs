@@ -435,7 +435,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
     let _ =
         tx.send(AgentEvent::Status { text: format!("Asking {}{}…", display_for(&agent), remote.as_ref().map(|h| format!(" on {h}")).unwrap_or_default()) });
     let parser = Arc::new(Mutex::new(StreamParser::new(adapter.clone())));
-    let (p2, tx2) = (parser.clone(), tx.clone());
+    let (p2, tx2, tx_err) = (parser.clone(), tx.clone(), tx.clone());
     let stop2 = stop.clone();
     // A builder turn may take hours and sit silent for long stretches: Ghidra's first look at a big
     // game, an engine build, or the person answering a question. Claude Code's own limits are
@@ -462,6 +462,11 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
         .on_stdout_line(move |l| {
             for e in p2.lock().unwrap_or_else(PoisonError::into_inner).line(l) {
                 let _ = tx2.send(e);
+            }
+        })
+        .on_stderr_line(move |l| {
+            if !l.trim().is_empty() {
+                let _ = tx_err.send(AgentEvent::Output { text: l.to_string() });
             }
         })
         .remediation(format!("Install {} or set its path in Settings → AI.", display_for(&agent)));
