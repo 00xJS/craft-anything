@@ -270,8 +270,9 @@ impl Process {
     /// Start the child and supervise it on a background thread.
     pub fn spawn(self) -> Result<RunningProcess, ToolError> {
         let name = self.display();
-        let mut wrap = CommandWrap::with_new(&self.program, |cmd| {
-            cmd.args(&self.args);
+        let (program, lead) = crate::which::launch_target(&self.program);
+        let mut wrap = CommandWrap::with_new(&program, |cmd| {
+            cmd.args(&lead).args(&self.args);
             if self.env_clear {
                 cmd.env_clear();
             } else {

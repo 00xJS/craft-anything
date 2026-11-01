@@ -135,6 +135,12 @@ found; "Built by" then fell back to "Claude Code on github.com-work", an `~/.ssh
 for a second GitHub key, read as a computer to build on. Look programs up and start them with
 `which::search_path` (`Process` and `Launch` do), and leave git servers out of SSH hosts.
 
+**Found on Windows, but "isn't on your PATH" when run.** npm installs Gemini CLI, Codex and often
+Claude Code as `gemini.cmd`-style shims; `which` finds them through `PATHEXT`, but Rust starts
+only `.exe` files by bare name, so every build failed (#18). Through `cmd.exe` a prompt with line
+breaks or over 8191 characters wouldn't arrive anyway. `Process` runs an npm shim's script with
+Node directly (`which::launch_target`); test a new program on Windows with a multi-line argument.
+
 **A first analysis that waited for a lock it could never take.** Ghidra's analysis lock is created
 with `create_new` in `ghidra-cache/`, which only existed on machines that had used it before; on a
 fresh store the create failed and the loop read that as "someone else holds it" until the
