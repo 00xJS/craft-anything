@@ -442,6 +442,26 @@ pub fn output_excerpt(text: &str) -> String {
         .join("\n")
 }
 
+/// The line of a program's output that says what went wrong: the last one, or, when a crash ends
+/// with a stack trace, the line above its frames (a trace can be longer than what's shown, and
+/// Node.js prints its version after it).
+fn headline(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let above_trace = lines.iter().rposition(|l| is_stack_frame(l)).and_then(|last| {
+        let frames_start = lines.get(..=last).unwrap_or_default().iter().rposition(|l| !is_stack_frame(l))?;
+        lines.get(frames_start)
+    });
+    above_trace.or(lines.last()).map(|l| l.to_string()).unwrap_or_default()
+}
+
+/// A stack frame: `at f (/app/chunk.js:96:6417)`, `at node:internal/main:28:49`,
+/// `at com.x.Y.m(Y.java:12)`, or Java's `... 3 more`.
+fn is_stack_frame(line: &str) -> bool {
+    let at_line =
+        line.starts_with("at ") && line.trim_end_matches(')').rsplit(':').next().is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    at_line || (line.starts_with("... ") && line.ends_with(" more"))
+}
+
 /// The error for a non-zero exit, with the last part of stderr (or stdout) for context.
 pub fn nonzero_error(name: &str, out: &Output) -> ToolError {
     nonzero_error_with(name, out, None)
@@ -452,7 +472,7 @@ pub fn nonzero_error_with(name: &str, out: &Output, command: Option<&str>) -> To
     let code = out.code.map(|c| c.to_string()).unwrap_or_else(|| "a signal".into());
     let stderr_tail = tail(&out.stderr, 2000);
     let context = if stderr_tail.trim().is_empty() { tail(&out.stdout, 2000) } else { stderr_tail };
-    let first_line = context.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or_default().trim().to_string();
+    let first_line = headline(&String::from_utf8_lossy(if out.stderr.iter().all(u8::is_ascii_whitespace) { &out.stdout } else { &out.stderr }));
     let msg =
         if first_line.is_empty() { format!("{name} stopped with exit code {code}.") } else { format!("{name} stopped with exit code {code}: {first_line}") };
     let excerpt = output_excerpt(&context);
@@ -1117,6 +1137,38 @@ mod launch_tests {
         } else {
             assert_eq!(o, "xdg-open");
         }
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn a_crash_is_named_by_its_error_not_its_last_stack_frame() {
+        let bun = "error: No provider is set up\n      at loadConfig (/$bunfs/root/chunk-qqmzrn42.js:12:40)\n      at <anonymous> (/$bunfs/root/chunk-qqmzrn42.js:96:6417)\n";
+        assert_eq!(headline(bun), "error: No provider is set up");
+        let mut node = String::from("/app/cli.js:10\n    throw new Error(\"x\");\n    ^\n\nError: Not signed in\n");
+        for i in 0..100 {
+            node.push_str(&format!("    at step{i} (/app/cli.js:{i}:1)\n"));
+        }
+        node.push_str("    at node:internal/main/run_main_module:28:49\n\nNode.js v20.11.0\n");
+        assert_eq!(headline(&node), "Error: Not signed in", "found above a trace longer than the excerpt, footer skipped");
+        let java = "Exception in thread \"main\" java.lang.IllegalStateException: outer\n\tat a.B.c(B.java:3)\nCaused by: java.io.IOException: disk full\n\tat a.B.d(B.java:9)\n\t... 3 more\n";
+        assert_eq!(headline(java), "Caused by: java.io.IOException: disk full");
+        // No trace: the last line, even one that starts with "at".
+        assert_eq!(headline("warming up\nat least one file is needed\n\n"), "at least one file is needed");
+        assert_eq!(headline("  \n"), "");
+        let out = Output {
+            code: Some(1),
+            success: false,
+            stdout: Vec::new(),
+            stderr: bun.into(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            duration: Duration::ZERO,
+        };
+        assert_eq!(nonzero_error("OpenCode", &out).message, "OpenCode stopped with exit code 1: error: No provider is set up");
     }
 }
 
