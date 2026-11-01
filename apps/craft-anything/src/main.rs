@@ -66,7 +66,20 @@ fn main() -> eframe::Result {
     );
     match &run {
         Ok(()) => log::info!("closed"),
-        Err(e) => log::error!("the window couldn't start: {e}"),
+        Err(e) => {
+            log::error!("the window couldn't start: {e}");
+            // Without a window the app would just vanish (#166): say why, and where the log is.
+            let log = craft_anything_engine::settings::config_dir().join("desktop.log");
+            let _ = rfd::MessageDialog::new()
+                .set_level(rfd::MessageLevel::Error)
+                .set_title("Craft Anything couldn't open its window")
+                .set_description(format!(
+                    "{e}\n\nUpdating your graphics driver often fixes this. What happened is written to {}; please attach it if you report this.",
+                    log.display()
+                ))
+                .set_buttons(rfd::MessageButtons::Ok)
+                .show();
+        }
     }
     run
 }
