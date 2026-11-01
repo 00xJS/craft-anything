@@ -225,7 +225,7 @@ fn walk(data: &[u8], sb: &Sb, ino: u32, parent: &str, limits: &Limits, img: &mut
     seen.push(ino);
     let Some(inode_off) = inode_offset(data, sb, ino) else { return };
     let r = Reader::new(data);
-    let io = usize::try_from(inode_off).ok().filter(|&o| o + 128 <= data.len());
+    let io = usize::try_from(inode_off).ok().filter(|&o| o.checked_add(128).is_some_and(|end| end <= data.len()));
     let Some(io) = io else { return };
     let size = u64::from(r.u32_le(io + 4).unwrap_or(0)) | (u64::from(r.u32_le(io + 108).unwrap_or(0)) << 32);
     let flags = r.u32_le(io + 32).unwrap_or(0);
@@ -263,7 +263,10 @@ fn walk(data: &[u8], sb: &Sb, ino: u32, parent: &str, limits: &Limits, img: &mut
 #[allow(clippy::too_many_arguments)]
 fn child_entry(data: &[u8], sb: &Sb, ino: u32, ftype: u8, path: String, limits: &Limits, img: &mut FsImage, depth: usize, seen: &mut Vec<u32>) {
     // ftype: 1=file, 2=dir, 7=symlink (when the filetype feature is on); fall back to i_mode.
-    let Some(io) = inode_offset(data, sb, ino).and_then(|o| usize::try_from(o).ok()).filter(|&o| o + 128 <= data.len()) else { return };
+    let Some(io) = inode_offset(data, sb, ino).and_then(|o| usize::try_from(o).ok()).filter(|&o| o.checked_add(128).is_some_and(|end| end <= data.len()))
+    else {
+        return;
+    };
     let r = Reader::new(data);
     let mode = r.u16_le(io).unwrap_or(0) & 0xf000;
     let is_dir = ftype == 2 || mode == 0x4000;
@@ -326,6 +329,37 @@ mod tests {
     #[test]
     fn reads_ext4_extents() {
         check(true);
+    }
+
+    /// Switch to 64-bit group descriptors and send `group`'s inode table to the last
+    /// 1 KiB block of the address space, so an inode there starts within 128 bytes of `usize::MAX`.
+    fn point_table_at_the_end(img: &mut [u8], group: usize) {
+        img[1024 + 96..1024 + 100].copy_from_slice(&0x80u32.to_le_bytes()); // incompat: 64-bit
+        img[1024 + 0xfe..1024 + 0x100].copy_from_slice(&64u16.to_le_bytes()); // descriptor size
+        let d = 2048 + group * 64;
+        img[d + 8..d + 12].copy_from_slice(&u32::MAX.to_le_bytes());
+        img[d + 40..d + 44].copy_from_slice(&0x003f_ffffu32.to_le_bytes());
+    }
+
+    #[test]
+    fn root_inode_at_the_end_of_the_address_space_is_refused() {
+        let mut base = craft_anything_testkit::firmware::ext_image(false);
+        base[1024 + 88..1024 + 90].copy_from_slice(&1000u16.to_le_bytes()); // inode size
+        point_table_at_the_end(&mut base, 0);
+        let img = read(&base, &Limits::default());
+        assert!(img.entries.is_empty(), "{:?}", img.entries);
+    }
+
+    #[test]
+    fn child_inode_at_the_end_of_the_address_space_is_skipped() {
+        let mut base = craft_anything_testkit::firmware::ext_image(false);
+        point_table_at_the_end(&mut base, 1);
+        // Point "hello.txt" at inode 24: group 1, slot 7, which starts 128 bytes before the end.
+        let at = base.windows(9).position(|w| w == b"hello.txt").expect("the fixture lists hello.txt");
+        base[at - 8..at - 4].copy_from_slice(&24u32.to_le_bytes());
+        let img = read(&base, &Limits::default());
+        assert!(img.entries.iter().all(|e| e.path != "hello.txt"), "{:?}", img.entries);
+        assert!(img.entries.iter().any(|e| e.path == "sub"), "the rest of the directory is still read");
     }
 
     #[test]

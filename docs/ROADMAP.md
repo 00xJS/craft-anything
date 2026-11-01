@@ -146,6 +146,10 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
 - [x] Missing `database` icon for SQLite in the UI (`kind_icon`)
 - [x] Deduplicate the five private `fn spec(` helpers in the tool modules
 - [x] rustfmt drift on main (11 files)
+- [x] Checked arithmetic on file offsets in `fsread/extfs.rs`: an inode offset near `usize::MAX`
+      overflows `o + 128` (two sites), found by a lint scan of `crates/formats` (#42)
+- [ ] `macho.rs` `method_list`: `list + 8 + i * entsize` adds to a pointer read from the file, so a
+      segment that ends at `u64::MAX` overflows it (a lint scan flagged it; not reproduced yet)
 
 ### R0.8 Tests never touch the real machine
 Owner: open · Status: done, except protecting `main` (a maintainer setting)
