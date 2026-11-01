@@ -5,6 +5,8 @@ use craft_anything_evidence::{ErrorCode, ToolError};
 use craft_anything_platform::process::Cancel;
 use std::path::{Path, PathBuf};
 
+/// Ghidra's engine id, as the engine table, Settings and every listing name it.
+pub const ID: &str = "ghidra";
 /// The Ghidra release Craft Anything installs (it needs Java 21).
 pub const VERSION: &str = "12.1.4";
 /// What the person downloads, for the question we ask first (Ghidra 543 MB + Java 196 MB).
@@ -20,7 +22,7 @@ fn pin(id: &str) -> Option<&'static crate::Pin> {
 /// Whether [`install`] works on this computer: Ghidra and its Java both have a pin here (Java is
 /// pinned for Windows x64 and for Linux and macOS on x64 and arm64).
 pub fn can_install() -> bool {
-    pin("ghidra").is_some() && pin("java").is_some()
+    pin(ID).is_some() && pin("java").is_some()
 }
 
 /// Ghidra's headless launcher: in the folder the person picked (Ghidra's own folder, or one that
@@ -34,7 +36,7 @@ pub fn headless(install_dir: Option<&Path>, store: &Path) -> Option<PathBuf> {
             return Some(p);
         }
     }
-    in_child(&store.join("ghidra"), launcher).or_else(|| crate::find_on_path(&["analyzeHeadless.bat", "analyzeHeadless"]))
+    in_child(&store.join(ID), launcher).or_else(|| crate::find_on_path(&["analyzeHeadless.bat", "analyzeHeadless"]))
 }
 
 /// The Java runtime to run Ghidra with: the one the person set, else the managed one. `None` lets
@@ -47,7 +49,7 @@ pub fn java_home(java_home: Option<&Path>, store: &Path) -> Option<PathBuf> {
 /// store, then point Ghidra at that Java. `progress` gets (what, bytes so far, total); a step with
 /// no bytes (0, `None`) is setting up. Returns the headless launcher.
 pub fn install(store: &Path, cancel: Option<Cancel>, progress: &dyn Fn(&str, u64, Option<u64>)) -> Result<PathBuf, ToolError> {
-    let (Some(ghidra), Some(java)) = (pin("ghidra"), pin("java")) else {
+    let (Some(ghidra), Some(java)) = (pin(ID), pin("java")) else {
         return Err(ToolError::new(ErrorCode::NotSupported, "Ghidra can't be installed for you on this computer.")
             .with_remediation(format!("Install Ghidra {VERSION} from {PAGE}, then choose its folder in Settings → Engines.")));
     };

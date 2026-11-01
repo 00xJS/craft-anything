@@ -54,12 +54,8 @@ pub fn locate(id: &str, overrides: &dyn ToolPathLookup, store: &Path) -> Option<
     }
     let e = engine(id)?;
     let exes = e.host_exes();
-    for exe in exes {
-        for candidate in [store.join(id).join("bin").join(exe), store.join(id).join(exe)] {
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
+    if let Some(p) = in_managed(&store.join(id), exes) {
+        return Some(p);
     }
     // A single-file install (a .jar) is found by the name its pin saved it under.
     for pin in e.pins() {
@@ -70,6 +66,19 @@ pub fn locate(id: &str, overrides: &dyn ToolPathLookup, store: &Path) -> Option<
         }
     }
     find_on_path(exes).or_else(|| e.known_install_paths().into_iter().find(|p| p.is_file()))
+}
+
+/// An executable in a managed install folder: `<dir>/<exe>`, `<dir>/bin/<exe>` or
+/// `<dir>/support/<exe>`, in `dir` itself or in one of its sub-folders, newest name first (an
+/// archive unpacks into one top folder, often versioned: `ghidra_12.1.4_PUBLIC/support/…`).
+fn in_managed(dir: &Path, exes: &[&str]) -> Option<PathBuf> {
+    let here = |d: &Path| exes.iter().flat_map(|exe| [d.join(exe), d.join("bin").join(exe), d.join("support").join(exe)]).find(|p| p.is_file());
+    if let Some(p) = here(dir) {
+        return Some(p);
+    }
+    let mut subs: Vec<PathBuf> = std::fs::read_dir(dir).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    subs.sort();
+    subs.iter().rev().find_map(|d| here(d))
 }
 
 /// Standard install locations for programs that don't put themselves on PATH (browsers on
@@ -106,6 +115,27 @@ mod tests {
     fn unknown_engine_is_none() {
         assert!(locate("definitely-not-an-engine", &NoOverrides, Path::new("/nonexistent")).is_none());
         assert_eq!(display_name("adb"), "Android platform tools (adb)");
+    }
+
+    /// Ghidra's zip unpacks into `<store>/ghidra/ghidra_<version>_PUBLIC/`, with the launcher in
+    /// `support/`; `engines_list` said "not found" for an install that Deep mode was using.
+    #[test]
+    fn a_managed_install_in_a_versioned_folder_is_found() {
+        let store = tempfile::tempdir().unwrap();
+        let exe = if cfg!(windows) { "analyzeHeadless.bat" } else { "analyzeHeadless" };
+        let launcher = store.path().join("ghidra").join("ghidra_12.1.4_PUBLIC").join("support").join(exe);
+        std::fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+        std::fs::write(&launcher, b"x").unwrap();
+        assert_eq!(locate("ghidra", &NoOverrides, store.path()), Some(launcher));
+        // An older unpack beside it loses to the newest name.
+        let newer = store.path().join("ghidra").join("ghidra_12.2.0_PUBLIC").join("support").join(exe);
+        std::fs::create_dir_all(newer.parent().unwrap()).unwrap();
+        std::fs::write(&newer, b"x").unwrap();
+        assert_eq!(locate("ghidra", &NoOverrides, store.path()), Some(newer));
+        // Nothing but folders: still none, not a panic.
+        let empty = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(empty.path().join("ghidra").join("ghidra_12.1.4_PUBLIC")).unwrap();
+        assert!(locate("ghidra", &NoOverrides, empty.path()).is_none());
     }
 
     #[test]

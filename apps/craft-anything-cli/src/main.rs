@@ -341,7 +341,7 @@ fn capabilities(cli: &Cli, f: Format) -> u8 {
     let engines: Vec<Value> = craft_anything_engines::ENGINES
         .iter()
         .map(|e| {
-            let found = craft_anything_engines::locate(e.id, &session.settings.engines.tools, &session.settings.engine_store_dir());
+            let found = session.settings.engine_path(e.id);
             json!({"id": e.id, "name": e.name, "needed_for": e.needed_for, "found": found.is_some(), "path": found, "installable_here": e.host_pin().is_some()})
         })
         .collect();

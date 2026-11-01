@@ -176,7 +176,7 @@ impl Engine {
                     Availability::no("This needs Deep mode (with Ghidra), and you're in Clean room mode.", "Turn on Deep mode in the title bar or Settings.")
                 }
             }
-            Requires::Engine(id) => match craft_anything_engines::locate(id, &session.settings.engines.tools, &session.settings.engine_store_dir()) {
+            Requires::Engine(id) => match session.settings.engine_path(id) {
                 Some(_) => Availability::ok(),
                 None => Availability::no(
                     format!("This needs {} installed.", craft_anything_engines::display_name(id)),

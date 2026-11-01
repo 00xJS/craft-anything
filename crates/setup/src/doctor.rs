@@ -155,10 +155,9 @@ pub fn doctor(host: &Host, req: &DoctorRequest) -> DoctorReport {
     // Optional engines.
     if req.engines {
         let settings = craft_anything_engine::Settings::load();
-        let store = settings.engine_store_dir();
         for e in craft_anything_engines::ENGINES {
             let name = format!("engine:{}", e.id);
-            checks.push(match craft_anything_engines::locate(e.id, &settings.engines.tools, &store) {
+            checks.push(match settings.engine_path(e.id) {
                 Some(p) => Check::new(name, CheckStatus::Ok, format!("{}: {}", e.name, p.display())),
                 None => Check::new(name, CheckStatus::Info, format!("{} not found (optional; {}).", e.name, e.needed_for)),
             });

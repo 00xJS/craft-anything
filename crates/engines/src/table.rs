@@ -317,7 +317,7 @@ const fn manual(
 /// (the `tool_paths!` list in the engine crate, which a test keeps identical to this order).
 pub const ENGINES: &[ExternalEngine] = &[
     ExternalEngine {
-        id: "ghidra",
+        id: crate::ghidra::get::ID,
         name: "Ghidra",
         needed_for: "Deep mode: richer decompiled code",
         exes: &["analyzeHeadless"],

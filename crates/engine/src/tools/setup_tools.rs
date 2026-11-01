@@ -392,7 +392,7 @@ fn engines_list(ctx: &mut Ctx<'_>, _params: Value) -> Result<ToolOutput, ToolErr
                 "id": e.id,
                 "name": e.name,
                 "needed_for": e.needed_for,
-                "found": craft_anything_engines::locate(e.id, &s.engines.tools, &store).map(|p| p.display().to_string()),
+                "found": s.engine_path(e.id).map(|p| p.display().to_string()),
                 "installable_here": e.host_pin().is_some(),
             })
         })
@@ -611,6 +611,25 @@ mod tests {
         // Never a real download in tests: an engine nobody knows is refused before any network use.
         // (Unity/Unreal would download and open the vendor's installer on Windows.)
         assert!(e.call("engines_install", json!({"engine": "no-such-engine"}), CallOptions::new(Caller::Cli)).is_err());
+    }
+
+    /// A Ghidra chosen through its own folder setting is what Deep mode runs, so the listing says
+    /// it's there (it once said "not found" while `native_function_pseudocode` used it).
+    #[test]
+    fn a_ghidra_folder_setting_shows_in_engines_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = if cfg!(windows) { "analyzeHeadless.bat" } else { "analyzeHeadless" };
+        let launcher = dir.path().join("support").join(exe);
+        std::fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+        std::fs::write(&launcher, b"x").unwrap();
+        let mut s = crate::testing::session();
+        s.settings.engines.ghidra.install_dir = Some(dir.path().to_path_buf());
+        assert_eq!(s.settings.engine_path("ghidra"), Some(launcher.clone()));
+        let e = Engine::new(s);
+        let out = e.call("engines_list", json!({}), CallOptions::new(Caller::Cli)).unwrap().to_json();
+        let ghidra = out["result"]["engines"].as_array().unwrap().iter().find(|v| v["id"] == "ghidra").unwrap();
+        assert_eq!(ghidra["found"].as_str(), Some(launcher.display().to_string().as_str()));
+        assert_eq!(out["result"]["deep_mode"]["ghidra"], ghidra["found"]);
     }
 
     #[test]

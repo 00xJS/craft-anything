@@ -384,6 +384,18 @@ impl Settings {
     pub fn ghidra_java(&self) -> Option<PathBuf> {
         craft_anything_engines::ghidra::get::java_home(self.engines.ghidra.java_home.as_deref(), &self.engine_store_dir())
     }
+
+    /// Where an external engine is on this computer, honouring every setting that can name one:
+    /// the path overrides (`engines.tools`) and, for Ghidra, its own folder setting
+    /// (`engines.ghidra.install_dir`). The one lookup behind every listing (`engines_list`,
+    /// `doctor`, `capabilities`) and behind `Requires::Engine`, so they all agree with what Deep
+    /// mode actually runs.
+    pub fn engine_path(&self, id: &str) -> Option<PathBuf> {
+        if id == craft_anything_engines::ghidra::get::ID {
+            return self.ghidra_launcher();
+        }
+        craft_anything_engines::locate(id, &self.engines.tools, &self.engine_store_dir())
+    }
 }
 
 #[cfg(test)]
