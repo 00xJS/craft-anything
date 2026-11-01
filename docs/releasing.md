@@ -46,6 +46,9 @@ Plus `SHA256SUMS.txt`.
   settings live in `CraftAnythingData\` (`crates/engine/src/settings.rs`).
 - **Flatpak** grants `--share=network` (AI backends, engine downloads) and `--filesystem=home:ro`
   (files to inspect, passed by path).
-- **Fonts** are committed in `assets/fonts` (OFL-1.1). Every package ships their `OFL-*.txt`. The
-  shared craft-fonts input isn't used.
+- **Fonts** are committed in `assets/fonts` (OFL-1.1). Release and CI builds also embed craft-fonts
+  at the commit pinned in `release.yml` and `ci.yml` (`CRAFT_FONTS_DIR`, `CRAFT_FONTS_REQUIRED=1`),
+  the fallbacks for Korean, Chinese, Japanese, Thai, Arabic, Hebrew, Devanagari and symbols; a
+  build without them shows those as boxes (#19). Every package ships all their licences
+  (`OFL-*.txt`, craft-fonts' as `OFL-<font>.txt`).
 - **The WiX UpgradeCode** `8F69A8B5-4384-479B-B3FF-93C5374BCA51` belongs to Craft Anything for good.

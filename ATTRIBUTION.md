@@ -46,5 +46,6 @@ the open-source licence; see `docs/brand/LICENSE-brand.txt`.
 
 ## Optional build-time fonts
 
-Builds made with `CRAFT_FONTS_DIR` (craft-fonts) also embed the fonts in that folder; their
-licences ship with that folder and must be added to this list for such builds.
+Builds made with `CRAFT_FONTS_DIR` (craft-fonts), releases among them, also embed the fonts in
+that folder (all OFL-1.1). Their packages ship each one's licence as `OFL-<font>.txt`; craft-fonts'
+own `ATTRIBUTION.md` names their authors and pinned sources.

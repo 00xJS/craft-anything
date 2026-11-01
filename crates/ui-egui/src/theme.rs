@@ -405,6 +405,36 @@ mod tests {
         0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
     }
 
+    /// Releases are built with craft-fonts (#19), and so is CI; a build without them has only
+    /// DM Sans, and shows other scripts as boxes.
+    #[test]
+    fn with_craft_fonts_every_script_people_type_shows() {
+        if CRAFT_FONTS.is_empty() {
+            return;
+        }
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        let texts = [
+            ("Korean", "한국어 사용자"),
+            ("Chinese", "你好，世界"),
+            ("Japanese", "こんにちは、カタカナ"),
+            ("Thai", "ภาษาไทย"),
+            ("Arabic", "مرحبا بالعالم"),
+            ("Hebrew", "שלום עולם"),
+            ("Hindi", "नमस्ते दुनिया"),
+            ("Vietnamese", "Tiếng Việt"),
+            ("Russian", "Привет"),
+            ("Greek", "Γειά σου"),
+            ("arrows", "Settings → AI ← ↑ ↓"),
+        ];
+        for (script, text) in texts {
+            for font in [FontId::proportional(14.0), FontId::monospace(14.0), medium(14.0), semibold(14.0)] {
+                assert!(ctx.fonts_mut(|f| f.has_glyphs(&font, text)), "{script} ({text}) shows as boxes in {font:?}");
+            }
+        }
+    }
+
     #[test]
     fn a_scroll_thumb_at_rest_stands_out_from_every_surface_in_every_theme() {
         let style = scroll_style();

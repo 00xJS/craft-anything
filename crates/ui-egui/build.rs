@@ -1,6 +1,7 @@
-//! Optional craft-fonts (CJK/Arabic UI fallback fonts), following craft-fonts' `docs/integration.md`.
+//! Optional craft-fonts (fallbacks for CJK, Arabic, Thai, Hebrew, Devanagari…), following
+//! craft-fonts' `docs/integration.md`. Releases and CI set it.
 //!
-//! Unset `CRAFT_FONTS_DIR` (the default) embeds nothing and the app uses its own Inter/JetBrains
+//! Unset `CRAFT_FONTS_DIR` (the default) embeds nothing and the app uses its own DM Sans/JetBrains
 //! Mono. Set it to an absolute path of a craft-fonts checkout to embed every font its manifest
 //! lists. A bad path is a warning unless `CRAFT_FONTS_REQUIRED=1`.
 
