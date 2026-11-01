@@ -70,6 +70,29 @@ pub struct BackendEntry {
     pub options: BackendOptions,
 }
 
+impl BackendEntry {
+    /// An agent CLI's `model` names the agent (`opencode`), and the model it should use goes in
+    /// `cli_model`. People also write the agent's program in `command` and the model in `model`
+    /// (`command = "opencode"`, `model = "deepseek/deepseek-flash"`); that ran the plain adapter
+    /// with the agent's own default model (#34). Read that way, it's the agent the command names,
+    /// asked for that model.
+    fn model_from_command(&mut self) {
+        let known = crate::cli_agents::KNOWN;
+        let model = self.config.model.trim();
+        let names_an_agent = known.iter().any(|(id, prog, display)| model == *id || model == *prog || model.eq_ignore_ascii_case(display));
+        if self.config.kind != BackendKind::AgentCli || model.is_empty() || names_an_agent {
+            return;
+        }
+        // The file name without `.exe`, whichever system's separators the path uses.
+        let program = self.options.command.as_deref().and_then(|c| c.trim().rsplit(['/', '\\']).next()).map(|f| f.strip_suffix(".exe").unwrap_or(f));
+        let Some((id, _, _)) = program.and_then(|p| known.iter().find(|(_, prog, _)| prog.eq_ignore_ascii_case(p))) else { return };
+        if self.options.cli_model.is_none() {
+            self.options.cli_model = Some(model.to_string());
+        }
+        self.config.model = id.to_string();
+    }
+}
+
 /// USD per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Price {
@@ -109,10 +132,12 @@ pub fn role_key(r: Role) -> &'static str {
 impl AiConfig {
     /// Parse `settings.ai`. A malformed table gives an error the UI can show (never a panic).
     pub fn from_table(t: &toml::Table) -> Result<AiConfig, ToolError> {
-        toml::Value::Table(t.clone()).try_into().map_err(|e: toml::de::Error| {
+        let mut c: AiConfig = toml::Value::Table(t.clone()).try_into().map_err(|e: toml::de::Error| {
             ToolError::new(ErrorCode::BadSettings, format!("The [ai] settings couldn't be read: {e}"))
                 .with_remediation("Fix or remove the [ai] section in config.toml.")
-        })
+        })?;
+        c.backends.iter_mut().for_each(BackendEntry::model_from_command);
+        Ok(c)
     }
 
     /// Parse from settings; unreadable config is logged and treated as empty.
@@ -262,5 +287,24 @@ mod tests {
         assert_eq!(AiConfig::from_table(&t).unwrap_err().code, ErrorCode::BadSettings);
         let s = Settings { ai: t, ..Default::default() };
         assert!(AiConfig::from_settings(&s).backends.is_empty());
+    }
+
+    /// #34: the agent's program in `command` and the model in `model` runs that agent with it.
+    #[test]
+    fn an_agent_named_by_its_command_gets_the_model() {
+        let one = |toml: &str| {
+            let t: toml::Table = toml::from_str(&format!("[[backends]]\nname = \"A\"\nkind = \"agent_cli\"\n{toml}")).unwrap();
+            let b = AiConfig::from_table(&t).unwrap().backends.remove(0);
+            (b.config.model, b.options.cli_model)
+        };
+        let reported = "model = \"deepseek/deepseek-flash\"\ncommand = \"opencode\"\nargs = [\"run\", \"--auto\"]";
+        assert_eq!(one(reported), ("opencode".into(), Some("deepseek/deepseek-flash".into())));
+        assert_eq!(one("model = \"sonnet\"\ncommand = 'C:\\Users\\u\\.bun\\bin\\opencode.exe'").0, "opencode", "a full path names it too");
+        // Left as they are: a model that names the agent, a cli_model already set, an unknown program.
+        assert_eq!(one("model = \"opencode\"\ncommand = \"opencode\""), ("opencode".into(), None));
+        assert_eq!(one("model = \"gemini\"\ncommand = \"gemini\""), ("gemini".into(), None));
+        assert_eq!(one("model = \"x/y\"\ncommand = \"opencode\"\ncli_model = \"z\""), ("opencode".into(), Some("z".into())));
+        assert_eq!(one("model = \"my-agent\"\ncommand = \"my-agent-cli\""), ("my-agent".into(), None));
+        assert_eq!(one("model = \"claude-code\""), ("claude-code".into(), None));
     }
 }
