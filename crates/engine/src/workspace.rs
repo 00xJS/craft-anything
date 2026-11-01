@@ -390,6 +390,10 @@ pub struct Manifest {
     /// (`Settings::questions`). The person's, like the budget.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub questions: Option<Questions>,
+    /// The builder finished its turn and the run's checks haven't reported on it yet, so a run
+    /// that picks this up only needs to check: nothing is left to build.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub awaiting_check: bool,
 }
 
 impl Manifest {
@@ -415,6 +419,7 @@ impl Manifest {
             start_files: Vec::new(),
             builder: None,
             questions: None,
+            awaiting_check: false,
         }
     }
 
@@ -817,6 +822,12 @@ impl Workspace {
         self.root.join("inbox")
     }
     /// The API builder's conversation, kept so a follow-up continues it (`ai::context`).
+    /// A builder has worked on this project and its conversation was kept, so a later run carries
+    /// it on instead of starting over.
+    pub fn builder_started(&self) -> bool {
+        self.manifest.agent_session.is_some() || self.transcript_path().is_file()
+    }
+
     pub fn transcript_path(&self) -> PathBuf {
         self.root.join("transcript.json")
     }

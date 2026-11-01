@@ -314,6 +314,12 @@ computer. Say what ran and what it printed, write the rest to a log the person c
 agent run does: `crate::failure_log`), and never name a next step you don't spell out. Exit 255
 from ssh is ssh's own failure: don't blame the remote program. Test a message by causing the failure.
 
+**A retry that took "no message" for "brand new".** A run with no message and no `continuing`
+flag was read as a first build, and Try again starts exactly that run. A browser that died during
+the final check failed a finished build; Try again then studied the original again and gave the
+builder the first brief. A run decides what's left from what the project records, not from which
+button started it, and a check that couldn't look says nothing about the build.
+
 **A filter written for one kind of text, run on another.** The stand-in's secret scan was written for
 API answers, then also ran on recorded scripts: `this.token=t` became `[dropped]` and the scripts
 broke, and "Basic Membership" lost a word. It also tested whole tokens, so a secret inside a URL or

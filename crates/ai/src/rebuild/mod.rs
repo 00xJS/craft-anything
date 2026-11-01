@@ -125,7 +125,8 @@ pub struct RunOptions {
     pub shown: Option<String>,
     /// Pick up a build whose last run stopped part-way (paused, the app closed, the computer
     /// stopped): Study isn't repeated when it was done, and an agent with a saved session is
-    /// told to carry on rather than given the brief again.
+    /// told to carry on rather than given the brief again. A run with no message on a project
+    /// whose builder has already worked does the same, so "Try again" never starts over.
     pub continuing: bool,
     /// Refinement rounds after the first build (each fixes what the last check found).
     pub max_rounds: u32,
@@ -579,7 +580,8 @@ impl Worker {
         self.self_check = Some((kind.clone(), opts.good_enough));
         let kind = kind.as_ref();
         self.editor = self.find_editor(&ws.manifest.stack)?;
-        let first = (opts.message.is_none() && !opts.continuing) || !ws.capture_dir().exists();
+        let carrying_on = opts.continuing || (opts.message.is_none() && ws.builder_started());
+        let first = (opts.message.is_none() && !carrying_on) || !ws.capture_dir().exists();
         if first {
             self.study(ws, kind)?;
             if let Some((name, ex)) = extractor {
@@ -610,7 +612,7 @@ impl Worker {
             // from the brief with the request added.
             Some(m) if !first && resumable => follow_up(m, kind) + &now(),
             // Carrying on after a stop: the same, told to finish what it was doing.
-            None if opts.continuing && !first && has_history => continue_prompt(kind) + &now(),
+            None if carrying_on && !first && has_history => continue_prompt(kind) + &now(),
             _ => {
                 let b = brief(kind, &cx, opts.message.as_deref());
                 if api_loop { format!("{API_BUILDER}\n\n{b}") } else { b }
@@ -625,35 +627,47 @@ impl Worker {
         // Deep mode on a program: decompiling is required, so a build turn without any gets one reminder.
         let must_decompile = !self.engine.session().clean_room() && matches!(ws.manifest.target, TargetRef::Local { .. });
         let mut reminded = false;
+        // The builder finished and only the check didn't: the build is there to check.
+        let mut only_check = carrying_on && !first && opts.message.is_none() && ws.manifest.awaiting_check;
         loop {
-            self.step(ws, Step::Build, Status::Building, if round == 0 { "Building the first version…" } else { "Improving the build…" })?;
-            let reply = self.turn(ws, agent.as_mut(), &prompt)?;
-            if !reply.trim().is_empty() {
-                ws.manifest.last_reply = reply.trim().to_string();
-            }
-            // The stack is recorded as the one the build uses, once it shows: left to the builder,
-            // or another than the default because the request asked for it. A game engine stays
-            // (it says the project is a game, and its editor is found for it).
-            if game::Builder::from_stack(&ws.manifest.stack).is_none()
-                && let Some(s) = stacks::used_in(&ws.app_dir())
-            {
-                ws.manifest.stack = s.name.clone();
-            }
-            ws.save()?;
-            // What the person added while the agent worked goes in before anything else.
-            if let Some(p) = self.added(ws) {
-                prompt = p;
-                continue;
-            }
-            if must_decompile && !self.decompiled && !reminded {
-                reminded = true;
-                prompt = DECOMPILE_FIRST.to_string();
-                continue;
+            if !std::mem::take(&mut only_check) {
+                let doing = match (round, carrying_on) {
+                    (0, false) => "Building the first version…",
+                    (0, true) => "Carrying on with the build…",
+                    _ => "Improving the build…",
+                };
+                self.step(ws, Step::Build, Status::Building, doing)?;
+                ws.manifest.awaiting_check = false;
+                let reply = self.turn(ws, agent.as_mut(), &prompt)?;
+                if !reply.trim().is_empty() {
+                    ws.manifest.last_reply = reply.trim().to_string();
+                }
+                // The stack is recorded as the one the build uses, once it shows: left to the builder,
+                // or another than the default because the request asked for it. A game engine stays
+                // (it says the project is a game, and its editor is found for it).
+                if game::Builder::from_stack(&ws.manifest.stack).is_none()
+                    && let Some(s) = stacks::used_in(&ws.app_dir())
+                {
+                    ws.manifest.stack = s.name.clone();
+                }
+                ws.manifest.awaiting_check = true;
+                ws.save()?;
+                // What the person added while the agent worked goes in before anything else.
+                if let Some(p) = self.added(ws) {
+                    prompt = p;
+                    continue;
+                }
+                if must_decompile && !self.decompiled && !reminded {
+                    reminded = true;
+                    prompt = DECOMPILE_FIRST.to_string();
+                    continue;
+                }
             }
             round += 1;
             self.step(ws, Step::Check, Status::Checking, "Checking the build against the original…")?;
-            let checks = self.run_checks(ws, kind, round)?;
+            let checks = self.checks_with_a_retry(ws, kind, round)?;
             ws.manifest.checks.extend(checks.iter().cloned());
+            ws.manifest.awaiting_check = false;
             ws.save()?;
             for c in &checks {
                 self.emit(RunEvent::Checked(c.clone()));
@@ -721,6 +735,24 @@ impl Worker {
             }
             Ok(_) => Ok(()),
         }
+    }
+
+    /// The round's checks. A check that fails says what's wrong with the build; one that returns
+    /// an error couldn't look at all (a browser that went away), which says nothing about the
+    /// build, so it gets a second go before the run stops, and the run says what is really wrong.
+    fn checks_with_a_retry(&self, ws: &Workspace, kind: &dyn kinds::TargetKind, round: u32) -> Result<Vec<CheckResult>, ToolError> {
+        let e = match self.run_checks(ws, kind, round) {
+            Err(e) if e.code != ErrorCode::Cancelled => e,
+            done => return done,
+        };
+        self.emit(RunEvent::Agent(AgentEvent::Status { text: format!("The check couldn't finish ({}). Trying it once more…", e.message) }));
+        self.run_checks(ws, kind, round).map_err(|e| {
+            if e.code == ErrorCode::Cancelled {
+                return e;
+            }
+            ToolError::new(e.code, format!("The build is finished, but it couldn't be checked: {}", e.message))
+                .with_remediation("Press Try again to check it again. Nothing needs building again.")
+        })
     }
 
     fn turn(&mut self, ws: &mut Workspace, agent: &mut dyn Conversation, prompt: &str) -> Result<String, ToolError> {
