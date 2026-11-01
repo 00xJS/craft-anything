@@ -140,6 +140,9 @@ Claude Code as `gemini.cmd`-style shims; `which` finds them through `PATHEXT`, b
 only `.exe` files by bare name, so every build failed (#18). Through `cmd.exe` a prompt with line
 breaks or over 8191 characters wouldn't arrive anyway. `Process` runs an npm shim's script with
 Node directly (`which::launch_target`); test a new program on Windows with a multi-line argument.
+npm also writes an extensionless POSIX script beside each shim, and `which` returned that first,
+so OpenCode was offered and then every run said it wasn't installed (#41): look up the kinds
+Windows can start (`PATHEXT`) before the bare name.
 
 **A first analysis that waited for a lock it could never take.** Ghidra's analysis lock is created
 with `create_new` in `ghidra-cache/`, which only existed on machines that had used it before; on a

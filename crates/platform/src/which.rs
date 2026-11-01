@@ -169,7 +169,10 @@ pub fn self_cli_path() -> Option<PathBuf> {
 
 #[cfg(windows)]
 fn candidates(base: &Path) -> Vec<PathBuf> {
-    let mut v = vec![base.to_path_buf()];
+    let mut v = Vec::new();
+    // A file with no extension can't be started by name (CreateProcess only adds `.exe`), and npm
+    // puts an extensionless POSIX shell script beside every `.cmd` shim it installs. Try the kinds
+    // Windows runs first, then the bare name, so `which` returns what the system would start (#41).
     if base.extension().is_none() {
         let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
         for e in exts.split(';').filter(|e| !e.is_empty()) {
@@ -178,6 +181,7 @@ fn candidates(base: &Path) -> Vec<PathBuf> {
             v.push(PathBuf::from(s));
         }
     }
+    v.push(base.to_path_buf());
     v
 }
 
@@ -281,6 +285,24 @@ mod tests {
         let prompt = "Make a game.\nIt says \"hi\" & 100% works | <ok>";
         let out = crate::Process::new(dir.path().join("gemini")).args(["-p", prompt]).run_checked().unwrap();
         assert_eq!(serde_json::from_str::<Vec<String>>(&out.stdout_text()).unwrap(), ["-p", prompt]);
+    }
+
+    /// #41: npm writes an extensionless POSIX script beside its `.cmd` shim, and Windows can't start
+    /// that script by name, so a bare name must find the shim first.
+    #[cfg(windows)]
+    #[test]
+    fn a_bare_name_finds_what_windows_can_start() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("tool"), "#!/bin/sh\n").unwrap();
+        std::fs::write(dir.path().join("tool.cmd"), "@echo off\n").unwrap();
+        let path = || Some(dir.path().as_os_str().to_owned());
+        // The extension comes from PATHEXT, so its case need not match the file's.
+        let found = which_in("tool", path());
+        assert_eq!(found.len(), 1);
+        assert!(found[0].file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("tool.cmd")), "the shim, not the POSIX script: {found:?}");
+        // With only the script there, it's still reported (and starting it fails with the program's name).
+        std::fs::remove_file(dir.path().join("tool.cmd")).unwrap();
+        assert_eq!(which_in("tool", path()), vec![dir.path().join("tool")]);
     }
 
     #[cfg(unix)]
