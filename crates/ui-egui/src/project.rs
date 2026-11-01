@@ -220,7 +220,12 @@ impl CraftApp {
     pub fn answer_request(&mut self, id: &str, answer: Answer, shown: String) {
         let r = match (self.open_run(), &self.workspace) {
             (Some(run), _) => run.answer_as(id, &answer, &shown),
-            (None, Some(ws)) => Inbox::new(ws.inbox_dir()).answer(id, &answer).and_then(|()| feed::record_answer(ws, id, &shown)),
+            (None, Some(ws)) => {
+                // The question, taken before it's answered: whoever asked may remove it right after.
+                let inbox = Inbox::new(ws.inbox_dir());
+                let question = inbox.pending().into_iter().find(|r| r.id == id);
+                inbox.answer(id, &answer).and_then(|()| question.map_or(Ok(()), |q| feed::record_answer(ws, &q, &shown)))
+            }
             _ => return,
         };
         if let Err(e) = r {

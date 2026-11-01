@@ -144,10 +144,15 @@ pub fn save(root: &Path, feed: &[FeedItem]) -> Result<(), ToolError> {
     crate::project::write_atomic(&root.join(FEED_FILE), &json)
 }
 
-/// Record an answer given while no run is going (straight into the saved feed).
-pub fn record_answer(ws: &Workspace, id: &str, shown: &str) -> Result<(), ToolError> {
+/// Record an answer given while no run is going (straight into the saved feed). `request` is the
+/// question, taken before it was answered: one the saved conversation doesn't have yet (posted
+/// from outside a run) is added with its answer, rather than lost once it stops waiting (#176).
+pub fn record_answer(ws: &Workspace, request: &Request, shown: &str) -> Result<(), ToolError> {
     let mut feed = load(ws);
-    answered(&mut feed, id, shown);
+    if !feed.iter().any(|i| matches!(i, FeedItem::Ask { request: r, .. } if r.id == request.id)) {
+        feed.push(FeedItem::Ask { request: request.clone(), answer: None });
+    }
+    answered(&mut feed, &request.id, shown);
     save(&ws.root, &feed)
 }
 
@@ -183,10 +188,25 @@ mod tests {
         std::fs::write(ws.root.join(FEED_FILE), br#"[{"User":"Old request"}]"#).unwrap();
         assert!(matches!(load(&ws).as_slice(), [FeedItem::User(r)] if r == "Old request"));
         // Answers given with no run going are saved too.
-        Inbox::new(ws.inbox_dir()).post(RequestKind::Question, "Blue or red?", "", vec![], true, None).unwrap();
-        let id = load(&ws).iter().find_map(|i| if let FeedItem::Ask { request, .. } = i { Some(request.id.clone()) } else { None }).unwrap();
-        record_answer(&ws, &id, "Blue").unwrap();
+        let inbox = Inbox::new(ws.inbox_dir());
+        let id = inbox.post(RequestKind::Question, "Blue or red?", "", vec![], true, None).unwrap();
+        let question = inbox.pending().into_iter().find(|r| r.id == id).unwrap();
+        inbox.answer(&id, &crate::inbox::Answer { choice: Some("Blue".into()), ..Default::default() }).unwrap();
+        record_answer(&ws, &question, "Blue").unwrap();
         assert!(std::fs::read_to_string(ws.root.join(FEED_FILE)).unwrap().contains("\"Blue\""));
+        // #176: one the saved conversation never had (posted from outside a run, answered before
+        // anything saved it) is kept with its answer, once, and still after the inbox forgets it.
+        save(&ws.root, &[FeedItem::User("Clone it".into())]).unwrap();
+        let id = inbox.post(RequestKind::Question, "Which scope?", "", vec![], true, None).unwrap();
+        let question = inbox.pending().into_iter().find(|r| r.id == id).unwrap();
+        inbox.answer(&id, &crate::inbox::Answer { choice: Some("Minimal".into()), ..Default::default() }).unwrap();
+        let _ = std::fs::remove_file(inbox.dir().join(format!("{id}.request.json")));
+        let _ = std::fs::remove_file(inbox.dir().join(format!("{id}.answer.json")));
+        record_answer(&ws, &question, "Minimal").unwrap();
+        let asks = |f: &[FeedItem]| f.iter().filter(|i| matches!(i, FeedItem::Ask { request, answer: Some(a) } if request.id == id && a == "Minimal")).count();
+        assert_eq!(asks(&load(&ws)), 1, "kept with its answer");
+        record_answer(&ws, &question, "Minimal").unwrap();
+        assert_eq!(asks(&load(&ws)), 1, "not twice");
         // One from a newer Craft Anything is shown as far as we can, never written over.
         let newer = br#"{"version":99,"items":[{"User":"From the future"}],"extra":1}"#;
         std::fs::write(ws.root.join(FEED_FILE), newer).unwrap();

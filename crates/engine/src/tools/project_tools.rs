@@ -436,10 +436,11 @@ fn project_inbox_answer(_ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput,
     let p: AnswerParams = parse_params(params)?;
     let ws = open(&p.project)?;
     let inbox = Inbox::new(ws.inbox_dir());
-    if !inbox.pending().iter().any(|r| r.id == p.id) {
+    // Taken before it's answered: the session that asked may read and remove it right after.
+    let Some(question) = inbox.pending().into_iter().find(|r| r.id == p.id) else {
         return Err(ToolError::new(ErrorCode::NotFound, format!("No question {} is waiting in this project.", p.id))
             .with_remediation("Use project_show to see the questions still waiting."));
-    }
+    };
     let answer = Answer { choice: p.choice, text: p.text, allow: p.allow, always: p.always };
     let shown = match answer.allow {
         Some(true) if answer.always => "Always allowed".to_string(),
@@ -449,7 +450,7 @@ fn project_inbox_answer(_ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput,
     };
     inbox.answer(&p.id, &answer)?;
     // Into the saved conversation; a running build keeps answers it finds there when it saves.
-    if let Err(e) = feed::record_answer(&ws, &p.id, &shown) {
+    if let Err(e) = feed::record_answer(&ws, &question, &shown) {
         log::warn!("answer not added to the conversation: {}", e.message);
     }
     Ok(ToolOutput::Value(json!({"answered": p.id, "shown": shown})))
