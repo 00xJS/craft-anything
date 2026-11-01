@@ -351,6 +351,8 @@ pub fn console_text(program: &std::path::Path, args: &[OsString], timeout: Durat
     writer.write_all(b"\x1b[1;1R").map_err(|e| failed(&e))?;
 
     let (screen_tx, screen_rx) = std::sync::mpsc::channel();
+    let received = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = received.clone();
     std::thread::Builder::new()
         .name("console-reader".into())
         .spawn(move || {
@@ -359,6 +361,7 @@ pub fn console_text(program: &std::path::Path, args: &[OsString], timeout: Durat
             let mut chunk = vec![0u8; 16 * 1024];
             while let Ok(n) = reader.read(&mut chunk) {
                 let Some(part) = chunk.get(..n).filter(|p| !p.is_empty()) else { break };
+                counted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
                 screen.process(part);
             }
             let _ = screen_tx.send(screen.screen().contents());
@@ -382,14 +385,33 @@ pub fn console_text(program: &std::path::Path, args: &[OsString], timeout: Durat
     };
     if stopped.is_err() {
         let _ = child.kill();
+    } else {
+        // The console sends what the program drew a moment after it exits, and closing it first
+        // can lose that on a busy computer: wait until output has come and stopped coming (2 s
+        // at most).
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        let mut seen = usize::MAX;
+        while std::time::Instant::now() < until {
+            let now = received.load(std::sync::atomic::Ordering::Relaxed);
+            if now > 0 && now == seen {
+                break;
+            }
+            seen = now;
+            std::thread::sleep(Duration::from_millis(150));
+        }
     }
     // Closing the console flushes it and ends everything attached to it, which is what ends a
     // launcher's children here. It can block, so it happens away from here.
     // ponytail: no Job Object (portable-pty gives no process handle, and this workspace forbids
     // unsafe), so a program that leaves this console for one of its own survives.
     let _ = std::thread::Builder::new().name("console-close".into()).spawn(move || drop((writer, master)));
-    let text = screen_rx.recv_timeout(Duration::from_secs(3)).unwrap_or_default();
-    Ok((text, stopped?.try_into().ok()))
+    let code = stopped?.try_into().ok();
+    // On a busy computer closing the console takes seconds; output that never arrives is an
+    // error, not an empty screen (a device list would read as "no devices").
+    let text = screen_rx
+        .recv_timeout(Duration::from_secs(15))
+        .map_err(|_| ToolError::new(ErrorCode::TimedOut, format!("{} ended, but what it wrote didn't arrive in time.", program.display())))?;
+    Ok((text, code))
 }
 
 #[cfg(all(test, windows))]
