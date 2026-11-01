@@ -64,6 +64,12 @@ pub fn install(
     report: &dyn Fn(&str),
 ) -> Result<InstallReport, ToolError> {
     let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
+    // A malformed hash is the caller's mistake on every system, so it's named before what this
+    // one can't install (FreeBSD has no pinned adb).
+    let want = expect_sha256.map(|w| w.trim().to_ascii_lowercase());
+    if want.as_ref().is_some_and(|w| w.len() != 64 || !w.bytes().all(|b| b.is_ascii_hexdigit())) {
+        return Err(ToolError::invalid("sha256 must be 64 hex characters"));
+    }
     let engine = crate::engine(engine_id).ok_or_else(|| {
         ToolError::new(ErrorCode::NotSupported, format!("There is no engine called {engine_id:?}."))
             .with_remediation("See Settings → Engines for the engines Craft Anything knows.")
@@ -82,16 +88,10 @@ pub fn install(
         ToolError::new(ErrorCode::NotSupported, format!("No pinned download for {} on {os} ({arch}).", engine.name))
             .with_remediation("Install it by hand and set its path in Settings → Engines.")
     })?;
-    if let Some(want) = expect_sha256 {
-        let want = want.trim().to_ascii_lowercase();
-        if want.len() != 64 || !want.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(ToolError::invalid("sha256 must be 64 hex characters"));
-        }
-        if want != pin.sha256 {
-            return Err(ToolError::invalid(format!("That sha256 is not the pinned hash for {engine_id} on {os}."))
-                .with_remediation("Leave sha256 out: the pinned hash is always checked.")
-                .with_details(serde_json::json!({"url": pin.url, "pinned": pin.sha256})));
-        }
+    if want.is_some_and(|w| w != pin.sha256) {
+        return Err(ToolError::invalid(format!("That sha256 is not the pinned hash for {engine_id} on {os}."))
+            .with_remediation("Leave sha256 out: the pinned hash is always checked.")
+            .with_details(serde_json::json!({"url": pin.url, "pinned": pin.sha256})));
     }
 
     std::fs::create_dir_all(store_dir).map_err(|e| ToolError::io(store_dir.display(), e))?;
