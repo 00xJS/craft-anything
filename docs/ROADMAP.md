@@ -147,6 +147,16 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
 - [x] Capped allocation in `unreal_iostore.rs`: a `.utoc` header naming 2^31 compression methods of
       length 0 collected empty names until memory ran out (6 GiB from a 559-byte file); only the
       255 a block can point at are read, the rest skipped. Found by mutation fuzzing of `crates/formats`
+- [x] No endless loop on code at the top of the address space in `disasm/src/program.rs`: the
+      prologue and PLT scans stepped past `u64::MAX`, which in release wrapped to 0 and walked the
+      whole 64-bit space (`native_functions_list` on a 4 KB ELF whose `.text` is at
+      `0xffffffffffffffc0` never returned, and Stop couldn't end it). Found by mutation fuzzing of `crates/disasm`
+- [ ] `yaxpeax-arm` 0.5.0 panics ("register number out of range") on an A32 `STRD`/`LDRD` with
+      Rt = 15 (e.g. the word `0xc0c7fef3`), so one such word fails the whole analysis of a 32-bit
+      ARM program; decode it as invalid instead
+- [ ] Unchecked `o + 4`/`o + 8` on section and program header offsets in `formats/src/dart.rs`
+      (`Elf::parse`): a header table near `usize::MAX` panics in debug builds and reads the wrong
+      bytes in release
 - [x] `cargo xtask layers` also scans `apps/`
 - [x] Engines in `KNOWN` without a `ToolPaths` override (tshark, objdump, rizin, java)
 - [x] Missing `database` icon for SQLite in the UI (`kind_icon`)

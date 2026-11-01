@@ -731,7 +731,9 @@ fn scan_plt(img: &Image, mode: Mode, slots: &BTreeMap<u64, SlotInfo>, stubs: &mu
         let mut stub_start = a;
         while a < end {
             let Some(mut i) = img.decode(a, false) else {
-                a += mode.align().max(1);
+                // At the top of the address space the step would wrap to 0 and walk it all again.
+                let Some(next) = a.checked_add(mode.align().max(1)) else { break };
+                a = next;
                 stub_start = a;
                 continue;
             };
@@ -1030,11 +1032,13 @@ fn build_function(entry: u64, src: &'static str, sc: Scan, all_xrefs: &mut Vec<X
             }
             cur = Some(Block { start: a, end: a, insns: 0, succs: Vec::new(), term: Term::Fall });
         }
+        // Wrapping, as `Insn::end` is: an instruction at the top of the address space ends at 0.
+        let end = a.wrapping_add(u64::from(len));
         if let Some(b) = cur.as_mut() {
-            b.end = a + u64::from(len);
+            b.end = end;
             b.insns += 1;
         }
-        prev_end = Some(a + u64::from(len));
+        prev_end = Some(end);
         prev_flow = flow;
         prev_addr = a;
     }
@@ -1076,9 +1080,9 @@ fn prologue_scan(img: &Image, mode: Mode, covered: &BTreeMap<u64, u64>) -> Vec<u
         if s.name.starts_with(".plt") || s.name == "__stubs" || s.name == ".init" || s.name == ".fini" {
             continue;
         }
-        let mut a = (s.addr + step - 1) & !(step - 1);
+        let Some(mut a) = s.addr.checked_add(step - 1).map(|a| a & !(step - 1)) else { continue };
         let end = s.addr.saturating_add(s.file_size);
-        while a + 4 <= end && out.len() < 200_000 {
+        while a.checked_add(4).is_some_and(|e| e <= end) && out.len() < 200_000 {
             if !is_covered(a)
                 && let Some(b) = img.read(a, 8)
             {
@@ -1121,7 +1125,9 @@ fn prologue_scan(img: &Image, mode: Mode, covered: &BTreeMap<u64, u64>) -> Vec<u
                     out.push(a);
                 }
             }
-            a += step;
+            // At the top of the address space the step would wrap to 0 and walk it all again.
+            let Some(next) = a.checked_add(step) else { break };
+            a = next;
         }
     }
     out
@@ -1150,7 +1156,7 @@ fn pointer_scan(img: &Image, limits: &Limits, functions: &BTreeMap<u64, Function
             if let Some(v) = v
                 && v != 0
             {
-                let from = s.addr + i as u64;
+                let Some(from) = s.addr.checked_add(i as u64) else { break };
                 if functions.contains_key(&v) {
                     xrefs.push(Xref { from, to: v, kind: XrefKind::Pointer });
                 } else if strings.contains_key(&v) {
@@ -1422,6 +1428,28 @@ mod tests {
         let (elf, _) = tk::elf64(tk::ElfArch::X86_64, true);
         let img = Image::parse(Arc::from(elf)).unwrap();
         assert!(matches!(Program::analyze(&img, &Limits::default(), &Stop), Err(DisasmError::Cancelled)));
+    }
+
+    #[test]
+    fn code_at_the_top_of_the_address_space_ends_without_wrapping() {
+        // Each scan used to step past u64::MAX: a panic in debug builds, and in release a wrap to
+        // 0 that walked the whole address space (never ending). Run on a thread with a deadline so
+        // a regression fails instead of hanging the test run.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use craft_anything_formats::Arch;
+            let base = u64::MAX - 63;
+            for arch in [Arch::X86, Arch::X86_64, Arch::Arm, Arch::Aarch64, Arch::X86_16] {
+                for seed in 0..4 {
+                    let mut img = Image::raw(Arc::from(tk::noise(seed, 64)), arch, base);
+                    let _ = Program::analyze(&img, &Limits::default(), &NoControl);
+                    img.bin.sections[0].name = ".plt".into();
+                    let _ = Program::analyze(&img, &Limits::default(), &NoControl);
+                }
+            }
+            let _ = tx.send(());
+        });
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(60)).is_ok(), "analysis at the top of the address space never ended");
     }
 
     #[test]
