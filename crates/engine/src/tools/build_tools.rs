@@ -194,14 +194,15 @@ fn workspace(ctx: &Ctx<'_>) -> Result<Workspace, ToolError> {
 }
 
 /// `rel` inside the project folder, or an error (no escaping with `..` or an absolute path).
+/// Models often write the project's folders from the root (`/app/src/main.rs`): a path like that
+/// whose first folder the project has is read inside the project, where it was meant (#24).
 fn in_project(ws: &Workspace, rel: &str) -> Result<PathBuf, ToolError> {
-    match resolve(&ws.root, rel) {
-        Some(p) if inside(&ws.root, &p) => Ok(p),
-        _ => {
-            Err(ToolError::invalid(format!("{rel} is outside the project."))
-                .with_remediation("Use a path relative to the project folder, like app/src/main.rs."))
-        }
-    }
+    let from_root = rel.trim_start_matches(['/', '\\']);
+    let names_a_folder = from_root != rel
+        && from_root.split(['/', '\\']).next().is_some_and(|first| !first.is_empty() && (ws.root.join(first).is_dir() || ws.root.join(first) == ws.app_dir()));
+    [Some(rel), names_a_folder.then_some(from_root)].into_iter().flatten().find_map(|r| resolve(&ws.root, r).filter(|p| inside(&ws.root, p))).ok_or_else(|| {
+        ToolError::invalid(format!("{rel} is outside the project.")).with_remediation("Use a path relative to the project folder, like app/src/main.rs.")
+    })
 }
 
 fn shown(ws: &Workspace, p: &Path) -> String {
@@ -284,7 +285,12 @@ fn build_file_write(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let ws = workspace(ctx)?;
     let path = in_project(&ws, &p.path)?;
     write_checked(ctx, &path, &p.content)?;
-    Ok(ToolOutput::Value(json!({"written": shown(&ws, &path), "bytes": p.content.len()})))
+    let mut out = json!({"written": shown(&ws, &path), "bytes": p.content.len()});
+    // A model that leaves out `app/` would otherwise build beside the app, where no check looks.
+    if !inside(&ws.app_dir(), &path) {
+        out["note"] = json!("This file is outside app/: the app's own files go in app/ (paths like app/package.json).");
+    }
+    Ok(ToolOutput::Value(out))
 }
 
 fn build_file_edit(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {
@@ -377,6 +383,23 @@ mod tests {
         assert!(call(&e, "build_file_edit", json!({"path": "app/src/main.rs", "old_text": "nope", "new_text": "x"})).is_err());
         assert!(call(&e, "build_file_read", json!({"path": "../../etc/passwd"})).is_err());
         assert!(call(&e, "build_file_write", json!({"path": "../outside.txt", "content": "x"})).is_err());
+    }
+
+    /// #24: a model that writes `/app/…` builds the app, and one that leaves out `app/` is told.
+    #[test]
+    fn paths_from_the_root_name_the_project_folders() {
+        let (_d, ws, e) = building();
+        let r = call(&e, "build_file_write", json!({"path": "/app/package.json", "content": "{}"})).unwrap();
+        assert_eq!((r["written"].as_str(), r.get("note")), (Some("app/package.json"), None));
+        assert!(ws.app_dir().join("package.json").is_file());
+        assert_eq!(call(&e, "build_file_read", json!({"path": "\\app\\package.json"})).unwrap()["text"], "{}\n");
+        assert!(call(&e, "build_files_list", json!({"path": "/app"})).unwrap()["entries"].to_string().contains("app/package.json"));
+        // A folder the project doesn't have stays outside it.
+        assert!(call(&e, "build_file_read", json!({"path": "/etc/passwd"})).is_err());
+        assert!(call(&e, "build_file_write", json!({"path": "/nowhere/x.txt", "content": "x"})).is_err());
+        assert!(call(&e, "build_file_write", json!({"path": "/../outside.txt", "content": "x"})).is_err());
+        let stray = call(&e, "build_file_write", json!({"path": "index.html", "content": "<p>hi</p>"})).unwrap();
+        assert!(stray["note"].as_str().unwrap().contains("outside app/"), "{stray}");
     }
 
     #[test]
