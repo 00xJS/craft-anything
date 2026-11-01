@@ -208,7 +208,8 @@ impl<'a> Elf<'a> {
         let want_ph = if is64 { 56 } else { 32 };
         if phnum > 0 && usize::from(phentsize) >= want_ph {
             for i in 0..usize::from(phnum).min(MAX_PHDRS) {
-                let Some(o) = to_usize(phoff).and_then(|p| p.checked_add(i.checked_mul(usize::from(phentsize))?)) else { break };
+                // An entry that starts past the end can't be read, and its field offsets (`o + 32`) could overflow.
+                let Some(o) = to_usize(phoff).and_then(|p| p.checked_add(i.checked_mul(usize::from(phentsize))?)).filter(|&o| o < data.len()) else { break };
                 let ph = if is64 {
                     (r.u32_le(o), r.u64_le(o + 8), r.u64_le(o + 16), r.u64_le(o + 32))
                 } else {
@@ -222,7 +223,7 @@ impl<'a> Elf<'a> {
         let want_sh = if is64 { 64 } else { 40 };
         if shnum > 0 && shoff != 0 && usize::from(shentsize) >= want_sh {
             for i in 0..usize::from(shnum) {
-                let Some(o) = to_usize(shoff).and_then(|p| p.checked_add(i.checked_mul(usize::from(shentsize))?)) else { break };
+                let Some(o) = to_usize(shoff).and_then(|p| p.checked_add(i.checked_mul(usize::from(shentsize))?)).filter(|&o| o < data.len()) else { break };
                 let sh = if is64 {
                     (r.u32_le(o + 4), r.u64_le(o + 24), r.u64_le(o + 32), r.u32_le(o + 40), r.u64_le(o + 56))
                 } else {
@@ -747,6 +748,41 @@ mod tests {
         assert_eq!(flutter_library("lib/x86/libflutter.so"), Some(("x86", "libflutter")));
         assert_eq!(flutter_library("lib/x86/sub/libapp.so"), None);
         assert_eq!(flutter_library("assets/libapp.so"), None);
+    }
+
+    #[test]
+    fn header_tables_at_the_top_of_the_address_space_are_skipped() {
+        for is64 in [true, false] {
+            let mut so = fx::libapp_so(fx::SymbolTable::Sections);
+            // Where each table's offset is (64-bit at 32 and 40, 32-bit at 28 and 32), and a writer for it.
+            let (ph, sh) = if is64 { (32, 40) } else { (28, 32) };
+            let put = |so: &mut Vec<u8>, at: usize, v: u64| {
+                if is64 {
+                    so[at..at + 8].copy_from_slice(&v.to_le_bytes());
+                } else {
+                    so[at..at + 4].copy_from_slice(&(v as u32).to_le_bytes());
+                }
+            };
+            if !is64 {
+                // Read as 32-bit, the sample's header has no counts: give it one entry in each table.
+                so[4] = 1;
+                for (at, v) in [(42, 32u16), (44, 1), (46, 40), (48, 1)] {
+                    so[at..at + 2].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+            // Inside the file, both tables are read, so the loops below really run.
+            put(&mut so, ph, 64);
+            put(&mut so, sh, 64);
+            let elf = Elf::parse(&so).unwrap();
+            assert!(!elf.phdrs.is_empty() && !elf.shdrs.is_empty(), "is64 {is64}");
+            // A few bytes below the largest offset, `o + 8` would overflow (for 32-bit offsets, only
+            // where `usize` is 32 bits; elsewhere this checks the bound).
+            let top = if is64 { u64::MAX - 3 } else { u64::from(u32::MAX - 3) };
+            put(&mut so, ph, top);
+            put(&mut so, sh, top);
+            let elf = Elf::parse(&so).unwrap();
+            assert!(elf.phdrs.is_empty() && elf.shdrs.is_empty(), "is64 {is64}");
+        }
     }
 
     #[test]
