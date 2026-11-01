@@ -179,7 +179,7 @@ fn dyn_name(tag: u64) -> String {
 
 /// Map a virtual address to a file offset using PT_LOAD headers.
 fn va_to_off(phdrs: &[ProgramHeader], va: u64) -> Option<u64> {
-    phdrs.iter().filter(|p| p.p_type == 1).find(|p| va >= p.vaddr && va - p.vaddr < p.file_size).map(|p| p.offset + (va - p.vaddr))
+    phdrs.iter().filter(|p| p.p_type == 1).find(|p| va >= p.vaddr && va - p.vaddr < p.file_size).and_then(|p| p.offset.checked_add(va - p.vaddr))
 }
 
 /// Add ELF facts to a parsed binary: image base, interpreter, needed libraries, RELRO, NX, PIE.
@@ -847,5 +847,49 @@ mod tests {
         assert_eq!(b.mitigations.relro.as_deref(), Some("none"));
         assert_eq!(b.libraries, vec!["libc.so.6".to_string()]);
         assert_eq!(b.info.get("interpreter").map(String::as_str), Some("/lib64/ld-linux-x86-64.so.2"));
+    }
+
+    fn load(offset: u64, vaddr: u64, file_size: u64) -> ProgramHeader {
+        ProgramHeader { kind: "LOAD".into(), flags: String::new(), offset, vaddr, file_size, mem_size: file_size, align: 0, p_type: 1, p_flags: 0 }
+    }
+
+    #[test]
+    fn an_address_past_the_last_file_offset_maps_to_nothing() {
+        assert_eq!(va_to_off(&[load(0x200, 0x1000, 0x100)], 0x1010), Some(0x210));
+        assert_eq!(va_to_off(&[load(u64::MAX, 0x1000, 0x100)], 0x1000), Some(u64::MAX));
+        assert_eq!(va_to_off(&[load(u64::MAX, 0x1000, 0x100)], 0x1001), None, "the offset would pass u64::MAX");
+    }
+
+    #[test]
+    fn a_dynamic_string_table_in_a_load_segment_at_the_end_of_the_offsets_is_ignored() {
+        // ELF64 with three program headers: a PT_LOAD at file offset u64::MAX, a PT_LOAD for the
+        // whole file and a PT_DYNAMIC whose DT_STRTAB lies one byte into the first PT_LOAD.
+        let mut d = vec![0u8; 64 + 3 * 56 + 32];
+        let put = |d: &mut Vec<u8>, at: usize, bytes: &[u8]| d[at..at + bytes.len()].copy_from_slice(bytes);
+        put(&mut d, 0, b"\x7fELF\x02\x01\x01");
+        put(&mut d, 16, &3u16.to_le_bytes()); // ET_DYN
+        put(&mut d, 18, &0x3eu16.to_le_bytes()); // x86-64
+        put(&mut d, 20, &1u32.to_le_bytes());
+        put(&mut d, 32, &64u64.to_le_bytes()); // e_phoff
+        put(&mut d, 52, &64u16.to_le_bytes()); // e_ehsize
+        put(&mut d, 54, &56u16.to_le_bytes()); // e_phentsize
+        put(&mut d, 56, &3u16.to_le_bytes()); // e_phnum
+        put(&mut d, 58, &64u16.to_le_bytes()); // e_shentsize
+        let total = d.len() as u64;
+        let dynamic = 64 + 3 * 56;
+        for (i, (p_type, offset, vaddr, size)) in
+            [(1u32, u64::MAX, 0x1000u64, 0x100u64), (1, 0, 0, total), (2, dynamic as u64, 0x5000, 32)].into_iter().enumerate()
+        {
+            let at = 64 + i * 56;
+            put(&mut d, at, &p_type.to_le_bytes());
+            put(&mut d, at + 8, &offset.to_le_bytes());
+            put(&mut d, at + 16, &vaddr.to_le_bytes());
+            put(&mut d, at + 32, &size.to_le_bytes()); // p_filesz
+            put(&mut d, at + 40, &size.to_le_bytes()); // p_memsz
+        }
+        put(&mut d, dynamic, &5u64.to_le_bytes()); // DT_STRTAB
+        put(&mut d, dynamic + 8, &0x1001u64.to_le_bytes());
+        let b = crate::parse_binary(&d).expect("the header and program headers are valid");
+        assert!(b.libraries.is_empty());
     }
 }
