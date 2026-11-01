@@ -69,9 +69,12 @@ AI cost	AI 费用
 AI cost (estimate)	AI 费用 (估算)
 AI cost (part estimate)	AI 费用 (部分为估算)
 AI model file	AI 模型文件
+AI name	AI 名称
 AI use this session	本次会话的 AI 用量
 API boundary	API 边界
+API key	API 密钥
 API key (stored in your system keychain)	API 密钥 (存储在系统钥匙串中)
+API key, if it needs one	API 密钥 (如需要)
 About 10 GB. Free for personal use with a Unity account.	约 10 GB。个人使用免费，需要 Unity 账户。
 About 60 GB, an Epic Games account, and Visual Studio's C++ tools.	约 60 GB，需要 Epic Games 账户和 Visual Studio 的 C++ 工具。
 Add	添加
@@ -81,6 +84,7 @@ Add a fal.ai key	添加 fal.ai 密钥
 Add a folder…	添加文件夹…
 Add a plugin	添加插件
 Add an AI brain and I'll read this evidence for you, answer follow-up questions and point at the proof.	添加 AI 助手后，我就能为你解读这些证据、回答后续问题，并指出依据。
+Add an AI by its address	按地址添加 AI
 Add more info. The builder reads it at its next step.	补充更多信息。构建助手会在下一步读取。
 Add pictures	添加图片
 Add pictures of the original	添加原作图片
@@ -649,6 +653,7 @@ Medium	中
 Memory for Ghidra	Ghidra 内存用量
 Minimise	最小化
 Mode	模式
+Model	模型
 Modules	模块
 More detail	更多详情
 More makes a big program's first look faster.	分配更多内存可加快大型程序的首次分析。
@@ -712,6 +717,7 @@ Objective-C protocols	Objective-C 协议
 Observe a JS runtime	观察 JS 运行时
 Of this, {cost} was charged to an API key.	其中 {cost} 通过 API 密钥计费。
 Off	关闭
+Ollama or LM Studio on another computer, or any service that speaks the OpenAI API.	另一台电脑上的 Ollama 或 LM Studio，或任何兼容 OpenAI API 的服务。
 On	开启
 One line, in plain words. It stays on this computer and is never sent anywhere.	用一句通俗的话说明。内容只保留在本机，绝不会发送到其他地方。
 One-shot instrumentation	单次插桩
@@ -953,6 +959,7 @@ Selection	所选内容
 Send	发送
 Send (Enter)	发送 (Enter)
 Send now	立即发送
+Server address	服务器地址
 Session status	会话状态
 Set a project's asset budget	设置项目素材预算
 Set an AI's program	设置 AI 的程序
@@ -1238,6 +1245,7 @@ Your website is ready	你的网站已就绪
 a new folder in {dir}	{dir} 中的新文件夹
 a picture	每张图片
 about ${n}	约 ${n}
+address, e.g. http://192.168.1.20:11434/v1	地址，例如 http://192.168.1.20:11434/v1
 and {n} more	以及另外 {n} 项
 arguments (optional)	参数 (可选)
 call graph	调用图
@@ -1258,8 +1266,10 @@ job result	任务结果
 job {title} panicked: {what}	任务 {title} 发生异常：{what}
 just now	刚刚
 managed	由应用管理
+model (optional)	模型 (可选)
 must be a number	必须是数字
 must be a whole number	必须是整数
+name, e.g. Studio box	名称，例如 工作室电脑
 number	数字
 objdump output	objdump 输出
 or start with /btw to just ask	或以 /btw 开头，仅提出问题

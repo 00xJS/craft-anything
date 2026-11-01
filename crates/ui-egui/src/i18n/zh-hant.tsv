@@ -69,9 +69,12 @@ AI cost	AI 費用
 AI cost (estimate)	AI 費用 (估算)
 AI cost (part estimate)	AI 費用 (部分為估算)
 AI model file	AI 模型檔案
+AI name	AI 名稱
 AI use this session	本次工作階段的 AI 用量
 API boundary	API 邊界
+API key	API 金鑰
 API key (stored in your system keychain)	API 金鑰 (儲存在系統鑰匙圈中)
+API key, if it needs one	API 金鑰 (如需要)
 About 10 GB. Free for personal use with a Unity account.	約 10 GB。個人使用免費，需要 Unity 帳戶。
 About 60 GB, an Epic Games account, and Visual Studio's C++ tools.	約 60 GB，需要 Epic Games 帳戶和 Visual Studio 的 C++ 工具。
 Add	新增
@@ -81,6 +84,7 @@ Add a fal.ai key	新增 fal.ai 金鑰
 Add a folder…	新增資料夾…
 Add a plugin	新增外掛
 Add an AI brain and I'll read this evidence for you, answer follow-up questions and point at the proof.	新增 AI 助手後，我就能為你解讀這些證據、回答後續問題，並指出依據。
+Add an AI by its address	依位址新增 AI
 Add more info. The builder reads it at its next step.	補充更多資訊。建置助手會在下一步讀取。
 Add pictures	新增圖片
 Add pictures of the original	新增原作圖片
@@ -649,6 +653,7 @@ Medium	中
 Memory for Ghidra	Ghidra 記憶體用量
 Minimise	最小化
 Mode	模式
+Model	模型
 Modules	模組
 More detail	更多詳細資訊
 More makes a big program's first look faster.	分配更多記憶體可加快大型程式的首次分析。
@@ -712,6 +717,7 @@ Objective-C protocols	Objective-C 協定
 Observe a JS runtime	觀察 JS 執行環境
 Of this, {cost} was charged to an API key.	其中 {cost} 透過 API 金鑰計費。
 Off	關閉
+Ollama or LM Studio on another computer, or any service that speaks the OpenAI API.	另一台電腦上的 Ollama 或 LM Studio，或任何相容 OpenAI API 的服務。
 On	開啟
 One line, in plain words. It stays on this computer and is never sent anywhere.	用一句淺白的話說明。內容只保留在本機，絕不會傳送到其他地方。
 One-shot instrumentation	單次插樁
@@ -953,6 +959,7 @@ Selection	所選內容
 Send	傳送
 Send (Enter)	傳送 (Enter)
 Send now	立即傳送
+Server address	伺服器位址
 Session status	工作階段狀態
 Set a project's asset budget	設定專案素材預算
 Set an AI's program	設定 AI 的程式
@@ -1238,6 +1245,7 @@ Your website is ready	你的網站已就緒
 a new folder in {dir}	{dir} 中的新資料夾
 a picture	每張圖片
 about ${n}	約 ${n}
+address, e.g. http://192.168.1.20:11434/v1	位址，例如 http://192.168.1.20:11434/v1
 and {n} more	以及另外 {n} 項
 arguments (optional)	引數 (選填)
 call graph	呼叫圖
@@ -1258,8 +1266,10 @@ job result	工作結果
 job {title} panicked: {what}	工作 {title} 發生異常：{what}
 just now	剛剛
 managed	由應用程式管理
+model (optional)	模型 (選填)
 must be a number	必須是數字
 must be a whole number	必須是整數
+name, e.g. Studio box	名稱，例如 工作室電腦
 number	數字
 objdump output	objdump 輸出
 or start with /btw to just ask	或以 /btw 開頭，僅提出問題

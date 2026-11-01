@@ -482,6 +482,41 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
         });
         ui.add_space(6.0);
     }
+    server_form(app, ui);
+}
+
+/// An AI that "Look for AI" can't find: a server on another computer or a hosted service, added by
+/// its address (#54, #98). The server is asked for its models before it's added.
+fn server_form(app: &mut CraftApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    ui.add_space(14.0);
+    widgets::caption(ui, "Add an AI by its address");
+    ui.label(RichText::new(tr("Ollama or LM Studio on another computer, or any service that speaks the OpenAI API.")).color(t.text_faint).size(theme::CAPTION));
+    ui.add_space(4.0);
+    let form = &mut app.server_form;
+    // `width` is the text's; the compact frame adds 8 points a side and its border.
+    const FRAME: f32 = 18.0;
+    let field = |ui: &mut Ui, text: &mut String, hint: &str, width: f32, name: &str, secret: bool| {
+        let r = ui.add(egui::TextEdit::singleline(text).password(secret).hint_text(tr(hint)).desired_width(width).frame(widgets::text_field_frame_compact(&t)));
+        widgets::named(r, &tr(name));
+    };
+    ui.horizontal(|ui| {
+        field(ui, &mut form.name, "name, e.g. Studio box", 150.0, "AI name", false);
+        let w = ui.available_width() - FRAME;
+        field(ui, &mut form.address, "address, e.g. http://192.168.1.20:11434/v1", w, "Server address", false);
+    });
+    let ready = !form.name.trim().is_empty() && !form.address.trim().is_empty();
+    let mut add = false;
+    ui.horizontal(|ui| {
+        field(ui, &mut form.model, "model (optional)", 150.0, "Model", false);
+        // Room for the Add button after it.
+        let w = (ui.available_width() - FRAME - 90.0).max(120.0);
+        field(ui, &mut form.key, "API key, if it needs one", w, "API key", true);
+        add = widgets::primary_icon(ui, Some("plus"), "Add", ready).clicked() && ready;
+    });
+    if add {
+        app.add_server();
+    }
 }
 
 /// A number field; true when it changed.

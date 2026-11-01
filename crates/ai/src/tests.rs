@@ -172,6 +172,23 @@ fn an_agent_apps_program_is_set_and_cleared() {
     assert!(h.commands().is_empty(), "blank finds it by its usual name again");
 }
 
+/// #54, #98: a server on another computer is added by its address, with a model that can chat
+/// when none is named; one that doesn't answer with its models isn't added.
+#[test]
+fn a_server_is_added_by_its_address() {
+    let (h, _d) = hub();
+    let url = serve("200 OK", r#"{"object":"list","data":[{"id":"nomic-embed-text"},{"id":"qwen3:8b"}]}"#);
+    assert_eq!(h.add_server(" Studio box ", &format!("{url}/"), None, Some(" sk-test ".into())).unwrap(), "qwen3:8b");
+    let b = h.backends().into_iter().find(|b| b.name == "Studio box").unwrap();
+    assert_eq!((b.kind, b.model.as_str(), b.base_url.as_deref()), (BackendKind::OpenaiCompatible, "qwen3:8b", Some(url.as_str())));
+    assert_eq!(h.add_server("Named", &url, Some("llama3"), None).unwrap(), "llama3", "a named model is kept");
+    assert!(h.add_server("Web page", &serve("404 Not Found", "nope"), None, None).is_err(), "not a model server");
+    assert!(h.add_server("Empty", &serve("200 OK", r#"{"object":"list","data":[]}"#), None, None).is_err(), "no models to use");
+    assert!(h.add_server("No scheme", "192.168.1.20:11434/v1", None, None).is_err());
+    assert!(h.add_server(" ", &url, None, None).is_err());
+    assert_eq!(h.backends().len(), 2, "only the ones that answered");
+}
+
 fn add(h: &AiHub, name: &str, kind: BackendKind, base: &str, key: Option<&str>) {
     h.add_backend(
         BackendConfig { name: name.into(), kind, model: String::new(), base_url: Some(base.into()), ssh_host: None, enabled: true },

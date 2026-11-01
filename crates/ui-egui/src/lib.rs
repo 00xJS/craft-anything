@@ -220,6 +220,17 @@ pub enum Done {
     Nothing,
 }
 
+/// An AI server added by its address (Settings → AI): another computer's Ollama or LM Studio, or a
+/// service that speaks the OpenAI API.
+#[derive(Debug, Clone, Default)]
+pub struct ServerForm {
+    pub name: String,
+    pub address: String,
+    /// Empty: the first model it lists that can chat.
+    pub model: String,
+    pub key: String,
+}
+
 /// What a file dialog was for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pick {
@@ -341,6 +352,9 @@ pub struct CraftApp {
     pub detecting: bool,
     pub log: Vec<LogLine>,
     pub key_inputs: std::collections::BTreeMap<String, String>,
+    /// Settings → AI's "Add an AI by its address" form. Not kept with the UI state: its key goes
+    /// only to the keychain.
+    pub server_form: ServerForm,
     /// Every project's rebuild in this window: working, waiting their turn, or finished.
     pub runs: craft_anything_ai::rebuild::RunSet,
     /// What was typed for each note still waiting for a builder, by note id, to put back in the
@@ -431,6 +445,7 @@ impl CraftApp {
             detecting: false,
             log: Vec::new(),
             key_inputs: Default::default(),
+            server_form: ServerForm::default(),
             runs: craft_anything_ai::rebuild::RunSet::new(craft_anything_engine::settings::BuildSettings::default().parallel),
             drafts: Default::default(),
             usage: Default::default(),
@@ -1273,6 +1288,9 @@ impl CraftApp {
             }
             Done::BackendAdded { name, result } => match result {
                 Ok(()) => {
+                    if self.server_form.name.trim() == name {
+                        self.server_form = ServerForm::default();
+                    }
                     self.toast(i18n::trf("{name} is ready", &[("name", &name)]), false);
                     self.choose_backend(Some(name));
                     self.refresh_backends();
