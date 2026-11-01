@@ -410,6 +410,23 @@ fn standin_path(p: &str) -> Result<PathBuf, ToolError> {
     std::fs::canonicalize(&path).map_err(|e| ToolError::io(path.display(), e))
 }
 
+/// How long a rebuilt stand-in waits for its predecessor's port.
+const TAKEOVER_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Listen on `port`, trying a busy one again for up to `wait`: the port a replaced stand-in just
+/// gave up can stay busy a moment, or be lent out briefly as another connection's local port.
+fn serve_on(port: u16, answerer: Arc<dyn Answerer>, wait: std::time::Duration) -> std::io::Result<LoopbackServer> {
+    let until = std::time::Instant::now() + wait;
+    loop {
+        match standin_server::serve(port, Limits::default(), answerer.clone()) {
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && std::time::Instant::now() < until => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            r => return r,
+        }
+    }
+}
+
 fn web_standin_start(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {
     let p: StartParams = parse_params(params)?;
     let file = standin_path(&p.path)?;
@@ -434,15 +451,15 @@ fn web_standin_start(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Too
     let replay = Arc::new(Replay { standin, state: Mutex::default() });
     let answerer: Arc<dyn Answerer> = replay.clone();
     // The file was rebuilt since it was loaded: answer from the new one, at the same address.
-    let port = match stale.as_ref().and_then(|id| all.running.lock().unwrap_or_else(PoisonError::into_inner).remove(id)) {
+    let (port, taken_over) = match stale.as_ref().and_then(|id| all.running.lock().unwrap_or_else(PoisonError::into_inner).remove(id)) {
         Some(old) => {
             let port = old.server.port;
             drop(old);
-            port
+            (port, true)
         }
-        None => p.port,
+        None => (p.port, false),
     };
-    let server = standin_server::serve(port, Limits::default(), answerer)
+    let server = serve_on(port, answerer, if taken_over { TAKEOVER_WAIT } else { std::time::Duration::ZERO })
         .map_err(|e| ToolError::io(format!("listening on port {port}"), e).with_remediation("Pick another port, or leave port out to use a free one."))?;
     let id = {
         let mut next = all.next.lock().unwrap_or_else(PoisonError::into_inner);
