@@ -84,6 +84,19 @@ pub(crate) fn serve(status: &'static str, body: &'static str) -> String {
     base
 }
 
+/// #48: a coding agent's test only runs `--version`, and its report says so.
+#[test]
+fn a_coding_agent_test_says_it_only_checked_the_version() {
+    let (h, _d) = hub();
+    let config = BackendConfig { name: "Agent".into(), kind: BackendKind::AgentCli, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true };
+    // cargo stands in for the agent's program: it's there wherever these tests run.
+    let options = BackendOptions { command: Some("cargo".into()), ..Default::default() };
+    h.add_backend_with(BackendEntry { config, options }, None).unwrap();
+    let r = h.test_backend("Agent").unwrap();
+    assert!(r.version_only && r.reply.starts_with("cargo "), "{r:?}");
+    assert_eq!(serde_json::to_value(&r).unwrap()["version_only"], true, "the CLI's ai test prints it");
+}
+
 /// #37: doctor asks a local server for its models instead of trusting an open port.
 #[test]
 fn a_local_server_is_reachable_only_when_it_lists_models() {
@@ -345,7 +358,7 @@ fn hub_config_keys_and_test_backend() {
     assert_eq!(h.backends().len(), 2);
     assert!(h.has_key("Claude") && h.has_key("Local"));
     let r = h.test_backend("Claude").unwrap();
-    assert_eq!(r.reply, "ready");
+    assert_eq!((r.reply.as_str(), r.version_only), ("ready", false));
     assert_eq!(r.model, "claude-haiku-5-5");
     assert_eq!(seen.lock().unwrap()[0].body["output_config"]["effort"], "high");
     assert_eq!(h.list_models("Claude").unwrap(), vec!["claude-opus-5-5", "claude-haiku-5-5"]);

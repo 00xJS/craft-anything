@@ -211,6 +211,10 @@ pub struct TestReport {
     pub model: String,
     pub latency_ms: u64,
     pub reply: String,
+    /// Only the coding agent's `--version` ran (`reply` is its first line): it's installed, but
+    /// whether it's signed in, has a model and quota shows only when it gets a message (#48).
+    #[serde(default)]
+    pub version_only: bool,
 }
 
 /// Text kept in the journal for a user message (bounded).
@@ -565,7 +569,8 @@ impl AiHub {
         }
     }
 
-    /// Send a tiny request and time it. Blocking (bounded); run it off the UI thread.
+    /// Send a tiny request and time it; a coding agent only runs `--version`, so its report says
+    /// `version_only`. Blocking (bounded); run it off the UI thread.
     pub fn test_backend(&self, name: &str) -> Result<TestReport, ToolError> {
         let e = self.entry(name)?;
         let start = Instant::now();
@@ -581,6 +586,7 @@ impl AiHub {
                 model: e.config.model.clone(),
                 latency_ms: start.elapsed().as_millis() as u64,
                 reply: out.stdout_text().lines().next().unwrap_or_default().trim().to_string(),
+                version_only: true,
             });
         }
         let mut slot = self.build_model(&e)?;
@@ -602,6 +608,7 @@ impl AiHub {
             model: if r.model.is_empty() { model } else { r.model },
             latency_ms: start.elapsed().as_millis() as u64,
             reply: r.message.text().trim().to_string(),
+            version_only: false,
         })
     }
 
