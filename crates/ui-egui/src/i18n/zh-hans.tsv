@@ -395,6 +395,7 @@ Find a call path	查找调用路径
 Find a game's files	查找游戏文件
 Find an app	查找应用
 Find in-page MCP tools	查找页面内的 MCP 工具
+Find it automatically	自动查找
 Find out how any software works, then craft your own.	了解任何软件的工作原理，再打造自己的版本。
 Find the original source line	查找原始源码行
 Firmware regions	固件区域
@@ -820,6 +821,8 @@ Preserving software that's no longer supported.	保存已停止维护的软件�
 Preview a project's website	预览项目网站
 Preview the website	预览网站
 Previous address	上一个地址
+Program: found automatically	程序：自动查找
+Program: {path}	程序：{path}
 Programs (native code)	程序 (原生代码)
 Progress	进度
 Project details	项目详情
@@ -952,6 +955,7 @@ Send (Enter)	发送 (Enter)
 Send now	立即发送
 Session status	会话状态
 Set a project's asset budget	设置项目素材预算
+Set an AI's program	设置 AI 的程序
 Set one up	设置一个
 Set up a brain…	设置 AI 助手…
 Set up a builder	配置构建助手
@@ -1177,6 +1181,7 @@ When the builder needs a choice made: show it to you and wait, or let it decide 
 When you rebuild an app or game, start it once to picture its window and compare the rebuild with it. It runs that program.	重建应用或游戏时，先启动原作一次以截取其窗口，并与重建结果比较。这会运行该程序。
 Where am I	当前位置
 Where is Ghidra installed?	Ghidra 安装在哪里？
+Where is the program?	程序在哪里？
 Where should new projects go?	新项目应保存在哪里？
 Where we found it	发现位置
 Whether they're the app to edit in place, or material the app starts from beside them.	选择直接编辑这些应用文件，还是以它们为素材在旁边创建应用。

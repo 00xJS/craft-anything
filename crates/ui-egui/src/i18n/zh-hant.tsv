@@ -395,6 +395,7 @@ Find a call path	尋找呼叫路徑
 Find a game's files	尋找遊戲檔案
 Find an app	尋找應用程式
 Find in-page MCP tools	尋找頁面內的 MCP 工具
+Find it automatically	自動尋找
 Find out how any software works, then craft your own.	瞭解任何軟體的運作原理，再打造自己的版本。
 Find the original source line	尋找原始碼行
 Firmware regions	韌體區域
@@ -820,6 +821,8 @@ Preserving software that's no longer supported.	保存已停止維護的軟體�
 Preview a project's website	預覽專案網站
 Preview the website	預覽網站
 Previous address	上一個位址
+Program: found automatically	程式：自動尋找
+Program: {path}	程式：{path}
 Programs (native code)	程式 (原生程式碼)
 Progress	進度
 Project details	專案詳細資訊
@@ -952,6 +955,7 @@ Send (Enter)	傳送 (Enter)
 Send now	立即傳送
 Session status	工作階段狀態
 Set a project's asset budget	設定專案素材預算
+Set an AI's program	設定 AI 的程式
 Set one up	設定一個
 Set up a brain…	設定 AI 助手…
 Set up a builder	設定建置助手
@@ -1177,6 +1181,7 @@ When the builder needs a choice made: show it to you and wait, or let it decide 
 When you rebuild an app or game, start it once to picture its window and compare the rebuild with it. It runs that program.	重建應用程式或遊戲時，先啟動原作一次以擷取其視窗，並與重建結果比較。這會執行該程式。
 Where am I	目前位置
 Where is Ghidra installed?	Ghidra 安裝在哪裡？
+Where is the program?	程式在哪裡？
 Where should new projects go?	新專案應儲存在哪裡？
 Where we found it	發現位置
 Whether they're the app to edit in place, or material the app starts from beside them.	選擇直接編輯這些應用程式檔案，還是以它們為素材在旁邊建立應用程式。
