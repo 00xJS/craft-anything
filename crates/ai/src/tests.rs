@@ -62,6 +62,40 @@ fn mock(responses: Vec<(u16, &'static str, String)>) -> (String, Arc<Mutex<Vec<S
     (url, seen)
 }
 
+/// A stand-in server on a free port that answers every request (and any number of them, unlike
+/// [`mock`]) with `status` and `body`; its `/v1` address.
+pub(crate) fn serve(status: &'static str, body: &'static str) -> String {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", l.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for mut s in l.incoming().flatten() {
+            let (mut got, mut buf) = (Vec::new(), [0u8; 4096]);
+            while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                match s.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => got.extend_from_slice(&buf[..n]),
+                }
+            }
+            if !got.is_empty() {
+                let _ = write!(s, "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+            }
+        }
+    });
+    base
+}
+
+/// #37: doctor asks a local server for its models instead of trusting an open port.
+#[test]
+fn a_local_server_is_reachable_only_when_it_lists_models() {
+    let (h, _d) = hub();
+    add(&h, "Web page", BackendKind::OpenaiCompatible, &serve("404 Not Found", "404 page not found"), None);
+    add(&h, "Real", BackendKind::OpenaiCompatible, &serve("200 OK", r#"{"data":[{"id":"qwen3-8b"}]}"#), None);
+    let reach = h.check_reachability();
+    let of = |n: &str| reach.iter().find(|(name, _)| name == n).map(|(_, r)| r.clone()).unwrap();
+    assert!(of("Web page").is_err_and(|e| e.contains("404 page not found")), "{reach:?}");
+    assert!(of("Real").is_ok(), "{reach:?}");
+}
+
 fn sse(events: &[Value]) -> String {
     events.iter().map(|e| format!("event: {}\r\ndata: {}\r\n\r\n", e["type"].as_str().unwrap_or("message"), e)).collect()
 }
