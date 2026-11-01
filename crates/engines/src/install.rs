@@ -283,7 +283,7 @@ pub fn unpack(
     report: &dyn Fn(&str),
 ) -> Result<usize, ToolError> {
     match format {
-        ArchiveFormat::Zip => unpack_zip(data, dest, strip_prefix, cancel, report),
+        ArchiveFormat::Zip => unpack_zip(data, dest, strip_prefix, MAX_ENTRY_BYTES, cancel, report),
         ArchiveFormat::TarGz => {
             let (tar, _) = craft_anything_formats::firmware::gunzip(data, MAX_TAR_BYTES).map_err(|e| decompress_error("gzip", e.to_string()))?;
             unpack_tar(&tar, dest, strip_prefix, cancel, report)
@@ -310,8 +310,8 @@ fn decompress_error(what: &str, why: String) -> ToolError {
 }
 
 /// Unpack a zip that was already verified into `dest` (zip-slip safe). Returns the files written.
-pub fn unpack_zip_into(data: &[u8], dest: &Path, cancel: Option<&Cancel>) -> Result<usize, ToolError> {
-    unpack_zip(data, dest, None, cancel, &|_| {})
+pub fn unpack_zip_into(data: &[u8], dest: &Path, max_entry: u64, cancel: Option<&Cancel>) -> Result<usize, ToolError> {
+    unpack_zip(data, dest, None, max_entry, cancel, &|_| {})
 }
 
 /// The safe path inside the install folder for an archive member, or `None` to skip it (outside
@@ -340,7 +340,14 @@ fn write_member(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
 
 /// Unpack a zip into `dest`, stripping `strip_prefix`, rejecting unsafe member names. Returns the
 /// number of files written.
-fn unpack_zip(data: &[u8], dest: &Path, strip_prefix: Option<&str>, cancel: Option<&Cancel>, report: &dyn Fn(&str)) -> Result<usize, ToolError> {
+fn unpack_zip(
+    data: &[u8],
+    dest: &Path,
+    strip_prefix: Option<&str>,
+    max_entry: u64,
+    cancel: Option<&Cancel>,
+    report: &dyn Fn(&str),
+) -> Result<usize, ToolError> {
     use craft_anything_formats::zip;
     let archive = zip::parse(data, MAX_ENTRIES).map_err(|e| ToolError::new(ErrorCode::GarbledOutput, format!("The archive could not be read: {e}")))?;
     let mut written = 0usize;
@@ -355,7 +362,7 @@ fn unpack_zip(data: &[u8], dest: &Path, strip_prefix: Option<&str>, cancel: Opti
         if i % 25 == 0 {
             report(&format!("unpacking ({written} files)"));
         }
-        let bytes = zip::read_entry(data, entry, MAX_ENTRY_BYTES)
+        let bytes = zip::read_entry(data, entry, max_entry)
             .map_err(|e| ToolError::new(ErrorCode::GarbledOutput, format!("A file in the archive could not be extracted: {e}")))?;
         write_member(&path, &bytes)?;
         written += 1;
@@ -565,7 +572,10 @@ mod tests {
         // Build a tiny stored (uncompressed) zip with one file under platform-tools/.
         let data = make_stored_zip("platform-tools/adb", b"#!/bin/sh\necho adb\n");
         let dir = tempfile::tempdir().unwrap();
-        let n = unpack_zip(&data, dir.path(), Some("platform-tools/"), None, &|_| {}).unwrap();
+        let n = unpack_zip(&data, dir.path(), Some("platform-tools/"), MAX_ENTRY_BYTES, None, &|_| {}).unwrap();
+        // A file over the limit stops the unpack instead of being read into memory.
+        let small = tempfile::tempdir().unwrap();
+        assert!(unpack_zip(&data, small.path(), Some("platform-tools/"), 4, None, &|_| {}).is_err());
         assert_eq!(n, 1);
         let adb = dir.path().join("adb");
         assert!(adb.is_file());
