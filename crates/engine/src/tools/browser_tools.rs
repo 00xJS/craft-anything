@@ -170,8 +170,8 @@ pub(crate) fn deadline(ctx: &Ctx<'_>, timeout_secs: u64) -> Result<Deadline, Too
     Ok(Deadline::new(Duration::from_secs(timeout_secs), ctx.cancel.clone()))
 }
 
-pub(crate) fn browser_env(b: &Browser) -> craft_anything_evidence::Environment {
-    web_common::cdp_env(Some(b.version.clone()))
+pub(crate) fn browser_env(clean_room: bool, b: &Browser) -> craft_anything_evidence::Environment {
+    web_common::cdp_env(clean_room, Some(b.version.clone()))
 }
 
 pub(crate) fn window_deadline(ctx: &Ctx<'_>, watch_ms: u64, overall: &Deadline) -> Deadline {
@@ -218,7 +218,7 @@ fn web_browser_connect(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, T
         browser.endpoint.origin,
         targets.len()
     );
-    let ev = EvidenceBuilder::new("web_browser_connect", Subject { kind: "browser".into(), sha256: None, name: Some(browser.endpoint.origin.clone()) }, browser_env(&browser))
+    let ev = EvidenceBuilder::new("web_browser_connect", Subject { kind: "browser".into(), sha256: None, name: Some(browser.endpoint.origin.clone()) }, browser_env(ctx.session.clean_room(), &browser))
         .params(json!({"cdp_endpoint": p.cdp_endpoint, "launched": browser.launched}))
         .result(json!({"endpoint": browser.endpoint.origin, "product": browser.product, "protocol_version": browser.version, "launched": browser.launched, "targets": targets.len()}))
         .summary(summary)
@@ -269,7 +269,7 @@ fn web_pages_list(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolEr
     let ev = EvidenceBuilder::new(
         "web_pages_list",
         Subject { kind: "browser".into(), sha256: None, name: Some(browser.endpoint.origin.clone()) },
-        browser_env(&browser),
+        browser_env(ctx.session.clean_room(), &browser),
     )
     .params(json!({"cdp_endpoint": p.cdp_endpoint}))
     .result(json!({"endpoint": browser.endpoint.origin, "product": browser.product, "protocol_version": browser.version, "targets": rows}))
@@ -799,7 +799,17 @@ fn web_page_show(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolErr
         "Inspected {page_url}: {scripts_n} script(s), {req_n} request outline(s), {} frame origin(s).",
         cap.result["frame_origins"].as_array().map_or(0, Vec::len)
     );
-    let ev = passive_evidence("web_page_show", &browser, &page_url, cap.result, summary, cap.dropped, p.hidden_values.len(), secrets.redactions)?;
+    let ev = passive_evidence(
+        "web_page_show",
+        ctx.session.clean_room(),
+        &browser,
+        &page_url,
+        cap.result,
+        summary,
+        cap.dropped,
+        p.hidden_values.len(),
+        secrets.redactions,
+    )?;
     Ok(ToolOutput::evidence(ev))
 }
 
@@ -816,6 +826,7 @@ pub(crate) fn cleanup(client: &mut CdpClient, _dl: &Deadline) {
 #[allow(clippy::too_many_arguments)]
 fn passive_evidence(
     op: &'static str,
+    clean_room: bool,
     browser: &Browser,
     origin: &str,
     result: Value,
@@ -824,7 +835,7 @@ fn passive_evidence(
     declared_secrets: usize,
     redactions: u64,
 ) -> Result<craft_anything_evidence::Evidence, ToolError> {
-    let mut b = EvidenceBuilder::new(op, Subject { kind: "website".into(), sha256: None, name: Some(origin.to_string()) }, browser_env(browser))
+    let mut b = EvidenceBuilder::new(op, Subject { kind: "website".into(), sha256: None, name: Some(origin.to_string()) }, browser_env(clean_room, browser))
         .params(json!({"endpoint": browser.endpoint.origin, "sensitive_value_declarations": declared_secrets}))
         .result(result)
         .summary(summary)
@@ -940,24 +951,28 @@ fn web_page_js_analyze(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, T
         cap.scripts.len(),
         if bundlers.is_empty() { String::new() } else { format!(", bundled with {}", bundlers.join("/")) }
     );
-    let ev = EvidenceBuilder::new("web_page_js_analyze", Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) }, browser_env(&browser))
-        .params(json!({"endpoint": browser.endpoint.origin, "load_source_maps": p.load_source_maps, "offset": p.offset, "limit": p.limit}))
-        .result(result)
-        .summary(summary)
-        .confidence(Confidence::Derived)
-        .authority(Authority::EarlierRecord)
-        .limitation(Limitation::new(
-            "live_subset",
-            "Only the scripts this live page had loaded during the window were analysed; lazily loaded chunks may be missing.",
-        ))
-        .limitation(Limitation::new("static_only", "Static reading only: code built at run time (eval, computed imports) is invisible."))
-        .coverage(if p.offset == 0 && p.limit >= total_modules {
-            Coverage::complete(total_modules as u64)
-        } else {
-            Coverage::page(p.limit.min(total_modules.saturating_sub(p.offset)) as u64, total_modules as u64, p.offset as u64)
-        })
-        .location(Location::new("url", page_url))
-        .build()?;
+    let ev = EvidenceBuilder::new(
+        "web_page_js_analyze",
+        Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) },
+        browser_env(ctx.session.clean_room(), &browser),
+    )
+    .params(json!({"endpoint": browser.endpoint.origin, "load_source_maps": p.load_source_maps, "offset": p.offset, "limit": p.limit}))
+    .result(result)
+    .summary(summary)
+    .confidence(Confidence::Derived)
+    .authority(Authority::EarlierRecord)
+    .limitation(Limitation::new(
+        "live_subset",
+        "Only the scripts this live page had loaded during the window were analysed; lazily loaded chunks may be missing.",
+    ))
+    .limitation(Limitation::new("static_only", "Static reading only: code built at run time (eval, computed imports) is invisible."))
+    .coverage(if p.offset == 0 && p.limit >= total_modules {
+        Coverage::complete(total_modules as u64)
+    } else {
+        Coverage::page(p.limit.min(total_modules.saturating_sub(p.offset)) as u64, total_modules as u64, p.offset as u64)
+    })
+    .location(Location::new("url", page_url))
+    .build()?;
     Ok(ToolOutput::evidence(ev))
 }
 
@@ -1038,7 +1053,17 @@ fn web_page_watch(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolEr
     let req_n = cap.result["network"]["request_count"].as_u64().unwrap_or(0);
     let con_n = cap.result["console"]["count"].as_u64().unwrap_or(0);
     let summary = format!("Watched {page_url} for {}ms: {req_n} request outline(s), {con_n} console entr(y/ies).", p.watch_ms);
-    let ev = passive_evidence("web_page_watch", &browser, &page_url, cap.result, summary, cap.dropped, p.hidden_values.len(), secrets.redactions)?;
+    let ev = passive_evidence(
+        "web_page_watch",
+        ctx.session.clean_room(),
+        &browser,
+        &page_url,
+        cap.result,
+        summary,
+        cap.dropped,
+        p.hidden_values.len(),
+        secrets.redactions,
+    )?;
     Ok(ToolOutput::evidence(ev))
 }
 
@@ -1101,16 +1126,20 @@ fn web_mcp_tools_list(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, To
     } else {
         format!("WebMCP is not supported by the browser at {}.", browser.endpoint.origin)
     };
-    let ev = EvidenceBuilder::new("web_mcp_tools_list", Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) }, browser_env(&browser))
-        .params(json!({"endpoint": browser.endpoint.origin}))
-        .result(json!({"origin": page_url, "webmcp_supported": available, "tools": tools, "note": note}))
-        .summary(summary)
-        .confidence(Confidence::Observed)
-        .authority(Authority::EarlierRecord)
-        .limitation(Limitation::new("experimental", "WebMCP is an experimental CDP domain; absence here does not prove the page offers no in-page tools."))
-        .coverage(Coverage { status: CoverageStatus::Partial, examined: Some(tools.len() as u64), total: None, next_offset: None })
-        .location(Location::new("url", page_url))
-        .build()?;
+    let ev = EvidenceBuilder::new(
+        "web_mcp_tools_list",
+        Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) },
+        browser_env(ctx.session.clean_room(), &browser),
+    )
+    .params(json!({"endpoint": browser.endpoint.origin}))
+    .result(json!({"origin": page_url, "webmcp_supported": available, "tools": tools, "note": note}))
+    .summary(summary)
+    .confidence(Confidence::Observed)
+    .authority(Authority::EarlierRecord)
+    .limitation(Limitation::new("experimental", "WebMCP is an experimental CDP domain; absence here does not prove the page offers no in-page tools."))
+    .coverage(Coverage { status: CoverageStatus::Partial, examined: Some(tools.len() as u64), total: None, next_offset: None })
+    .location(Location::new("url", page_url))
+    .build()?;
     Ok(ToolOutput::evidence(ev))
 }
 
@@ -1158,17 +1187,20 @@ fn web_page_screenshot_take(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutp
     let bytes = web_common::b64_decode(data)?;
     let artifact = web_common::png_artifact(&bytes)?;
     let summary = format!("Captured a {}×{} PNG of {page_url} ({} bytes).", artifact["width"], artifact["height"], bytes.len());
-    let ev =
-        EvidenceBuilder::new("web_page_screenshot_take", Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) }, browser_env(&browser))
-            .params(json!({"endpoint": browser.endpoint.origin, "target_id": p.target_id}))
-            .result(json!({"origin": page_url, "screenshot": artifact}))
-            .summary(summary)
-            .confidence(Confidence::Observed)
-            .authority(Authority::EarlierRecord)
-            .limitation(Limitation::new("single_frame", "One image of the page's current state."))
-            .coverage(Coverage::complete(1))
-            .location(Location::new("url", page_url))
-            .build()?;
+    let ev = EvidenceBuilder::new(
+        "web_page_screenshot_take",
+        Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) },
+        browser_env(ctx.session.clean_room(), &browser),
+    )
+    .params(json!({"endpoint": browser.endpoint.origin, "target_id": p.target_id}))
+    .result(json!({"origin": page_url, "screenshot": artifact}))
+    .summary(summary)
+    .confidence(Confidence::Observed)
+    .authority(Authority::EarlierRecord)
+    .limitation(Limitation::new("single_frame", "One image of the page's current state."))
+    .coverage(Coverage::complete(1))
+    .location(Location::new("url", page_url))
+    .build()?;
     Ok(ToolOutput::evidence(ev))
 }
 
@@ -2222,7 +2254,7 @@ fn web_walkthrough_record(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput
         "secrets_hidden": p.hidden_values.len(),
         "secret_redactions": secrets.redactions,
     });
-    let mut b = EvidenceBuilder::new("web_walkthrough_record", Subject { kind: "website".into(), sha256: None, name: Some(start_url.clone()) }, browser_env(&browser))
+    let mut b = EvidenceBuilder::new("web_walkthrough_record", Subject { kind: "website".into(), sha256: None, name: Some(start_url.clone()) }, browser_env(ctx.session.clean_room(), &browser))
         .params(json!({"endpoint": browser.endpoint.origin, "launched": browser.launched, "action_count": p.actions.len(), "sensitive_value_declarations": p.hidden_values.len()}))
         .result(result)
         .summary(summary)

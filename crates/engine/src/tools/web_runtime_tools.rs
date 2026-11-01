@@ -142,7 +142,7 @@ fn web_coverage_measure(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, 
     let ev = EvidenceBuilder::new(
         "web_coverage_measure",
         Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) },
-        browser_tools::browser_env(&browser),
+        browser_tools::browser_env(ctx.session.clean_room(), &browser),
     )
     .params(json!({"endpoint": browser.endpoint.origin, "watch_ms": p.watch_ms, "offset": p.offset, "limit": p.limit}))
     .result(result)
@@ -262,7 +262,7 @@ fn web_listeners_list(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, To
     let ev = EvidenceBuilder::new(
         "web_listeners_list",
         Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) },
-        browser_tools::browser_env(&browser),
+        browser_tools::browser_env(ctx.session.clean_room(), &browser),
     )
     .params(json!({"endpoint": browser.endpoint.origin, "selector": p.selector}))
     .result(json!({"origin": page_url, "selector": p.selector, "listeners": listeners}))
@@ -376,7 +376,7 @@ fn web_modules_trace(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Too
     let total_edges = edges.len();
     let node_page: Vec<Value> = nodes.into_iter().skip(p.offset).take(p.limit.max(1)).collect();
     let summary = format!("Module graph of {page_url}: {total_nodes} script(s), {total_edges} import edge(s), {} unresolved.", unresolved.len());
-    let ev = EvidenceBuilder::new("web_modules_trace", Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) }, browser_tools::browser_env(&browser))
+    let ev = EvidenceBuilder::new("web_modules_trace", Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) }, browser_tools::browser_env(ctx.session.clean_room(), &browser))
         .params(json!({"endpoint": browser.endpoint.origin, "offset": p.offset, "limit": p.limit}))
         .result(json!({"origin": page_url, "nodes": node_page, "nodes_total": total_nodes, "edges": edges, "unresolved": unresolved}))
         .summary(summary)

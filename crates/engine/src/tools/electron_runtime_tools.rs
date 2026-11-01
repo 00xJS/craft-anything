@@ -146,7 +146,7 @@ fn js_electron_pages_list(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput
     let ev = EvidenceBuilder::new(
         "js_electron_pages_list",
         Subject { kind: "electron".into(), sha256: None, name: Some(browser.endpoint.origin.clone()) },
-        web_common::cdp_env(Some(browser.version.clone())),
+        web_common::cdp_env(ctx.session.clean_room(), Some(browser.version.clone())),
     )
     .params(json!({"cdp_endpoint": browser.endpoint.origin}))
     .result(json!({"endpoint": browser.endpoint.origin, "product": browser.product, "runtime": runtime, "targets": rows}))
@@ -222,7 +222,7 @@ fn js_electron_page_show(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput,
     let ev = EvidenceBuilder::new(
         "js_electron_page_show",
         Subject { kind: "electron".into(), sha256: None, name: Some(page_url.clone()) },
-        web_common::cdp_env(Some(browser.version.clone())),
+        web_common::cdp_env(ctx.session.clean_room(), Some(browser.version.clone())),
     )
     .params(json!({"endpoint": browser.endpoint.origin, "target_id": p.target_id, "sensitive_value_declarations": p.hidden_values.len()}))
     .result(cap.result)
@@ -341,7 +341,7 @@ fn js_electron_walkthrough_record(ctx: &mut Ctx<'_>, params: Value) -> Result<To
     let ev = EvidenceBuilder::new(
         "js_electron_walkthrough_record",
         Subject { kind: "electron".into(), sha256: None, name: exe.file_name().map(|n| n.to_string_lossy().into_owned()) },
-        web_common::cdp_env(Some(browser.version.clone())),
+        web_common::cdp_env(ctx.session.clean_room(), Some(browser.version.clone())),
     )
     .params(json!({"application_executable": p.application_executable, "action_count": p.actions.len(), "sensitive_value_declarations": p.hidden_values.len()}))
     .result(json!({
@@ -429,7 +429,7 @@ fn js_runtimes_list(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let ev = EvidenceBuilder::new(
         "js_runtimes_list",
         Subject { kind: "javascript-runtime".into(), sha256: None, name: Some(endpoint.origin.clone()) },
-        web_common::cdp_env(None),
+        web_common::cdp_env(ctx.session.clean_room(), None),
     )
     .params(json!({"cdp_endpoint": endpoint.origin}))
     .result(json!({"endpoint": endpoint.origin, "targets": rows}))
@@ -550,7 +550,7 @@ fn js_runtime_watch(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let ev = EvidenceBuilder::new(
         "js_runtime_watch",
         Subject { kind: "javascript-runtime".into(), sha256: None, name: Some(endpoint.origin.clone()) },
-        web_common::cdp_env(None),
+        web_common::cdp_env(ctx.session.clean_room(), None),
     )
     .params(json!({"cdp_endpoint": endpoint.origin, "runtime_kind": kind, "watch_ms": p.watch_ms}))
     .result(json!({

@@ -15,9 +15,10 @@ pub const MAX_SCREENSHOT_BYTES: usize = 64 << 20;
 /// Working-set admission for a screenshot decode (width·height·4 must be under this).
 pub const MAX_PIXELS_WORKING_SET: u64 = 256 << 20;
 
-/// The evidence environment for a CDP-backed observation (never a clean-room result).
-pub fn cdp_env(engine_version: Option<String>) -> Environment {
-    Environment { clean_room: false, engine: "cdp".into(), engine_version, host: host_triple(), language_id: None }
+/// The evidence environment for a CDP-backed observation, in the run's mode: Clean room's
+/// visitor view of a website is a clean-room result (#157).
+pub fn cdp_env(clean_room: bool, engine_version: Option<String>) -> Environment {
+    Environment { clean_room, engine: "cdp".into(), engine_version, host: host_triple(), language_id: None }
 }
 
 // ---------------------------------------------------------------------------------------------
