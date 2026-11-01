@@ -829,7 +829,7 @@ to the project next. Pins are the engine's (tools), kept in the project's `pinne
 - [x] Pins leave out what a compiler keeps beside a program that nothing needs to run it (`.pdb`
       debug symbols, `.lib`, `.d`, lock files): measured on real Rust projects, that took a
       291 MB pin to 49 MB, far more than sharing could
-- [ ] Leave out a project's old program copies (`*.running-*.exe`, 22 MB each in one project), which
+- [x] Leave out a project's old program copies (`*.running-*.exe`, 22 MB each in one project), which
       a pin can't tell from the program's helpers by their name alone
 - [ ] Say when a light pin ended up copying what it meant to share (a drive without hard links)
 - [ ] Pins of one project sharing with each other, so a third frozen copy of the same assets

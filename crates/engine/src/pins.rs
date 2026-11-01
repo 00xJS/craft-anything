@@ -230,7 +230,9 @@ impl Plan {
     /// Every (file, where it goes under `to`) the copy makes, in order.
     fn files(&self, ws: &Workspace, to: &Path) -> Result<Vec<Planned>, ToolError> {
         let (mut own, mut dependencies) = (Vec::new(), Vec::new());
-        let skip = |p: &Path| workspace::rebuilt(p) || ws.is_own_record(p) || p.file_name().and_then(|n| n.to_str()).is_some_and(|n| NEVER_COPIED.contains(&n));
+        let skip = |p: &Path| {
+            workspace::rebuilt(p) || ws.is_own_record(p) || p.file_name().and_then(|n| n.to_str()).is_some_and(|n| NEVER_COPIED.contains(&n)) || stray_copy(p)
+        };
         walk(&self.app, to, &skip, 0, &mut own)?;
         for k in &self.keep {
             let (from, whole) = match k {
@@ -239,12 +241,19 @@ impl Plan {
             };
             let rel = from.strip_prefix(&self.app).map_err(|_| ToolError::internal("a kept folder isn't inside the app"))?;
             if whole {
-                walk(from, &to.join(rel), &|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| NEVER_COPIED.contains(&n)), 0, &mut dependencies)?;
+                walk(
+                    from,
+                    &to.join(rel),
+                    &|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| NEVER_COPIED.contains(&n)) || stray_copy(p),
+                    0,
+                    &mut dependencies,
+                )?;
             } else {
                 for e in std::fs::read_dir(from).map_err(|e| ToolError::io(from.display(), e))?.flatten() {
                     if let Ok(m) = e.metadata()
                         && m.is_file()
                         && !compiler_leftover(&e.path())
+                        && !stray_copy(&e.path())
                     {
                         own.push((e.path(), to.join(rel).join(e.file_name()), m.len()));
                     }
@@ -268,6 +277,25 @@ impl Plan {
 fn compiler_leftover(p: &Path) -> bool {
     let kind = p.extension().and_then(|e| e.to_str()).is_some_and(|e| NOT_NEEDED_TO_RUN.contains(&e.to_ascii_lowercase().as_str()));
     kind || p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(".cargo-"))
+}
+
+/// An old copy of a program, left behind when a build replaced one that was running
+/// (`snake.running-144900.exe`): a pin copies the program, not each copy of it. It only counts as
+/// one when the program it copies is still beside it, so a helper that happens to be named like
+/// one stays.
+fn stray_copy(p: &Path) -> bool {
+    let Some(name) = p.file_name().and_then(|n| n.to_str()) else { return false };
+    let Some((base, rest)) = name.rsplit_once(".running-") else { return false };
+    let (digits, ext) = rest.split_once('.').map_or((rest, None), |(d, e)| (d, Some(e)));
+    if base.is_empty() || digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    let original = match ext {
+        Some(e) => format!("{base}.{e}"),
+        None => base.to_string(),
+    };
+    let original = p.with_file_name(original);
+    original.is_file() && crate::outputs::is_program(&original)
 }
 
 /// How deep a copy goes.
@@ -550,6 +578,34 @@ mod tests {
         assert!(!dup.root.join(PINNED).exists() && !dup.app_dir().join(PINNED).exists());
         ws.clone().delete().unwrap();
         assert!(!ws.root.join(PINNED).exists());
+    }
+
+    #[test]
+    fn a_pin_leaves_out_old_copies_of_its_program_but_keeps_helpers() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = built(d.path());
+        let release = ws.app_dir().join("target/release");
+        let before = estimate(&ws, None).unwrap();
+        let program = |name: &str, body: &[u8]| {
+            let p = release.join(exe(name));
+            std::fs::write(&p, body).unwrap();
+            mark_program(&p);
+        };
+        // What a build leaves when it replaces a program that was running, and two files that only
+        // look like one: a helper with nothing beside it, and a copy whose program is gone.
+        program("snake.running-144900", &[0u8; 4096]);
+        program("snake-tool.running-1", b"helper");
+        program("ghost.running-7", b"gone");
+        let after = estimate(&ws, None).unwrap();
+        assert_eq!(after.files, before.files + 2, "the old copy isn't counted, the two others are");
+        assert_eq!(after.bytes, before.bytes + 6 + 4, "and its size isn't either");
+        let pin = create(&ws, PinMode::Frozen, None, None, &mut |_, _| true).unwrap();
+        assert_eq!(pin.bytes, after.bytes);
+        let copy = pin.app_dir(&ws).join("target/release");
+        assert!(copy.join(exe("snake")).is_file());
+        assert!(!copy.join(exe("snake.running-144900")).exists(), "the old copy of the program is left out");
+        assert!(copy.join(exe("snake-tool.running-1")).is_file(), "a helper with nothing it copies beside it stays");
+        assert!(copy.join(exe("ghost.running-7")).is_file(), "a copy whose program is gone is all there is to run");
     }
 
     #[test]
