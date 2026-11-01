@@ -705,8 +705,8 @@ Gaps found while using the app for real projects.
       icons, its sections keep their height, so nothing moves when it folds, and a rule takes the
       place of each heading, with Refresh and the Pinned arrow still there
 - [ ] A prompt brought back with Up keeps its pictures (only the text comes back now)
-- [ ] The smoke test `a_game_project_shows_its_asset_spending_and_can_raise_the_budget` failed
-      once in a full run and passed in the next 11: it reads what a worker fills in after 3 frames
+- [x] The smoke test `a_game_project_shows_its_asset_spending_and_can_raise_the_budget` failed
+      once in a full run and passed in the next 11: wait for `a.facts.assets.0 == 1` instead of a fixed frame step
 - [x] The prompt box no longer jumps while typing: a frame laid out with its old height is
       thrown away and laid out again before it's shown
 - [x] A message sent to a project waiting its turn stays in the box instead of being lost

@@ -250,7 +250,7 @@ fn a_game_project_shows_its_asset_spending_and_can_raise_the_budget() {
         a.open_workspace(ws);
         a
     });
-    h.run_steps(3);
+    assert!(wait(&mut h, |a| a.facts.assets.0 == 1));
     h.get_by_label("1 · $0.51 of $5.00");
     // Generated assets are the person's choice, saved with the project through project_assets_allow.
     h.get_by_label("Generate custom pictures and models").click();
