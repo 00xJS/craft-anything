@@ -905,9 +905,14 @@ fn settings_window_tabs_draw() {
         a
     });
     h.run_steps(3);
+    // The window keeps its width on every tab: its close button (left of the title bar's) doesn't
+    // move (#68).
+    let edge = |h: &Harness<'static, CraftApp>| h.get_all_by_label("Close").map(|n| n.rect().right()).fold(f32::INFINITY, f32::min);
+    let right = edge(&h);
     for tab in ["Engines", "AI", "Builds", "Plugins", "Safety", "General"] {
         h.get_by_label(tab).click();
         h.run_steps(2);
+        assert_eq!(edge(&h), right, "the Settings window changed width on {tab}");
     }
     h.get_by_label("Studio Light").click();
     h.run_steps(3);

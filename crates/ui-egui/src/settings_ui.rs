@@ -86,10 +86,14 @@ pub fn show(app: &mut CraftApp, ctx: &egui::Context) {
                 });
                 ui.separator();
                 ui.vertical(|ui| {
-                    ui.set_min_width(440.0);
+                    // Exactly what's left of the window, with room for the scroll bar a long tab
+                    // gets, so no tab can widen the window (#68).
+                    let w = ui.available_width();
+                    ui.set_width(w);
+                    let content_w = w - ui.spacing().scroll.allocated_width();
                     // As tall as the window allows, so a tab's settings aren't cut off at the fold.
                     let h = (ctx.content_rect().height() - 220.0).clamp(280.0, 560.0);
-                    egui::ScrollArea::vertical().min_scrolled_height(h).max_height(h).show(ui, |ui| match app.state.settings_tab {
+                    egui::ScrollArea::vertical().min_scrolled_height(h).max_height(h).max_width(content_w).show(ui, |ui| match app.state.settings_tab {
                         SettingsTab::General => general(app, ui),
                         SettingsTab::Engines => engines(app, ui),
                         SettingsTab::Ai => ai(app, ui),
@@ -214,7 +218,8 @@ fn path_field(ui: &mut Ui, value: &mut Option<PathBuf>, name: &str, hint: &str) 
     let r = ui.add(
         egui::TextEdit::singleline(&mut s)
             .hint_text(tr(hint))
-            .desired_width(240.0)
+            // Up to 240, leaving room for a Choose… button after it, so a row never widens the window (#68).
+            .desired_width((ui.available_width() - 34.0).clamp(120.0, 240.0))
             .font(theme::mono(12.0))
             .frame(widgets::text_field_frame_compact(&Tokens::get(ui.ctx()))),
     );
