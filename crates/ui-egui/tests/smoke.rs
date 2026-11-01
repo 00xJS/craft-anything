@@ -918,11 +918,9 @@ fn command_palette_opens_and_lists_tools() {
     assert!(!h.state().state.palette.open);
 }
 
-/// #54, #98: an AI server on another computer is added by its address in Settings → AI, with a
-/// model that can chat, and the form empties once it's added.
-#[test]
-fn an_ai_server_is_added_by_its_address() {
-    // A stand-in model server: every request gets the same model list.
+/// A stand-in model server whose every answer lists an embedding model, then `qwen3:8b`. Its
+/// OpenAI-style address.
+fn model_server() -> String {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let url = format!("http://{}/v1", listener.local_addr().unwrap());
     std::thread::spawn(move || {
@@ -934,6 +932,39 @@ fn an_ai_server_is_added_by_its_address() {
             let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         }
     });
+    url
+}
+
+/// #123, #127: the model an AI uses is changed in Settings → AI from the ones it lists.
+#[test]
+fn an_ais_model_is_changed_in_settings() {
+    let url = model_server();
+    let mut h = harness(move || {
+        let mut a = demo::app(demo::engine(Mode::Experienced, true));
+        a.hub.add_server("Box", &url, Some("nomic-embed-text"), None).unwrap();
+        a.state.settings_open = true;
+        a.state.settings_tab = craft_anything_ui_egui::state::SettingsTab::Ai;
+        a
+    });
+    h.state_mut().refresh_backends();
+    assert!(wait(&mut h, |a| a.backends.iter().any(|b| b.name == "Box")));
+    h.run_steps(2);
+    h.get_by_label("Model: nomic-embed-text");
+    h.get_by_label("Change…").click();
+    assert!(wait(&mut h, |a| a.model_picker.as_ref().is_some_and(|(_, m)| m.as_deref() == Some(&["nomic-embed-text".to_string(), "qwen3:8b".into()][..]))));
+    h.run_steps(2);
+    h.state_mut().set_model("Box", "qwen3:8b");
+    assert!(wait(&mut h, |a| a.backends.iter().any(|b| b.name == "Box" && b.model == "qwen3:8b")));
+    h.run_steps(2);
+    h.get_by_label("Model: qwen3:8b");
+    assert!(h.state().model_picker.is_none(), "the picker closes once a model is chosen");
+}
+
+/// #54, #98: an AI server on another computer is added by its address in Settings → AI, with a
+/// model that can chat, and the form empties once it's added.
+#[test]
+fn an_ai_server_is_added_by_its_address() {
+    let url = model_server();
     let mut h = harness(|| {
         let mut a = demo::app(demo::engine(Mode::Experienced, true));
         a.state.settings_open = true;
@@ -968,11 +999,12 @@ fn an_agent_apps_program_is_set_in_settings() {
     h.run_steps(2);
     h.get_by_label("Program: found automatically");
     h.state_mut().set_agent_program("OpenCode", Some("/opt/oc/opencode".into()));
-    assert!(wait(&mut h, |a| a.agent_programs.get("OpenCode").map(String::as_str) == Some("/opt/oc/opencode")));
+    let program = |a: &CraftApp| a.backend_options.get("OpenCode").and_then(|o| o.command.clone());
+    assert!(wait(&mut h, |a| program(a).as_deref() == Some("/opt/oc/opencode")));
     h.run_steps(2);
     h.get_by_label("Program: /opt/oc/opencode");
     h.get_by_label("Find it automatically").click();
-    assert!(wait(&mut h, |a| a.agent_programs.is_empty()));
+    assert!(wait(&mut h, |a| program(a).is_none()));
 }
 
 #[test]

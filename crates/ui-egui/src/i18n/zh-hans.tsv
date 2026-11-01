@@ -156,6 +156,7 @@ Ask the person	询问用户
 Ask: "How does the % key work?"	提问：“% 键是如何工作的？”
 Ask: "Is it safe to run?"	试着问：“运行它安全吗？”
 Ask: "What does it send over the internet?"	提问：“它会通过互联网发送什么？”
+Asking for its models…	正在获取可用模型…
 Asset catalog	资源目录
 At most this many rounds of fixes after the first build.	首次构建后，最多进行这么多轮修正。
 Attach pictures	附上图片
@@ -200,6 +201,7 @@ Capture inventories	采集清单
 Capture menus, dialogs and tabs	采集菜单、对话框和标签页
 Change	更改
 Change a setting	更改设置
+Change an AI's model	更改 AI 的模型
 Change it	更改
 Change…	更改…
 Check	检查
@@ -587,6 +589,7 @@ List a Unity assets file	列出 Unity assets 文件内容
 List a Unity bundle	列出 Unity 资源包内容
 List a game's archives	列出游戏归档文件
 List a node's event listeners	列出节点的事件监听器
+List an AI's models	列出 AI 的模型
 List an Unreal IoStore container	列出 Unreal IoStore 容器内容
 List an Unreal pak	列出 Unreal pak 内容
 List bookmarks	列出书签
@@ -654,6 +657,7 @@ Memory for Ghidra	Ghidra 内存用量
 Minimise	最小化
 Mode	模式
 Model	模型
+Model: {model}	模型：{model}
 Modules	模块
 More detail	更多详情
 More makes a big program's first look faster.	分配更多内存可加快大型程序的首次分析。

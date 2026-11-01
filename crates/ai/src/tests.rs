@@ -164,12 +164,34 @@ fn the_person_chooses_who_builds() {
 fn an_agent_apps_program_is_set_and_cleared() {
     let (h, _d) = hub();
     add(&h, "OpenCode", BackendKind::AgentCli, "http://127.0.0.1:9", None);
-    assert!(h.commands().is_empty());
+    let program = |h: &AiHub| h.options().get("OpenCode").and_then(|o| o.command.clone());
+    assert_eq!(program(&h), None);
     assert!(h.set_command("OpenCode", Some("  /opt/oc/bin/opencode ")).unwrap());
-    assert_eq!(h.commands().get("OpenCode").map(String::as_str), Some("/opt/oc/bin/opencode"));
+    assert_eq!(program(&h).as_deref(), Some("/opt/oc/bin/opencode"));
     assert!(!h.set_command("Nobody", Some("/x")).unwrap(), "only a configured backend");
     assert!(h.set_command("OpenCode", Some(" ")).unwrap());
-    assert!(h.commands().is_empty(), "blank finds it by its usual name again");
+    assert_eq!(program(&h), None, "blank finds it by its usual name again");
+}
+
+/// #123, #127: the model an AI uses is changed; Claude Code is offered Claude's models.
+#[test]
+fn an_ais_model_is_changed() {
+    let (h, _d) = hub();
+    let url = serve("200 OK", r#"{"object":"list","data":[{"id":"nomic-embed-text"},{"id":"qwen3:8b"}]}"#);
+    h.add_server("Box", &url, Some("nomic-embed-text"), None).unwrap();
+    assert_eq!(h.model_choices("Box").unwrap(), ["nomic-embed-text", "qwen3:8b"], "the server's own list");
+    assert!(h.set_model("Box", " qwen3:8b ").unwrap());
+    assert_eq!(h.backends().into_iter().find(|b| b.name == "Box").unwrap().model, "qwen3:8b");
+    let claude =
+        BackendConfig { name: "Claude Code".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
+    h.add_backend(claude, None).unwrap();
+    assert_eq!(h.model_choices("Claude Code").unwrap(), crate::anthropic::MODELS);
+    assert!(h.set_model("Claude Code", "claude-sonnet-5-5").unwrap());
+    let claude = h.options().get("Claude Code").and_then(|o| o.cli_model.clone());
+    assert_eq!(claude.as_deref(), Some("claude-sonnet-5-5"), "the CLI is asked for it; the agent stays Claude Code");
+    assert_eq!(h.backends().into_iter().find(|b| b.name == "Claude Code").unwrap().model, "claude-code");
+    assert!(!h.set_model("Nobody", "m").unwrap());
+    assert!(h.set_model("Box", " ").is_err());
 }
 
 /// #54, #98: a server on another computer is added by its address, with a model that can chat
