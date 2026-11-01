@@ -14,9 +14,10 @@ pub fn which_all(name: &str) -> Vec<PathBuf> {
 }
 
 /// Folders, under the home folder and then system-wide, where coding agents, npm, Homebrew and
-/// other installers put command-line programs.
+/// other installers put command-line programs. OpenCode's installer uses `~/.opencode/bin`, or
+/// `~/bin` when there is one (#112).
 #[cfg(unix)]
-const USUAL_HOME_DIRS: &[&str] = &[".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin"];
+const USUAL_HOME_DIRS: &[&str] = &[".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin", ".opencode/bin", "bin"];
 #[cfg(unix)]
 const USUAL_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 // Claude Code's installer, npm (without a custom prefix), WinGet's portable packages (Claude
@@ -96,10 +97,33 @@ fn parse_npm_shim(text: &str) -> Option<(Option<String>, String)> {
     Some((Some(interpreter.to_string()), target.to_string()))
 }
 
+/// The `bin` folders of the Node versions nvm installed, newest first: npm puts the agents it
+/// installs there, and only a shell that loaded nvm has them on `PATH` (#112).
+#[cfg(unix)]
+fn nvm_bins(home: &Path) -> Vec<PathBuf> {
+    let Ok(versions) = std::fs::read_dir(home.join(".nvm/versions/node")) else { return Vec::new() };
+    let mut found: Vec<(Vec<u64>, PathBuf)> = versions
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let version = name.trim_start_matches('v').split('.').map(|n| n.parse().unwrap_or(0)).collect();
+            Some((version, e.path().join("bin")))
+        })
+        .collect();
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.into_iter().map(|(_, bin)| bin).take(8).collect()
+}
+
+#[cfg(not(unix))]
+fn nvm_bins(_home: &Path) -> Vec<PathBuf> {
+    Vec::new()
+}
+
 fn with_usual_dirs(path: Option<OsString>, home: Option<PathBuf>) -> Option<OsString> {
     let mut dirs: Vec<PathBuf> = path.as_ref().map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
     let before = dirs.len();
-    for d in home.iter().flat_map(|h| USUAL_HOME_DIRS.iter().map(move |d| h.join(d))).chain(USUAL_DIRS.iter().map(PathBuf::from)) {
+    let in_home = home.iter().flat_map(|h| USUAL_HOME_DIRS.iter().map(move |d| h.join(d)).chain(nvm_bins(h)));
+    for d in in_home.chain(USUAL_DIRS.iter().map(PathBuf::from)) {
         if !dirs.contains(&d) {
             dirs.push(d);
         }
@@ -228,6 +252,24 @@ mod tests {
         assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
         // No PATH and no home folder: the system-wide folders still.
         assert_eq!(with_usual_dirs(None, None), std::env::join_paths(USUAL_DIRS).ok());
+    }
+
+    /// #112: agents npm installed under nvm, newest Node first, after the usual folders.
+    #[cfg(unix)]
+    #[test]
+    fn nvm_node_versions_are_searched_newest_first() {
+        let home = tempfile::tempdir().unwrap();
+        for v in ["v9.11.2", "v20.10.0", "v18.19.1"] {
+            std::fs::create_dir_all(home.path().join(".nvm/versions/node").join(v).join("bin")).unwrap();
+        }
+        let bins = nvm_bins(home.path());
+        let node = home.path().join(".nvm/versions/node");
+        assert_eq!(bins, [node.join("v20.10.0/bin"), node.join("v18.19.1/bin"), node.join("v9.11.2/bin")]);
+        let dirs: Vec<PathBuf> = std::env::split_paths(&with_usual_dirs(None, Some(home.path().to_path_buf())).unwrap()).collect();
+        assert!(dirs.contains(&home.path().join(".opencode/bin")));
+        let at = |p: &Path| dirs.iter().position(|d| d == p).unwrap();
+        assert!(at(&home.path().join(".cargo/bin")) < at(&bins[0]) && at(&bins[2]) < at(Path::new("/usr/local/bin")));
+        assert!(nvm_bins(Path::new("/nowhere")).is_empty());
     }
 
     #[cfg(windows)]
