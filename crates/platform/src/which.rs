@@ -119,10 +119,33 @@ fn nvm_bins(_home: &Path) -> Vec<PathBuf> {
     Vec::new()
 }
 
+/// Where npm puts what it installs globally when the person moved its prefix
+/// (`npm config set prefix …` writes `prefix=` to `~/.npmrc`, and `NPM_CONFIG_PREFIX` sets it
+/// too): the prefix itself on Windows, its `bin` folder elsewhere (#132).
+fn npm_global_bin(home: &Path) -> Option<PathBuf> {
+    let set = ["NPM_CONFIG_PREFIX", "npm_config_prefix"].iter().find_map(std::env::var_os).filter(|v| !v.is_empty());
+    let prefix = set.map(PathBuf::from).or_else(|| npmrc_prefix(home))?;
+    Some(if cfg!(windows) { prefix } else { prefix.join("bin") })
+}
+
+/// The `prefix` set in `~/.npmrc`, if any (the last one wins, as in npm).
+fn npmrc_prefix(home: &Path) -> Option<PathBuf> {
+    let file = home.join(".npmrc");
+    let text = std::fs::metadata(&file).ok().filter(|m| m.len() <= 64 * 1024).and_then(|_| std::fs::read_to_string(&file).ok())?;
+    let value = text.lines().rev().filter_map(|l| l.split_once('=')).find(|(k, _)| k.trim() == "prefix")?.1.trim().trim_matches('"');
+    if value.is_empty() {
+        return None;
+    }
+    Some(match value.strip_prefix("~/").or_else(|| value.strip_prefix("~\\")) {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(value),
+    })
+}
+
 fn with_usual_dirs(path: Option<OsString>, home: Option<PathBuf>) -> Option<OsString> {
     let mut dirs: Vec<PathBuf> = path.as_ref().map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
     let before = dirs.len();
-    let in_home = home.iter().flat_map(|h| USUAL_HOME_DIRS.iter().map(move |d| h.join(d)).chain(nvm_bins(h)));
+    let in_home = home.iter().flat_map(|h| USUAL_HOME_DIRS.iter().map(move |d| h.join(d)).chain(nvm_bins(h)).chain(npm_global_bin(h)));
     for d in in_home.chain(USUAL_DIRS.iter().map(PathBuf::from)) {
         if !dirs.contains(&d) {
             dirs.push(d);
@@ -248,7 +271,9 @@ mod tests {
         let path = std::env::join_paths([PathBuf::from("/usr/bin"), home.join(".local/bin")]).unwrap();
         let dirs: Vec<PathBuf> = std::env::split_paths(&with_usual_dirs(Some(path), Some(home.clone())).unwrap()).collect();
         assert_eq!(dirs[..3], [PathBuf::from("/usr/bin"), home.join(".local/bin"), home.join(".claude/local")]);
-        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len() + USUAL_DIRS.len(), "nothing twice");
+        // (Plus npm's prefix where the environment sets one.)
+        let npm = usize::from(npm_global_bin(&home).is_some());
+        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len() + USUAL_DIRS.len() + npm, "nothing twice");
         assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
         // No PATH and no home folder: the system-wide folders still.
         assert_eq!(with_usual_dirs(None, None), std::env::join_paths(USUAL_DIRS).ok());
@@ -272,6 +297,27 @@ mod tests {
         assert!(nvm_bins(Path::new("/nowhere")).is_empty());
     }
 
+    /// #132: npm's own prefix setting says where it put the agents it installed.
+    #[test]
+    fn npms_prefix_setting_is_searched() {
+        let home = tempfile::tempdir().unwrap();
+        assert_eq!(npmrc_prefix(home.path()), None, "no .npmrc");
+        let rc = home.path().join(".npmrc");
+        std::fs::write(&rc, "; a comment\nregistry=https://registry.npmjs.org/\nprefix=/old\nprefix = \"C:\\npm-global\"\n").unwrap();
+        assert_eq!(npmrc_prefix(home.path()), Some(PathBuf::from("C:\\npm-global")), "the last one wins, quotes dropped");
+        std::fs::write(&rc, "prefix=~/.npm-packages\n").unwrap();
+        assert_eq!(npmrc_prefix(home.path()), Some(home.path().join(".npm-packages")));
+        std::fs::write(&rc, "#prefix=/commented\nprefix=\n").unwrap();
+        assert_eq!(npmrc_prefix(home.path()), None);
+        // Unless npm's prefix is set in the environment, the folder it names is searched.
+        if std::env::var_os("NPM_CONFIG_PREFIX").is_none() && std::env::var_os("npm_config_prefix").is_none() {
+            std::fs::write(&rc, "prefix=~/.npm-packages\n").unwrap();
+            let bin = if cfg!(windows) { home.path().join(".npm-packages") } else { home.path().join(".npm-packages").join("bin") };
+            let dirs: Vec<PathBuf> = std::env::split_paths(&with_usual_dirs(None, Some(home.path().to_path_buf())).unwrap()).collect();
+            assert!(dirs.contains(&bin), "{dirs:?}");
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn usual_windows_dirs_come_after_path() {
@@ -279,7 +325,9 @@ mod tests {
         let path = OsString::from(r"C:\Windows;C:\Users\u\.local\bin");
         let dirs: Vec<PathBuf> = std::env::split_paths(&with_usual_dirs(Some(path), Some(home.clone())).unwrap()).collect();
         assert_eq!(dirs[..3], [PathBuf::from(r"C:\Windows"), home.join(r".local\bin"), home.join(r"AppData\Roaming\npm")]);
-        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len() + USUAL_DIRS.len(), "nothing twice");
+        // (Plus npm's prefix where the environment sets one.)
+        let npm = usize::from(npm_global_bin(&home).is_some());
+        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len() + USUAL_DIRS.len() + npm, "nothing twice");
         // Each way Claude Code installs on Windows: native, npm, WinGet (per user and machine-wide).
         assert!(dirs.contains(&home.join(r"AppData\Local\Microsoft\WinGet\Links")));
         assert!(dirs.contains(&PathBuf::from(r"C:\Program Files\WinGet\Links")));
