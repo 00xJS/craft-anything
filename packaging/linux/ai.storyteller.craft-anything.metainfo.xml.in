@@ -28,8 +28,8 @@
   <icon type="stock">ai.storyteller.craft-anything</icon>
   <!-- Only url types known to appstream 0.15 (Ubuntu 22.04, where CI validates): no vcs-browser. -->
   <url type="homepage">https://getartcraft.com/apps/craft-anything</url>
-  <url type="bugtracker">https://github.com/storytold/craftanything/issues</url>
-  <url type="help">https://github.com/storytold/craftanything</url>
+  <url type="bugtracker">https://github.com/storytold/craft-anything/issues</url>
+  <url type="help">https://github.com/storytold/craft-anything</url>
   <url type="contact">https://discord.gg/artcraft</url>
   <categories>
     <category>Development</category>
