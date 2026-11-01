@@ -151,9 +151,14 @@ pub enum Done {
         result: Result<Value, ToolError>,
     },
     Detected(Vec<Detected>),
-    /// The configured backends, the ones chosen to build with and to extract with, and the
-    /// program each agent app set to one runs.
-    Backends(Vec<BackendConfig>, Option<String>, Option<String>, std::collections::BTreeMap<String, String>),
+    /// The configured backends, the ones chosen to build with and to extract with, and each one's
+    /// options.
+    Backends(Vec<BackendConfig>, Option<String>, Option<String>, std::collections::BTreeMap<String, craft_anything_ai::BackendOptions>),
+    /// The models an AI can be set to (Settings → AI's model picker).
+    ModelChoices {
+        name: String,
+        result: Result<Vec<String>, ToolError>,
+    },
     Picked {
         pick: Pick,
         path: Option<PathBuf>,
@@ -340,8 +345,11 @@ pub struct CraftApp {
     pub jobs: jobs::Jobs<Done>,
     pub conversation: Option<Box<dyn Conversation>>,
     pub backends: Vec<BackendConfig>,
-    /// The program each agent app set to one runs, by backend name (Settings → AI).
-    pub agent_programs: std::collections::BTreeMap<String, String>,
+    /// Each backend's options (an agent app's program and model), by name (Settings → AI).
+    pub backend_options: std::collections::BTreeMap<String, craft_anything_ai::BackendOptions>,
+    /// The AI whose model is being chosen in Settings → AI, and the models it offers once they've
+    /// come (`None`: still asking).
+    pub model_picker: Option<(String, Option<Vec<String>>)>,
     /// The agent app whose program the file dialog is choosing.
     pub picking_program_for: Option<String>,
     /// The backend the person chose to build with (Settings → AI), if any.
@@ -437,7 +445,8 @@ impl CraftApp {
             jobs: jobs::Jobs::default(),
             conversation: None,
             backends: Vec::new(),
-            agent_programs: Default::default(),
+            backend_options: Default::default(),
+            model_picker: None,
             picking_program_for: None,
             builder: None,
             extractor: None,
@@ -1277,15 +1286,24 @@ impl CraftApp {
                 self.log(false, format!("Found {} AI option(s) on this computer", d.len()));
                 self.detected = Some(d);
             }
-            Done::Backends(b, builder, extractor, programs) => {
+            Done::Backends(b, builder, extractor, options) => {
                 if self.state.backend.as_ref().is_some_and(|n| !b.iter().any(|c| &c.name == n)) {
                     self.state.backend = None;
                 }
                 self.backends = b;
                 self.builder = builder;
                 self.extractor = extractor;
-                self.agent_programs = programs;
+                self.backend_options = options;
             }
+            Done::ModelChoices { name, result } => match result {
+                // Kept only while the picker is still open for that AI.
+                Ok(models) if self.model_picker.as_ref().is_some_and(|(n, _)| *n == name) => self.model_picker = Some((name, Some(models))),
+                Ok(_) => {}
+                Err(e) => {
+                    self.model_picker = None;
+                    self.toast(e.for_people(), true);
+                }
+            },
             Done::BackendAdded { name, result } => match result {
                 Ok(()) => {
                     if self.server_form.name.trim() == name {
@@ -1638,7 +1656,7 @@ pub fn app_icon(size: f32) -> egui::Image<'static> {
 /// Run an action; a panic is logged and swallowed so one bad action never takes the app down.
 /// The configured backends and the ones chosen to build and to extract (read off the UI thread).
 pub(crate) fn backends(hub: &AiHub) -> Done {
-    Done::Backends(hub.backends(), hub.chosen(craft_anything_ai::Role::Builder), hub.chosen(craft_anything_ai::Role::Extractor), hub.commands())
+    Done::Backends(hub.backends(), hub.chosen(craft_anything_ai::Role::Builder), hub.chosen(craft_anything_ai::Role::Extractor), hub.options())
 }
 
 pub fn guard<R>(what: &str, f: impl FnOnce() -> R) -> Option<R> {

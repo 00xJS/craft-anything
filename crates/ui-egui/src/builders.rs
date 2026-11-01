@@ -83,6 +83,26 @@ impl CraftApp {
         });
     }
 
+    /// Ask an AI which models it can use, for Settings → AI's model picker.
+    pub fn pick_model(&mut self, name: &str) {
+        let (hub, name) = (self.hub.clone(), name.to_string());
+        self.model_picker = Some((name.clone(), None));
+        self.jobs.spawn(tr("List an AI's models"), false, move |_| {
+            let result = hub.model_choices(&name);
+            Ok(crate::Done::ModelChoices { name, result })
+        });
+    }
+
+    /// Use `model` for an AI from now on.
+    pub fn set_model(&mut self, name: &str, model: &str) {
+        self.model_picker = None;
+        let (hub, name, model) = (self.hub.clone(), name.to_string(), model.to_string());
+        self.jobs.spawn(tr("Change an AI's model"), false, move |_| {
+            hub.set_model(&name, &model).map_err(|e| e.message)?;
+            Ok(crate::backends(&hub))
+        });
+    }
+
     /// Connect the server in Settings → AI's address form. Its key goes to the keychain; the form
     /// keeps what was typed until it's added, so a mistake can be fixed.
     pub fn add_server(&mut self) {

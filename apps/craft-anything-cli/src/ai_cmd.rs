@@ -59,6 +59,9 @@ pub enum AiCommand {
     /// Set the program an agent app runs, when it's installed where it isn't found (leave the
     /// path out to find it by its usual name again).
     Program { name: String, path: Option<String> },
+    /// Set the model an AI uses (Claude Code: the model it's asked for); leave it out to list the
+    /// ones it can use.
+    Model { name: String, model: Option<String> },
     /// Send a tiny request and report latency.
     Test { name: String },
     /// Choose the backend that builds (leave the name out to go back to automatic).
@@ -252,6 +255,20 @@ pub fn ai(cli: &Cli, c: &AiCommand, f: Format) -> u8 {
                 Err(e) => fail(&e, f),
             }
         }
+        AiCommand::Model { name, model: None } => match hub.model_choices(name) {
+            Ok(models) => {
+                emit(&json!({"name": name, "models": models}), f);
+                0
+            }
+            Err(e) => fail(&e, f),
+        },
+        AiCommand::Model { name, model: Some(model) } => match hub.set_model(name, model) {
+            Ok(found) => {
+                emit(&json!({"name": name, "model": model.trim(), "found": found}), f);
+                if found { 0 } else { 1 }
+            }
+            Err(e) => fail(&e, f),
+        },
         AiCommand::Program { name, path } => match hub.set_command(name, path.as_deref()) {
             Ok(found) => {
                 emit(&json!({"name": name, "program": path, "found": found}), f);

@@ -107,6 +107,8 @@ const ACTIONS: &[Action] = &[
     a("detect_backends",     "find AI on this computer",                       Cli("ai detect")),
     a("add_backend",         "connect an AI brain",                            Cli("ai add <name> --kind --model --base-url --ssh-host --key-env --key-stdin")),
     a("add_server",          "connect an AI server by its address",            Cli("ai add <name> --kind --base-url --key-env --key-stdin")),
+    a("pick_model",          "list the models an AI can use",                  Cli("ai model <name>")),
+    a("set_model",           "change the model an AI uses",                    Cli("ai model <name> <model>")),
     a("choose_backend",      "pick the AI brain",                              Cli("chat <question> --backend")),
     a("set_role",            "choose which AI builds or extracts",             Cli("ai extractor <name>")),
 

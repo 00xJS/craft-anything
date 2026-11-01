@@ -156,6 +156,7 @@ Ask the person	詢問使用者
 Ask: "How does the % key work?"	提問：「% 鍵是如何運作的？」
 Ask: "Is it safe to run?"	試著問：「執行它安全嗎？」
 Ask: "What does it send over the internet?"	提問：「它會透過網際網路傳送什麼？」
+Asking for its models…	正在取得可用模型…
 Asset catalog	資源目錄
 At most this many rounds of fixes after the first build.	首次建置後，最多進行這麼多輪修正。
 Attach pictures	附上圖片
@@ -200,6 +201,7 @@ Capture inventories	擷取清單
 Capture menus, dialogs and tabs	擷取選單、對話方塊和分頁
 Change	變更
 Change a setting	變更設定
+Change an AI's model	變更 AI 的模型
 Change it	變更
 Change…	變更…
 Check	檢查
@@ -587,6 +589,7 @@ List a Unity assets file	列出 Unity assets 檔案內容
 List a Unity bundle	列出 Unity 資源套件內容
 List a game's archives	列出遊戲封存檔
 List a node's event listeners	列出節點的事件監聽器
+List an AI's models	列出 AI 的模型
 List an Unreal IoStore container	列出 Unreal IoStore 容器內容
 List an Unreal pak	列出 Unreal pak 內容
 List bookmarks	列出書籤
@@ -654,6 +657,7 @@ Memory for Ghidra	Ghidra 記憶體用量
 Minimise	最小化
 Mode	模式
 Model	模型
+Model: {model}	模型：{model}
 Modules	模組
 More detail	更多詳細資訊
 More makes a big program's first look faster.	分配更多記憶體可加快大型程式的首次分析。

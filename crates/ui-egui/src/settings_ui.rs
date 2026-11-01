@@ -307,6 +307,7 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
     }
     let (mut pick, mut builds, mut extracts, mut toggle, mut remove) = (None, None, None, None, None);
     let (mut choose_program, mut usual_program) = (None, None);
+    let (mut pick_model, mut chosen_model, mut close_picker) = (None, None, false);
     // The AI whose Remove was pressed once: asked again before its key is deleted.
     let confirm_id = egui::Id::new("remove-ai");
     let confirming: Option<String> = ui.data(|d| d.get_temp(confirm_id));
@@ -319,18 +320,15 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
                 icons::show(ui, "bot", 18.0, if b.enabled { t.accent } else { t.text_faint });
                 ui.vertical(|ui| {
                     ui.add(egui::Label::new(RichText::new(&b.name).font(theme::semibold(theme::SMALL))).truncate());
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(format!("{:?} · {}{}", b.kind, b.model, b.ssh_host.as_ref().map(|h| format!(" · ssh {h}")).unwrap_or_default()))
-                                .color(t.text_faint)
-                                .size(theme::CAPTION),
-                        )
-                        .truncate(),
-                    );
+                    let model_in_use = craft_anything_ai::model_in_use(b, app.backend_options.get(&b.name));
+                    // An API's model has its own line below; an agent app is named by its `model`.
+                    let what = if model_in_use.is_some() && b.kind != BackendKind::AgentCli { String::new() } else { format!(" · {}", b.model) };
+                    let ssh = b.ssh_host.as_ref().map(|h| format!(" · ssh {h}")).unwrap_or_default();
+                    ui.add(egui::Label::new(RichText::new(format!("{:?}{what}{ssh}", b.kind)).color(t.text_faint).size(theme::CAPTION)).truncate());
                     // An agent app on this computer: which program runs it, for one installed
                     // where it isn't looked for (#53).
                     if b.kind == BackendKind::AgentCli && b.ssh_host.as_deref().is_none_or(|h| h.trim().is_empty()) {
-                        let program = app.agent_programs.get(&b.name);
+                        let program = app.backend_options.get(&b.name).and_then(|o| o.command.as_ref());
                         ui.horizontal_wrapped(|ui| {
                             // The links at the caption's size, so the line reads as one.
                             ui.style_mut().override_font_id = Some(egui::FontId::proportional(theme::CAPTION));
@@ -341,6 +339,39 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
                             }
                             if program.is_some() && widgets::link(ui, "Find it automatically").clicked() {
                                 usual_program = Some(b.name.clone());
+                            }
+                        });
+                    }
+                    // Which model it uses, and the ones it can be set to (#123).
+                    if let Some(current) = model_in_use {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.style_mut().override_font_id = Some(egui::FontId::proportional(theme::CAPTION));
+                            ui.add(
+                                egui::Label::new(RichText::new(trf("Model: {model}", &[("model", &current)])).color(t.text_faint).size(theme::CAPTION))
+                                    .truncate(),
+                            );
+                            match app.model_picker.as_ref().filter(|(n, _)| *n == b.name) {
+                                None => {
+                                    if widgets::link(ui, "Change…").clicked() {
+                                        pick_model = Some(b.name.clone());
+                                    }
+                                }
+                                Some((_, None)) => {
+                                    ui.add(egui::Spinner::new().size(theme::CAPTION).color(t.accent));
+                                    ui.label(RichText::new(tr("Asking for its models…")).color(t.text_faint).size(theme::CAPTION));
+                                }
+                                Some((_, Some(models))) => {
+                                    egui::ComboBox::from_id_salt(("model", &b.name)).icon(widgets::combo_icon).selected_text(&current).show_ui(ui, |ui| {
+                                        for m in models {
+                                            if ui.selectable_label(*m == current, m).clicked() && *m != current {
+                                                chosen_model = Some((b.name.clone(), m.clone()));
+                                            }
+                                        }
+                                    });
+                                    if widgets::link(ui, "Cancel").clicked() {
+                                        close_picker = true;
+                                    }
+                                }
                             }
                         });
                     }
@@ -411,6 +442,15 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
     }
     if let Some(name) = usual_program {
         app.set_agent_program(&name, None);
+    }
+    if let Some(name) = pick_model {
+        app.pick_model(&name);
+    }
+    if let Some((name, model)) = chosen_model {
+        app.set_model(&name, &model);
+    }
+    if close_picker {
+        app.model_picker = None;
     }
     if let Some(name) = remove {
         ui.data_mut(|d| d.remove::<String>(confirm_id));

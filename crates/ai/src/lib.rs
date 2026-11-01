@@ -98,6 +98,18 @@ fn yes() -> bool {
     true
 }
 
+/// The model an AI uses, when it can be chosen (Settings → AI, #123): an API's own, or the one
+/// Claude Code is asked for. `None` for an agent app that picks its own.
+pub fn model_in_use(config: &BackendConfig, options: Option<&BackendOptions>) -> Option<String> {
+    match config.kind {
+        BackendKind::AgentCli if config.model == "claude-code" => {
+            Some(options.and_then(|o| o.cli_model.clone()).unwrap_or_else(|| anthropic::DEFAULT_MODEL.to_string()))
+        }
+        BackendKind::AgentCli => None,
+        _ => Some(config.model.clone()),
+    }
+}
+
 /// The backend that builds when none is named: the Builder role's choice while it's on, else an
 /// agent app, else an API backend. The same rule as [`AiConfig::backend_for`] for
 /// [`Role::Builder`], for a client that holds only the list (the app decides "can it build?"
@@ -408,9 +420,37 @@ impl AiHub {
         Ok(true)
     }
 
-    /// The program each agent app set to one runs, by backend name.
-    pub fn commands(&self) -> std::collections::BTreeMap<String, String> {
-        self.config().backends.into_iter().filter_map(|b| Some((b.config.name, b.options.command?))).collect()
+    /// Each backend's options (an agent app's program and model…), by name.
+    pub fn options(&self) -> std::collections::BTreeMap<String, BackendOptions> {
+        self.config().backends.into_iter().map(|b| (b.config.name, b.options)).collect()
+    }
+
+    /// The model a backend uses: an API's model, or the one Claude Code is asked for. Returns
+    /// false when there was no such backend.
+    pub fn set_model(&self, name: &str, model: &str) -> Result<bool, ToolError> {
+        let model = model.trim();
+        if model.is_empty() {
+            return Err(ToolError::invalid("Name a model."));
+        }
+        let mut cfg = self.config();
+        let Some(b) = cfg.backends.iter_mut().find(|b| b.config.name == name) else { return Ok(false) };
+        match b.config.kind {
+            BackendKind::AgentCli => b.options.cli_model = Some(model.to_string()),
+            _ => b.config.model = model.to_string(),
+        }
+        self.save_config(&cfg)?;
+        Ok(true)
+    }
+
+    /// The models a backend can be set to (#123): the API's own list, or Claude's models for Claude
+    /// Code. Empty for an agent app that picks its own. Blocking (bounded); run it off the UI thread.
+    pub fn model_choices(&self, name: &str) -> Result<Vec<String>, ToolError> {
+        let e = self.entry(name)?;
+        match (e.config.kind, model_in_use(&e.config, Some(&e.options))) {
+            (_, None) => Ok(Vec::new()),
+            (BackendKind::AgentCli, Some(_)) => Ok(anthropic::MODELS.iter().map(|m| m.to_string()).collect()),
+            _ => self.list_models(name),
+        }
     }
 
     /// Remove a backend and its stored key. Returns false when there was no such backend.
