@@ -18,8 +18,11 @@ pub struct LangInfo {
     pub source: &'static str,
 }
 
-pub static LANGUAGES: &[LangInfo] =
-    &[LangInfo { code: "en", name: "English", source: "" }, LangInfo { code: "fr", name: "Français", source: include_str!("fr.tsv") }];
+pub static LANGUAGES: &[LangInfo] = &[
+    LangInfo { code: "en", name: "English", source: "" },
+    LangInfo { code: "fr", name: "Français", source: include_str!("fr.tsv") },
+    LangInfo { code: "ja", name: "日本語", source: include_str!("ja.tsv") },
+];
 
 fn current() -> &'static RwLock<(String, HashMap<String, String>)> {
     static CUR: OnceLock<RwLock<(String, HashMap<String, String>)>> = OnceLock::new();
