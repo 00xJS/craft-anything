@@ -921,10 +921,12 @@ pub fn builder_backend(cfg: &crate::AiConfig, named: Option<&str>) -> Result<cra
 }
 
 /// Whether a failed builder turn is worth resuming, rather than needing the person (sign-in,
-/// credit, a missing or broken install).
+/// credit, a missing, broken or too old install).
 fn worth_retrying(message: &str) -> bool {
     let m = message.to_ascii_lowercase();
-    !["sign in", "log in", "login", "logged in", "auth", "credit", "billing", "usage limit", "not installed", "install "].iter().any(|k| m.contains(k))
+    !["sign in", "log in", "login", "logged in", "auth", "credit", "billing", "usage limit", "not installed", "install ", crate::cli_agents::TOO_OLD_FOR_MODEL]
+        .iter()
+        .any(|k| m.contains(k))
 }
 
 /// The longest wait a service's "retry in …" is followed for.

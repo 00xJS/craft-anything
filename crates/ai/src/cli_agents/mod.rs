@@ -155,6 +155,25 @@ pub fn sign_in_hint(message: &str) -> Option<String> {
         .then(|| "Sign in to Claude Code: open a terminal and run `claude auth login` (or start `claude` and type /login), then try again.".to_string())
 }
 
+/// Words in an API's answer when the installed Claude Code is older than the model it was asked
+/// to use (#165).
+pub const TOO_OLD_FOR_MODEL: &str = "does not support this model";
+
+/// Claude Code's failure in plain words, and its fix when the person can make one: a version too
+/// old for the model (#165), or a sign-in.
+pub fn claude_code_failure(why: &str) -> (String, Option<String>) {
+    if why.to_ascii_lowercase().contains(TOO_OLD_FOR_MODEL) {
+        return (
+            format!("Claude Code is too old for the model it was asked to use ({}).", why.chars().take(200).collect::<String>()),
+            Some(
+                "Update the `claude` command-line tool, which is installed and updated apart from the Claude desktop app: open a terminal and run `claude update`, then try again. Or choose another model for Claude Code in Settings → AI."
+                    .into(),
+            ),
+        );
+    }
+    (format!("Claude Code stopped: {why}"), sign_in_hint(why))
+}
+
 /// Variables a Claude Code session sets for its own child processes. When Craft Anything itself
 /// runs inside such a session, they'd make the person's `claude` act as part of that session
 /// instead of as their own install, so they're removed. The person's own settings (provider
@@ -825,6 +844,14 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(sign_in_hint("rate limited").is_none());
+        // #165: an install too old for the model says so, and how to update it.
+        let raw =
+            r#"API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Claude Code 2.1.81 does not support this model; version 2"}}"#;
+        let (message, fix) = claude_code_failure(raw);
+        assert!(message.starts_with("Claude Code is too old for the model it was asked to use") && message.contains("2.1.81"), "{message}");
+        let fix = fix.unwrap_or_default();
+        assert!(fix.contains("claude update") && fix.contains("desktop app") && fix.contains("Settings → AI"), "{fix}");
+        assert_eq!(claude_code_failure("rate limited"), ("Claude Code stopped: rate limited".to_string(), None));
     }
 
     #[test]
