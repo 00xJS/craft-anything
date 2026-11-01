@@ -328,6 +328,104 @@ pub fn capture(_spec: Spec, _cancel: Cancel) -> Result<Capture, ToolError> {
         .with_remediation("Run the capture on a Linux or macOS host."))
 }
 
+/// Run a program that crashes without a real console (it asks the console for its size, which
+/// fails on [`crate::process`]'s pipes) and return what it drew and its exit code. The deadline
+/// and `cancel` still end it; nothing writes to its input.
+#[cfg(windows)]
+pub fn console_text(program: &std::path::Path, args: &[OsString], timeout: Duration, cancel: Option<Cancel>) -> Result<(String, Option<i32>), ToolError> {
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+    use std::io::{Read, Write};
+
+    const ROWS: u16 = 50;
+    const COLS: u16 = 200;
+    let failed = |e: &dyn std::fmt::Display| ToolError::new(ErrorCode::ProgramFailed, format!("{}: {e}", program.display()));
+    let portable_pty::PtyPair { master, slave } =
+        native_pty_system().openpty(PtySize { rows: ROWS, cols: COLS, pixel_width: 0, pixel_height: 0 }).map_err(|e| failed(&e))?;
+    let mut cmd = CommandBuilder::new(program.as_os_str());
+    cmd.args(args);
+    let mut child = slave.spawn_command(cmd).map_err(|e| failed(&e))?;
+    drop(slave);
+    let mut reader = master.try_clone_reader().map_err(|e| failed(&e))?;
+    let mut writer = master.take_writer().map_err(|e| failed(&e))?;
+    // The console asks where the cursor is and starts nothing until it's told.
+    writer.write_all(b"\x1b[1;1R").map_err(|e| failed(&e))?;
+
+    let (screen_tx, screen_rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("console-reader".into())
+        .spawn(move || {
+            // A fixed grid, so a chatty program can't grow this.
+            let mut screen = vt100::Parser::new(ROWS, COLS, 0);
+            let mut chunk = vec![0u8; 16 * 1024];
+            while let Ok(n) = reader.read(&mut chunk) {
+                let Some(part) = chunk.get(..n).filter(|p| !p.is_empty()) else { break };
+                screen.process(part);
+            }
+            let _ = screen_tx.send(screen.screen().contents());
+        })
+        .map_err(|e| failed(&e))?;
+
+    let start = std::time::Instant::now();
+    let stopped = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status.exit_code()),
+            Ok(None) => {}
+            Err(e) => break Err(failed(&e)),
+        }
+        if cancel.as_ref().is_some_and(|c| c()) {
+            break Err(ToolError::new(ErrorCode::Cancelled, format!("{} was stopped.", program.display())));
+        }
+        if start.elapsed() >= timeout {
+            break Err(ToolError::new(ErrorCode::TimedOut, format!("{} didn't finish in time and was stopped.", program.display())));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    if stopped.is_err() {
+        let _ = child.kill();
+    }
+    // Closing the console flushes it and ends everything attached to it, which is what ends a
+    // launcher's children here. It can block, so it happens away from here.
+    // ponytail: no Job Object (portable-pty gives no process handle, and this workspace forbids
+    // unsafe), so a program that leaves this console for one of its own survives.
+    let _ = std::thread::Builder::new().name("console-close".into()).spawn(move || drop((writer, master)));
+    let text = screen_rx.recv_timeout(Duration::from_secs(3)).unwrap_or_default();
+    Ok((text, stopped?.try_into().ok()))
+}
+
+#[cfg(all(test, windows))]
+mod console_tests {
+    use super::*;
+
+    #[test]
+    fn reads_what_the_program_drew_and_stops_at_the_deadline() {
+        let cmd = PathBuf::from(std::env::var_os("ComSpec").unwrap());
+        let echo: Vec<OsString> = ["/c", "echo hello-console & exit 3"].map(OsString::from).to_vec();
+        let (text, code) = console_text(&cmd, &echo, Duration::from_secs(30), None).unwrap();
+        assert!(text.contains("hello-console"), "{text:?}");
+        assert_eq!(code, Some(3));
+        let hang: Vec<OsString> = ["/c", "ping -n 60 127.0.0.1"].map(OsString::from).to_vec();
+        assert_eq!(console_text(&cmd, &hang, Duration::from_millis(300), None).unwrap_err().code, ErrorCode::TimedOut);
+    }
+
+    #[test]
+    fn nothing_it_started_outlives_the_deadline() {
+        // The program starts a second one that keeps adding to a file, like a launcher and its Python.
+        let dir = tempfile::tempdir().unwrap();
+        let ticks = dir.path().join("ticks");
+        std::fs::write(dir.path().join("tick.cmd"), "@echo off\r\n:again\r\necho x>>\"%~dp0ticks\"\r\nping -n 2 127.0.0.1 >nul\r\ngoto again\r\n").unwrap();
+        std::fs::write(dir.path().join("main.cmd"), "@echo off\r\nstart /b cmd /c \"%~dp0tick.cmd\"\r\nping -n 60 127.0.0.1 >nul\r\n").unwrap();
+        let cmd = PathBuf::from(std::env::var_os("ComSpec").unwrap());
+        let run = vec![OsString::from("/c"), dir.path().join("main.cmd").into_os_string()];
+        let e = console_text(&cmd, &run, Duration::from_secs(4), None).unwrap_err();
+        assert_eq!(e.code, ErrorCode::TimedOut);
+        assert!(ticks.is_file(), "the second program never ran");
+        std::thread::sleep(Duration::from_secs(2));
+        let before = std::fs::metadata(&ticks).unwrap().len();
+        std::thread::sleep(Duration::from_secs(4));
+        assert_eq!(std::fs::metadata(&ticks).unwrap().len(), before, "the second program is still running");
+    }
+}
+
 /// A capture without a terminal: the program's output read through pipes. Its Job Object ends
 /// every process it started when the run ends, times out or is cancelled.
 #[cfg(any(windows, test))]

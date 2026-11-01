@@ -169,17 +169,33 @@ impl Frida {
                 args.push(OsStr::new(&r.address).into());
             }
         }
-        let out = self.proc(&prog, INSTALL).args(args).run()?;
-        if !out.success && out.stdout.is_empty() {
-            return Err(cli_failed("frida-ls-devices", &out));
+        // On Windows this tool crashes without a real console, then hangs instead of exiting.
+        #[cfg(windows)]
+        {
+            if !prog.is_file() {
+                return Err(ToolError::new(ErrorCode::EngineMissing, "frida-ls-devices isn't next to frida.").with_remediation(INSTALL));
+            }
+            let (text, code) = craft_anything_platform::capture::console_text(&prog, &args, self.wall, self.cancel.clone())?;
+            if code != Some(0) {
+                let last = text.lines().rev().map(str::trim).find(|l| !l.is_empty()).unwrap_or("no output");
+                return Err(ToolError::new(ErrorCode::ProgramFailed, format!("frida-ls-devices failed: {last}")));
+            }
+            Ok(parse_devices(&text))
         }
-        Ok(parse_devices(&out.stdout_text()))
+        #[cfg(not(windows))]
+        {
+            let out = self.proc(&prog, INSTALL).args(args).run()?;
+            if !out.success && out.stdout.is_empty() {
+                return Err(cli_failed("frida-ls-devices", &out));
+            }
+            Ok(parse_devices(&out.stdout_text()))
+        }
     }
 
     /// `frida-ps` for the selected device, parsed.
     pub fn list_processes(&self, selector: &Selector) -> Result<Vec<FridaProcess>, ToolError> {
         let prog = self.sibling("frida-ps");
-        let mut args = selector.args()?;
+        let args = selector.args()?;
         // `-ai` lists installed applications with identifiers; it degrades to processes on devices
         // that don't support it. We ask for applications first; failing that, plain processes.
         let app_out = self
@@ -196,7 +212,6 @@ impl Frida {
                 return Ok(apps);
             }
         }
-        args.push(OsStr::new("-a").into());
         let out = self.proc(&prog, INSTALL).args(args).run()?;
         if !out.success && out.stdout.is_empty() {
             return Err(cli_failed("frida-ps", &out));
@@ -271,13 +286,15 @@ pub fn parse_devices(text: &str) -> Vec<FridaDevice> {
         if trimmed.is_empty() || trimmed.starts_with("----") {
             continue;
         }
-        let mut it = trimmed.split_whitespace();
+        // Columns are at least two spaces apart; a name has single spaces in it. A later column
+        // (newer versions add the device's OS) isn't part of the name.
+        let mut it = trimmed.split("  ").map(str::trim).filter(|c| !c.is_empty());
         let Some(first) = it.next() else { continue };
         let Some(second) = it.next() else { continue };
         if first.eq_ignore_ascii_case("id") && second.eq_ignore_ascii_case("type") {
             continue; // header
         }
-        let name: String = it.collect::<Vec<_>>().join(" ");
+        let name = it.next().unwrap_or_default().to_string();
         out.push(FridaDevice { device_id: first.to_string(), kind: second.to_string(), name });
     }
     out
@@ -366,6 +383,9 @@ mod tests {
         assert_eq!(d[0].device_id, "local");
         assert_eq!(d[1].name, "Pixel 5");
 
+        let with_os = "Id     Type   Name          OS\n-----  -----  ------------  ----------\nlocal  local  Local System  Windows 11\n";
+        assert_eq!(parse_devices(with_os)[0].name, "Local System");
+
         let ps = " PID  Name            Identifier\n----  --------------  ----------------\n1234  Example         com.example.app\n 56  init\n";
         let p = parse_processes(ps);
         assert_eq!(p.len(), 2);
@@ -374,6 +394,24 @@ mod tests {
         assert_eq!(p[1].pid, 56);
         assert_eq!(p[1].name, "init");
         assert!(p[1].identifier.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_device_without_applications_lists_its_processes() {
+        // A stand-in for frida-ps that, like Windows, has processes but no applications.
+        let dir = tempfile::tempdir().unwrap();
+        let frida = {
+            use std::os::unix::fs::PermissionsExt;
+            let ps = dir.path().join("frida-ps");
+            std::fs::write(&ps, "#!/bin/sh\ncase \"$*\" in *-a*) exit 0;; esac\nprintf '  PID  Name\\n----  ---------\\n   12  notes.exe\\n'\n").unwrap();
+            std::fs::set_permissions(&ps, std::fs::Permissions::from_mode(0o755)).unwrap();
+            dir.path().join("frida")
+        };
+        let selector = Selector { device_id: Some("local".into()), remote: None };
+        let processes = Frida::new(frida).list_processes(&selector).unwrap();
+        assert_eq!(processes.len(), 1, "{processes:?}");
+        assert_eq!(processes[0].pid, 12);
     }
 
     #[test]
