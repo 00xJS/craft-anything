@@ -1297,7 +1297,7 @@ fn a_projects_saved_time_and_ai_use_show_beside_it_and_the_session_total_in_the_
     let root = d.path().to_path_buf();
     ProjectUsage::update(&root, |u| {
         u.work_ms = 725_000;
-        u.add_turn(1_180_000, 42_000, Some(3.21));
+        u.add_turn(1_180_000, 42_000, Some(3.21), true);
     })
     .unwrap();
     let mut h = harness(move || {
@@ -1306,16 +1306,19 @@ fn a_projects_saved_time_and_ai_use_show_beside_it_and_the_session_total_in_the_
         if let Some(ws) = a.workspace.as_mut() {
             ws.root = root.clone();
         }
-        a.session_usage.add_turn(1_180_000, 42_000, Some(3.21));
+        a.session_usage.add_turn(1_180_000, 42_000, Some(3.21), true);
         a
     });
     h.run_steps(3);
     h.get_by_label("Time spent");
     h.get_by_label("12m 05s");
-    h.get_by_label("AI cost");
+    // A coding agent's figure is called an estimate, in the open and not only on hover.
+    h.get_by_label("AI cost (estimate)");
+    h.get_by_label("The coding agent's estimate at API prices, not your bill. A subscription isn't charged this.");
     h.get_by_label("1.2M");
     // The project's row and the title bar's session total.
-    assert_eq!(h.get_all_by_label("about $3.21").count(), 2);
+    h.get_by_label("about $3.21");
+    h.get_by_label("about $3.21 (estimate)");
 }
 
 #[test]

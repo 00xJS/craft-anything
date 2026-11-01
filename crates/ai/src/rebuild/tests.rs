@@ -1305,7 +1305,10 @@ impl Conversation for ChecksItsWork {
         }
         match self.reply.take() {
             Some(text) => {
-                vec![AgentEvent::TextDelta { text }, AgentEvent::TurnDone { backend: "test".into(), input_tokens: 0, output_tokens: 0, cost_usd: None }]
+                vec![
+                    AgentEvent::TextDelta { text },
+                    AgentEvent::TurnDone { backend: "test".into(), input_tokens: 0, output_tokens: 0, cost_usd: None, cost_is_estimate: false },
+                ]
             }
             None => Vec::new(),
         }
