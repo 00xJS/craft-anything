@@ -773,6 +773,10 @@ impl Workspace {
     pub fn app_dir(&self) -> PathBuf {
         if self.manifest.app_in_root { self.root.clone() } else { self.root.join("app") }
     }
+    /// Where the app is, in words for messages: "app/", or "the project folder" (#174).
+    pub fn app_place(&self) -> &'static str {
+        if self.manifest.app_in_root { "the project folder" } else { "app/" }
+    }
 
     /// One of Craft Anything's own records in this project (the manifest, the feed, the inbox,
     /// the person's pictures…), which the builder never changes, even when the app is the

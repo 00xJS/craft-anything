@@ -234,7 +234,7 @@ impl Check for BuildCheck {
         CheckResult::BUILD
     }
     fn run(&self, cx: &mut CheckCx) -> Result<CheckResult, ToolError> {
-        let (passed, note) = build_check(&cx.ws.app_dir(), &cx.ws.manifest.stack, cx.editor(), cx.stop());
+        let (passed, note) = build_check(&cx.ws.app_dir(), cx.ws.app_place(), &cx.ws.manifest.stack, cx.editor(), cx.stop());
         Ok(CheckResult::new(self.id(), cx.round, passed, note))
     }
 }

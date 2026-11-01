@@ -209,9 +209,12 @@ fn engine_stacks_get_their_own_steps_checks_and_play() {
 
     let d = tempfile::tempdir().unwrap();
     let stop = CancelToken::default();
-    assert_eq!(build_check(d.path(), "Unity", Some(ed), &stop), (false, "No Unity project found in app/ yet.".into()));
-    assert_eq!(build_check(d.path(), "Godot", Some(ed), &stop), (false, "No Godot project (project.godot) found in app/ yet.".into()));
-    assert!(build_check(d.path(), "Unreal Engine", Some(ed), &stop).1.contains(".uproject"));
+    assert_eq!(build_check(d.path(), "app/", "Unity", Some(ed), &stop), (false, "No Unity project found in app/ yet.".into()));
+    assert_eq!(build_check(d.path(), "app/", "Godot", Some(ed), &stop), (false, "No Godot project (project.godot) found in app/ yet.".into()));
+    assert!(build_check(d.path(), "app/", "Unreal Engine", Some(ed), &stop).1.contains(".uproject"));
+    // #174: an app edited in place is said to be in the project folder, not in an app/ that isn't there.
+    let none = build_check(d.path(), "the project folder", "Builder's choice", None, &stop);
+    assert_eq!(none, (false, "No project to build found in the project folder yet.".into()));
 
     // Play: a Godot project opens in Godot; a packaged Unity build runs its own program.
     std::fs::write(d.path().join("project.godot"), "config_version=5").unwrap();
