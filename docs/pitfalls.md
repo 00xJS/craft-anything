@@ -376,6 +376,8 @@ the tool timed out, with work left in a stash. Never run anything that can page 
 It happened again from a leftover first line (`python -I - <<'X'` with nothing before `X`) in a
 command that then wrote and ran a script: 10 minutes lost. Write the script with the editor
 tool and run only `python -I <file>`.
+And twice more in one night, each time a `python -I - <<'X'` with an empty body typed as a
+throwaway step in a longer command. There is no safe use of `python -` here: never type it.
 
 **A search that ran no search.** `timeout 40 find … 2>/dev/null` on a Mac: there's no `timeout` there,
 the error went to `/dev/null`, and the empty result read as "no such files on this computer". Don't
