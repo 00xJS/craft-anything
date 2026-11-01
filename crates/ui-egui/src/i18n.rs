@@ -18,7 +18,8 @@ pub struct LangInfo {
     pub source: &'static str,
 }
 
-pub static LANGUAGES: &[LangInfo] = &[LangInfo { code: "en", name: "English", source: "" }];
+pub static LANGUAGES: &[LangInfo] =
+    &[LangInfo { code: "en", name: "English", source: "" }, LangInfo { code: "fr", name: "Français", source: include_str!("fr.tsv") }];
 
 fn current() -> &'static RwLock<(String, HashMap<String, String>)> {
     static CUR: OnceLock<RwLock<(String, HashMap<String, String>)>> = OnceLock::new();
@@ -79,5 +80,22 @@ mod tests {
         set_language("xx");
         assert_eq!(language(), "en");
         assert_eq!(tr("Untranslated"), "Untranslated");
+    }
+
+    /// Every translation keeps its key's `{placeholders}`, or `trf` would leave them unfilled.
+    #[test]
+    fn catalogs_keep_placeholders() {
+        let holes = |s: &str| {
+            let mut v: Vec<String> = s.split('{').skip(1).filter_map(|p| p.split_once('}')).map(|(h, _)| h.to_string()).collect();
+            v.sort();
+            v
+        };
+        for l in LANGUAGES {
+            let m = parse(l.source);
+            assert!(l.source.is_empty() || m.len() > 100, "{} catalog barely parsed", l.code);
+            for (k, v) in &m {
+                assert_eq!(holes(k), holes(v), "{}: {k:?}", l.code);
+            }
+        }
     }
 }

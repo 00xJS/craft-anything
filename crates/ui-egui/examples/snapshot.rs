@@ -1,7 +1,7 @@
 //! Render the Craft Anything UI offscreen (no window) and save PNGs of the main screens.
 //!
 //! ```sh
-//! cargo run -p craft-anything-ui-egui --example snapshot -- --out-dir target/snapshots [--scale 2] [--light] [--only NAME] [--width 1440] [--height 900]
+//! cargo run -p craft-anything-ui-egui --example snapshot -- --out-dir target/snapshots [--scale 2] [--light] [--only NAME] [--width 1440] [--height 900] [--lang fr]
 //! ```
 //!
 //! The README's pictures: `simple-home` → make.png and `project-game` → project-game.png (both
@@ -19,11 +19,16 @@ fn arg(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
 }
 
+/// `--lang`: the UI language for every scene (English when absent).
+static LANG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 fn render(out: &std::path::Path, name: &str, w: f32, h: f32, scale: f32, make: impl FnOnce() -> CraftApp + 'static) {
     let mut harness =
         egui_kittest::Harness::builder().with_size(egui::vec2(w, h)).with_pixels_per_point(scale).with_max_steps(64).wgpu().build_eframe(move |cc| {
             CraftApp::setup_context(&cc.egui_ctx);
-            make()
+            let app = make();
+            craft_anything_ui_egui::i18n::set_language(LANG.get().map_or("", String::as_str));
+            app
         });
     // Let fonts, SVG icons and fades settle.
     for _ in 0..24 {
@@ -46,6 +51,9 @@ fn main() {
     let out = PathBuf::from(arg(&args, "--out-dir").unwrap_or_else(|| "target/snapshots".into()));
     let scale: f32 = arg(&args, "--scale").and_then(|s| s.parse().ok()).unwrap_or(1.5);
     let only = arg(&args, "--only");
+    if let Some(l) = arg(&args, "--lang") {
+        let _ = LANG.set(l);
+    }
     if let Err(e) = std::fs::create_dir_all(&out) {
         eprintln!("can't create {}: {e}", out.display());
         return;

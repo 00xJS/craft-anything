@@ -762,6 +762,8 @@ Gaps found while using the app for real projects.
       until dismissed, so a later message never hides one
 - [x] Simple-mode text is 12 pt or more (captions, buttons, the title bar, Progress)
 - [x] The Language menu shows once there's a second language
+- [x] French UI (`fr.tsv`, Settings → General → Language); a test checks every translation keeps its
+      `{placeholders}`; `--lang fr` on the snapshot example
 - [x] First run sets up who builds, not only who answers, and no longer says the purpose is saved
       with projects (it stays on the computer); its Back has a name for screen readers
 - [x] An error whose fix quotes a command (`claude auth login`, `codex login`) offers to copy it,

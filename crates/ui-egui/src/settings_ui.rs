@@ -186,7 +186,7 @@ fn general(app: &mut CraftApp, ui: &mut Ui) {
 
 fn language(app: &mut CraftApp, ui: &mut Ui) {
     row(ui, "Language", "", |ui| {
-        let current = LANGUAGES.iter().find(|l| l.code == app.settings.language).map(|l| l.name).unwrap_or("System");
+        let current = LANGUAGES.iter().find(|l| l.code == app.settings.language).map_or_else(|| tr("System"), |l| l.name.to_string());
         egui::ComboBox::from_id_salt("lang").icon(widgets::combo_icon).selected_text(current).show_ui(ui, |ui| {
             if ui.selectable_label(app.settings.language.is_empty(), tr("System")).clicked() {
                 app.settings.language.clear();
