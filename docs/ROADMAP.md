@@ -49,7 +49,7 @@ The project should be easy to fork and bend. New features land behind a seam, no
 | M1 Extensibility | Seams for target kinds, checks, builders, asset providers, engines, plugins | maintainers | Done except runtime and behaviour checks (with R2.4, R2.5) and engine transports (R1.5) |
 | M2 Product completeness | Every target kind gets study → build → check → refine with a real check; building works without an agent app | maintainers | Websites complete; apps and games build and run; API-key builds and other agents are built but not yet run live |
 | M3 Engine depth | More tools, and the known partial ones | open | 284 tools; device-backed tools wait for an Android device; game asset export continues |
-| M4 Release | Packaging, CI, signing, managed tier | maintainers (later) | CI passes; release workflows for every platform are on `main`; the first signed release is next |
+| M4 Release | Packaging, CI, signing, managed tier | maintainers (later) | CI passes; release workflows for every platform are on `main`; v0.1.0 is released, signed, on every platform |
 
 ## Open work
 
@@ -1045,7 +1045,7 @@ against what its original was recorded answering.
 
 ## M4 Release (later)
 
-Owner: maintainers · Status: in progress (CI passes; first signed release next)
+Owner: maintainers · Status: in progress (v0.1.0 is released; managed tier and follow-ups remain)
 - [x] Secret scan: `cargo xtask secrets` (in `cargo xtask ci` and `.githooks/pre-commit`); files and full
       history scanned clean on 2026-10-19
 - [x] **decision**: commit author emails stay as they are (they're public on other repos too)
@@ -1079,9 +1079,10 @@ Launch checklist (source-only first; signed installers can follow):
       `hdiutil create`, with the app inside the mounted image checked by `codesign --strict`; the
       FreeBSD workflow runs on main and packaging PRs (when public) with a package-contents check
 - [ ] Build the new DMG on a Mac (release dry run) and look at the window once
-- [ ] The first release: run the release workflow with the signing secrets (a Windows
-      code-signing certificate and Apple notarization) set on the repository the maintainers
-      release from — claimed: Claude, branch chore/release-repo-links
+- [x] The first release: v0.1.0 built from `release`, signed (Apple Developer ID and notarization,
+      Azure Trusted Signing) and published on 2026-10-31
+- [ ] Move the release workflows off actions that target Node.js 20 (`actions/checkout@v4`,
+      `upload-artifact@v4`, `download-artifact@v4`); GitHub warns on every job and forces them onto Node.js 24
 - [x] **decision**: the free, open-source release doesn't wait on Anthropic. Each person runs their
       own Claude Code under their own account and Anthropic's terms (claude-code.md)
 - [ ] Managed tier: account backend, usage metering (Claude API under our own key only)
