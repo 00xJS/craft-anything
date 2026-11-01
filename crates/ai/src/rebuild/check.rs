@@ -4,7 +4,8 @@ use super::*;
 
 /// For non-website builds: run the project's build (its engine's own, for Unity, Unreal and
 /// Godot) and report whether it succeeded, with a note (the first error lines when it didn't).
-pub(super) fn build_check(app: &Path, stack: &str, editor: Option<&Path>, stop: &CancelToken) -> (bool, String) {
+/// `place` says where `app` is, for messages (`Workspace::app_place`).
+pub(super) fn build_check(app: &Path, place: &str, stack: &str, editor: Option<&Path>, stop: &CancelToken) -> (bool, String) {
     let run = |prog: &Path, args: &[String], minutes: u64| {
         let s = stop.clone();
         craft_anything_platform::Process::new(prog)
@@ -24,7 +25,7 @@ pub(super) fn build_check(app: &Path, stack: &str, editor: Option<&Path>, stop: 
     let result: Result<(bool, String), String> = match (engine_for(stack, app), editor) {
         (Some(game::Builder::Unity), Some(ed)) => {
             if !app.join("Assets").is_dir() {
-                return (false, "No Unity project found in app/ yet.".into());
+                return (false, format!("No Unity project found in {place} yet."));
             }
             let args = ["-batchmode", "-quit", "-nographics", "-projectPath", &app_s, "-executeMethod", "CraftBuild.Build", "-logFile", "-"].map(String::from);
             run(ed, &args, 4 * 60).map(|(ok, out)| {
@@ -37,7 +38,7 @@ pub(super) fn build_check(app: &Path, stack: &str, editor: Option<&Path>, stop: 
         }
         (Some(game::Builder::Unreal), Some(ed)) => {
             let Some(uproject) = uproject(app) else {
-                return (false, "No Unreal project (.uproject) found in app/ yet.".into());
+                return (false, format!("No Unreal project (.uproject) found in {place} yet."));
             };
             // The editor is <engine>/Engine/Binaries/<platform>/UnrealEditor; its packager is beside it.
             let Some(root) = ed.ancestors().nth(4) else { return (false, "Couldn't find Unreal's build tools.".into()) };
@@ -70,7 +71,7 @@ pub(super) fn build_check(app: &Path, stack: &str, editor: Option<&Path>, stop: 
         }
         (Some(game::Builder::Godot), Some(ed)) => {
             if !app.join("project.godot").is_file() {
-                return (false, "No Godot project (project.godot) found in app/ yet.".into());
+                return (false, format!("No Godot project (project.godot) found in {place} yet."));
             }
             let import = ["--headless", "--path", &app_s, "--import"].map(String::from);
             let play = ["--headless", "--path", &app_s, "--quit-after", "120"].map(String::from);
@@ -82,7 +83,7 @@ pub(super) fn build_check(app: &Path, stack: &str, editor: Option<&Path>, stop: 
         }
         _ if app.join("Cargo.toml").is_file() => run(Path::new("cargo"), &["build".into(), "--quiet".into()], 2 * 60),
         _ if app.join("package.json").is_file() => run(Path::new(if cfg!(windows) { "npm.cmd" } else { "npm" }), &["run".into(), "build".into()], 2 * 60),
-        _ => return (false, "No project found in app/ yet.".into()),
+        _ => return (false, format!("No project to build found in {place} yet.")),
     };
     match result {
         Ok((true, _)) => (true, "Build succeeded.".into()),
