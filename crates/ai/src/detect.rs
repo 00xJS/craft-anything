@@ -3,6 +3,7 @@
 
 use crate::openai::{LOCAL_SERVERS, OpenAi};
 use crate::{BackendConfig, BackendKind, Detected};
+use craft_anything_evidence::ErrorCode;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -57,7 +58,14 @@ pub fn probe_local(label: &str, base: &str) -> Option<Detected> {
     if !port_open(base, PROBE) {
         return None;
     }
-    let models = OpenAi::compatible(label, base, None, "").list_models(Duration::from_millis(700)).unwrap_or_default();
+    let models = match OpenAi::compatible(label, base, None, "").list_models(Duration::from_millis(700)) {
+        Ok(m) => m,
+        // Something else listens there (another app's web server on 8080 answering 404): no model
+        // server, so chats with it could only fail (#30).
+        Err(e) if e.code == ErrorCode::GarbledOutput || e.details.as_ref().is_some_and(|d| d.get("status").is_some()) => return None,
+        // No answer in time: it may still be loading a model.
+        Err(_) => Vec::new(),
+    };
     let model = models.first().cloned().unwrap_or_default();
     let reason = match models.len() {
         0 => format!("Found {label} running at {base}"),
@@ -165,6 +173,38 @@ mod tests {
         let t = Instant::now();
         assert!(probe_local("X", &format!("http://127.0.0.1:{port}/v1")).is_none());
         assert!(t.elapsed() < Duration::from_secs(1));
+    }
+
+    /// A stand-in server on a free port that answers every request with `status` and `body`.
+    fn serve(status: &'static str, body: &'static str) -> String {
+        use std::io::{Read as _, Write as _};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/v1", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut s in l.incoming().flatten() {
+                let (mut got, mut buf) = (Vec::new(), [0u8; 4096]);
+                while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => got.extend_from_slice(&buf[..n]),
+                    }
+                }
+                if !got.is_empty() {
+                    let _ = write!(s, "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+                }
+            }
+        });
+        base
+    }
+
+    /// #30: another program on a model server's port isn't offered as one.
+    #[test]
+    fn only_a_server_that_lists_models_is_offered() {
+        assert!(probe_local("llama.cpp server", &serve("404 Not Found", "404 page not found")).is_none(), "a Go web server's 404");
+        assert!(probe_local("llama.cpp server", &serve("200 OK", "<html><body>Admin</body></html>")).is_none(), "a web page");
+        let found = probe_local("llama.cpp server", &serve("200 OK", r#"{"object":"list","data":[{"id":"qwen3-8b"}]}"#)).unwrap();
+        assert_eq!((found.suggestion.name.as_str(), found.suggestion.model.as_str()), ("llama.cpp server (local)", "qwen3-8b"));
+        assert!(probe_local("Ollama", &serve("200 OK", r#"{"object":"list","data":[]}"#)).is_some(), "running with no model yet");
     }
 
     #[test]
