@@ -237,6 +237,8 @@ pub fn install_fonts(ctx: &egui::Context) {
             fallbacks.push(name);
         }
     }
+    // Sans first: a mincho/serif fallback makes Japanese and Chinese UI text look like prose.
+    fallbacks.sort_by_key(|name| fallback_rank(name));
     fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "DMSans".to_owned());
     fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "JetBrainsMono".to_owned());
     for fam in [FontFamily::Proportional, FontFamily::Monospace] {
@@ -249,6 +251,23 @@ pub fn install_fonts(ctx: &egui::Context) {
         fonts.families.insert(FontFamily::Name(fam.into()), stack);
     }
     ctx.set_fonts(fonts);
+}
+
+/// Fallback order: a Japanese UI sans first (BIZ UDPGothic), then other sans faces, then anything
+/// else, with mincho/serif last.
+fn fallback_rank(name: &str) -> u8 {
+    let n = name.to_ascii_lowercase();
+    if n.contains("udpgothic") {
+        0
+    } else if n.contains("sans cjk") {
+        1
+    } else if n.contains("gothic") || n.contains("sans") {
+        2
+    } else if n.contains("mincho") || n.contains("serif") {
+        4
+    } else {
+        3
+    }
 }
 
 pub fn medium(size: f32) -> FontId {
@@ -403,6 +422,16 @@ mod tests {
             if s <= 0.03928 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
         };
         0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+    }
+
+    /// A Japanese sans comes before a serif, so interface text is not set like a book page.
+    #[test]
+    fn fallback_fonts_are_sans_first() {
+        let rank = |family: &str| fallback_rank(&format!("craft:{family}:Regular"));
+        assert!(rank("BIZ UDPGothic") < rank("Noto Sans CJK SC"));
+        assert!(rank("Noto Sans CJK SC") < rank("Shippori Mincho"));
+        assert!(rank("BIZ UDMincho") <= rank("Shippori Mincho"));
+        assert_eq!(rank("Shippori Mincho"), 4);
     }
 
     /// Releases are built with craft-fonts (#19), and so is CI; a build without them has only
