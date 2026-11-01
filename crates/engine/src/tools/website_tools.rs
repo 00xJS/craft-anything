@@ -760,8 +760,22 @@ fn web_site_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let dl = deadline(ctx, p.timeout_secs.max(30))?;
     let site =
         live_site(ctx, &dl).ok_or_else(|| ToolError::new(ErrorCode::NotFound, "no website is open").with_remediation("Open one first with web_site_open."))?;
-    let out = create_absent_dir(&p.output_directory)?;
     let mut client = page_client(&site, &dl)?;
+    // A site that didn't open leaves the browser on its own error page (or a blank one), which
+    // would be captured as if it were the site (#158).
+    let here = eval(&mut client, "location.href", &dl).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
+    if here.is_empty() || here.starts_with("chrome-error:") || here == "about:blank" {
+        cleanup(&mut client, &dl);
+        return Err(ToolError::new(ErrorCode::NotFound, "The website didn't open, so there's nothing to capture: the browser is showing its own error page.")
+            .with_remediation("Open the site again with web_site_open and make sure it loads."));
+    }
+    let out = match create_absent_dir(&p.output_directory) {
+        Ok(out) => out,
+        Err(e) => {
+            cleanup(&mut client, &dl);
+            return Err(e);
+        }
+    };
     let r = capture_into(ctx, &mut client, &out, &p, &dl);
     // Leave the page at the first (usually desktop) width for the tools that follow.
     if let Some(w) = p.widths.first() {
@@ -1302,5 +1316,22 @@ mod tests {
         let at = |x: u32, y: u32| shot.rgba.get(((y * shot.width + x) * 4) as usize..((y * shot.width + x) * 4 + 3) as usize).unwrap().to_vec();
         assert_eq!(at(20, 1700), [255, 0, 0], "the section shown on scroll is in the picture");
         assert_eq!(at(20, 200), [255, 255, 255]);
+    }
+
+    /// #158: after a site fails to open, a capture refuses instead of photographing the browser's
+    /// error page as if it were the site. Live: it needs a Chromium-based browser (`--ignored`).
+    #[test]
+    #[ignore]
+    fn the_browsers_error_page_is_not_captured() {
+        let e = crate::Engine::new(crate::testing::session());
+        let cli = || crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted);
+        // Nothing listens on port 1, so the browser shows its own error page.
+        let _ = e.call("web_site_open", json!({"url": "http://127.0.0.1:1/"}), cli());
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("capture");
+        let err = e.call("web_site_capture", json!({"output_directory": out.display().to_string(), "widths": [1440]}), cli()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound, "{}", err.message);
+        assert!(err.message.contains("didn't open"), "{}", err.message);
+        assert!(!out.exists(), "no folder is made for a capture that can't happen");
     }
 }
