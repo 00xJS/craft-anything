@@ -530,6 +530,21 @@ mod tests {
         send(port, format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{extra}\r\n").as_bytes())
     }
 
+    /// Dropping a server frees its port for the next one. (Another test's listener can be handed
+    /// a freed ephemeral port at once, so the port is tried for a moment rather than once.)
+    #[test]
+    fn dropping_a_server_frees_its_port() {
+        let srv = start();
+        let port = srv.port;
+        assert!(get(port, "/", "").starts_with("HTTP/1.1 200"));
+        drop(srv);
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        while std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
+            assert!(std::time::Instant::now() < until, "port {port} is still held");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     #[test]
     fn answers_with_method_path_query_and_body() {
         let srv = start();

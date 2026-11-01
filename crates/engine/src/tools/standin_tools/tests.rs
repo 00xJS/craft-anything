@@ -123,8 +123,8 @@ fn build_start_request_show_stop_through_the_engine() {
 
         let stopped = call(&e, "web_standin_stop", json!({"id": id})).unwrap();
         assert_eq!(stopped["result"]["stopped"][0]["requests_answered"], 8);
-        let port: u16 = url.rsplit(':').next().unwrap().parse().unwrap();
-        assert!(TcpStream::connect(("127.0.0.1", port)).is_err(), "the port is free");
+        // That its port is freed is tested where the server is (`dropping_a_server_frees_its_port`):
+        // here, among tests that all take free ports, another one may be handed it at once.
         assert_eq!(call(&e, "web_standin_show", json!({})).unwrap()["result"]["servers"], json!([]));
     });
 }
