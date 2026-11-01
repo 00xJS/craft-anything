@@ -337,6 +337,44 @@ impl AiHub {
         self.add_backend_with(BackendEntry { config: cfg, options: BackendOptions::default() }, key)
     }
 
+    /// Add an OpenAI-compatible server by its address: Ollama or LM Studio on another computer, or
+    /// a hosted service with its key. It's added only when it answers with its models; without a
+    /// model, the first one it lists that can chat is used. Returns the model.
+    pub fn add_server(&self, name: &str, address: &str, model: Option<&str>, key: Option<String>) -> Result<String, ToolError> {
+        let name = name.trim();
+        let address = address.trim().trim_end_matches('/');
+        if name.is_empty() {
+            return Err(ToolError::invalid("A backend needs a name."));
+        }
+        if !(address.starts_with("http://") || address.starts_with("https://")) {
+            return Err(ToolError::invalid(format!("{address:?} isn't a web address."))
+                .with_remediation("Give the server's address, like http://192.168.1.20:11434/v1."));
+        }
+        let key = key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
+        let models = openai::OpenAi::compatible(name, address, key.clone(), "").list_models(Duration::from_secs(10)).map_err(|e| {
+            let why = e.message.clone();
+            e.with_remediation(format!(
+                "Check the address (it usually ends in /v1), that the server is running and can be reached from this computer, and its key if it needs one. ({why})"
+            ))
+        })?;
+        let model = match model.map(str::trim).filter(|m| !m.is_empty()) {
+            Some(m) => m.to_string(),
+            None => detect::chat_model(&models).ok_or_else(|| {
+                ToolError::new(ErrorCode::NotFound, format!("{address} has no models yet.")).with_remediation("Add a model on the server first, or name one.")
+            })?,
+        };
+        let config = BackendConfig {
+            name: name.to_string(),
+            kind: BackendKind::OpenaiCompatible,
+            model: model.clone(),
+            base_url: Some(address.to_string()),
+            ssh_host: None,
+            enabled: true,
+        };
+        self.add_backend(config, key)?;
+        Ok(model)
+    }
+
     /// Like [`AiHub::add_backend`], with options.
     pub fn add_backend_with(&self, entry: BackendEntry, key: Option<String>) -> Result<(), ToolError> {
         if entry.config.name.trim().is_empty() {

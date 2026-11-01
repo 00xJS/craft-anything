@@ -215,6 +215,16 @@ pub fn ai(cli: &Cli, c: &AiCommand, f: Format) -> u8 {
                 Ok(k) => k,
                 Err(m) => return crate::usage_error(&m),
             };
+            // A server by its address with no model named: asked for its models, and one that can chat is used.
+            if let (BackendKind::OpenaiCompatible, Some(address), None) = (kind, base_url, model) {
+                return match hub.add_server(name, address, None, key) {
+                    Ok(model) => {
+                        emit(&json!({"added": {"name": name, "kind": kind, "model": model, "base_url": address}}), f);
+                        0
+                    }
+                    Err(e) => fail(&e, f),
+                };
+            }
             let model = model.clone().or_else(|| kind.suggested_models().first().map(|m| m.to_string())).unwrap_or_default();
             let cfg = BackendConfig { name: name.clone(), kind, model, base_url: base_url.clone(), ssh_host: ssh_host.clone(), enabled: true };
             match hub.add_backend(cfg.clone(), key) {

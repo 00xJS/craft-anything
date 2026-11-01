@@ -60,7 +60,7 @@ pub fn port_open(base_url: &str, timeout: Duration) -> bool {
 const NOT_CHAT: &[&str] = &["embed", "minilm", "bge-", "rerank", "whisper", "tts"];
 
 /// The first model a server lists that can chat (else its first, so something is chosen).
-fn chat_model(models: &[String]) -> Option<String> {
+pub(crate) fn chat_model(models: &[String]) -> Option<String> {
     let chats = |m: &&String| !NOT_CHAT.iter().any(|w| m.to_ascii_lowercase().contains(w));
     models.iter().find(chats).or(models.first()).cloned()
 }

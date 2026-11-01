@@ -918,6 +918,37 @@ fn command_palette_opens_and_lists_tools() {
     assert!(!h.state().state.palette.open);
 }
 
+/// #54, #98: an AI server on another computer is added by its address in Settings → AI, with a
+/// model that can chat, and the form empties once it's added.
+#[test]
+fn an_ai_server_is_added_by_its_address() {
+    // A stand-in model server: every request gets the same model list.
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        for mut s in listener.incoming().flatten() {
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let body = r#"{"object":"list","data":[{"id":"nomic-embed-text"},{"id":"qwen3:8b"}]}"#;
+            let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        }
+    });
+    let mut h = harness(|| {
+        let mut a = demo::app(demo::engine(Mode::Experienced, true));
+        a.state.settings_open = true;
+        a.state.settings_tab = craft_anything_ui_egui::state::SettingsTab::Ai;
+        a
+    });
+    h.run_steps(2);
+    h.get_by_label("Add an AI by its address");
+    h.state_mut().server_form = craft_anything_ui_egui::ServerForm { name: "Studio box".into(), address: url.clone(), ..Default::default() };
+    h.run_steps(1);
+    h.get_by_label("Add").click();
+    assert!(wait(&mut h, |a| a.backends.iter().any(|b| b.name == "Studio box" && b.model == "qwen3:8b")), "added with a model that can chat");
+    assert!(h.state().server_form.name.is_empty(), "the form empties once it's added");
+}
+
 /// #53: an agent app installed where it isn't looked for gets its program chosen in Settings → AI,
 /// and goes back to being found by its usual name.
 #[test]
