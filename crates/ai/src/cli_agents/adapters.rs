@@ -292,6 +292,12 @@ impl AgentAdapter for Codex {
 
     fn args(&self, cx: &ArgsCx) -> Vec<String> {
         let mut v = vec!["exec".to_string(), "--json".into()];
+        // Project folders aren't git repositories, and `codex exec` refuses to run outside one
+        // without this (#69). Not twice: it may already be in the backend's own args.
+        const SKIP_GIT: &str = "--skip-git-repo-check";
+        if !cx.options.args.iter().any(|a| a == SKIP_GIT) {
+            v.push(SKIP_GIT.into());
+        }
         if cx.builder {
             v.extend(["--sandbox".into(), "workspace-write".into()]);
         }
