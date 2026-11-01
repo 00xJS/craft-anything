@@ -7,6 +7,12 @@
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, UIAutomationClientsideProviders
+try {
+  Add-Type -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Auto)]
+public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@ -Name NativeMethods -Namespace CraftAnything -ErrorAction SilentlyContinue
+} catch { }
 # The proxies that make Win32 and WinForms controls real buttons, boxes and checkboxes (with their
 # password flag) aren't loaded on their own here; registering them needs UI Automation started.
 $null = [System.Windows.Automation.AutomationElement]::RootElement
@@ -92,7 +98,23 @@ function Act($el, $action) {
     foreach ($way in $ways[$action]) {
       $pattern = ("System.Windows.Automation." + $way[0]) -as [type]
       $p = $null
-      if ($el.TryGetCurrentPattern($pattern::Pattern, [ref]$p)) { [void]$p.($way[1]).Invoke(); return 'dispatched' }
+      if ($el.TryGetCurrentPattern($pattern::Pattern, [ref]$p)) {
+        try {
+          [void]$p.($way[1]).Invoke()
+          return 'dispatched'
+        } catch {
+          # UI Automation's WindowsButton/WindowsCheckBox proxy calls SendInput, which fails with
+          # InvalidOperationException when the window is off-screen or running non-interactively
+          # (e.g. in tests or background jobs). Fall back to Win32 BM_CLICK for buttons and checkboxes.
+          $ct = $el.Current.ControlType
+          $hwnd = [IntPtr]$el.Current.NativeWindowHandle
+          if ($hwnd -ne [IntPtr]::Zero -and ($ct -eq [System.Windows.Automation.ControlType]::Button -or $ct -eq [System.Windows.Automation.ControlType]::CheckBox)) {
+            [void][CraftAnything.NativeMethods]::PostMessage($hwnd, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            return 'dispatched'
+          }
+          throw
+        }
+      }
     }
     'not_supported'
   } catch { 'failed' }
