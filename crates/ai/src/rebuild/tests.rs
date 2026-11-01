@@ -325,9 +325,13 @@ fn a_cut_off_turn_is_resumed_unless_the_person_must_act() {
     for resumable in ["Claude Code took longer than 86400 s and was stopped.", "API Error: 529 overloaded", "connection reset by peer"] {
         assert!(worth_retrying(resumable), "{resumable}");
     }
-    for needs_you in
-        ["Not logged in. Please run /login", "Your credit balance is too low", "Claude Code is not installed", "Invalid API key · Please run /login"]
-    {
+    for needs_you in [
+        "Not logged in. Please run /login",
+        "Your credit balance is too low",
+        "Claude Code is not installed",
+        "Invalid API key · Please run /login",
+        "Claude Code 2.1.81 does not support this model",
+    ] {
         assert!(!worth_retrying(needs_you), "{needs_you}");
     }
     assert_eq!(RunOptions::default().max_rounds, 6, "room to keep fixing until it works");

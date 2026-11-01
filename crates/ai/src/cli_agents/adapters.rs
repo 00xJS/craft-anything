@@ -254,7 +254,8 @@ impl AgentAdapter for ClaudeCode {
                 }
                 if v.get("is_error").and_then(Value::as_bool).unwrap_or(false) {
                     let why = if s("result").is_empty() { s("subtype") } else { s("result") };
-                    out.push(AgentEvent::Error { message: format!("Claude Code stopped: {why}"), remediation: sign_in_hint(&why), log: None });
+                    let (message, remediation) = claude_code_failure(&why);
+                    out.push(AgentEvent::Error { message, remediation, log: None });
                 }
             }
             _ => {}
