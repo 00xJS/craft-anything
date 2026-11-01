@@ -19,17 +19,77 @@ pub fn which_all(name: &str) -> Vec<PathBuf> {
 const USUAL_HOME_DIRS: &[&str] = &[".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin"];
 #[cfg(unix)]
 const USUAL_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
-#[cfg(not(unix))]
+// Claude Code's installer, npm (without a custom prefix), bun and cargo; the installers don't
+// always put these on PATH.
+#[cfg(windows)]
+const USUAL_HOME_DIRS: &[&str] = &[r".local\bin", r"AppData\Roaming\npm", r".bun\bin", r".cargo\bin"];
+#[cfg(not(any(unix, windows)))]
 const USUAL_HOME_DIRS: &[&str] = &[];
 #[cfg(not(unix))]
 const USUAL_DIRS: &[&str] = &[];
+const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
 
 /// `PATH` plus the usual folders for command-line programs, after it so the person's own order
 /// wins. An app opened from the Dock or a desktop launcher gets the system's short `PATH`, not the
-/// shell's, and would miss a coding agent installed in `~/.local/bin`. Unchanged on Windows, where
-/// apps get the full `PATH`.
+/// shell's, and would miss a coding agent installed in `~/.local/bin`; on Windows an installer
+/// may not have added its folder to `PATH` at all.
 pub fn search_path() -> Option<OsString> {
-    with_usual_dirs(std::env::var_os("PATH"), std::env::var_os("HOME").map(PathBuf::from))
+    with_usual_dirs(std::env::var_os("PATH"), std::env::var_os(HOME_VAR).map(PathBuf::from))
+}
+
+/// How to start `program`, and the arguments that go before the caller's. On Windows only `.exe`
+/// files start by bare name, and npm installs Gemini CLI, Codex and often Claude Code as `.cmd`
+/// shims: an npm shim's script is run by its interpreter directly (through `cmd.exe` a prompt with
+/// line breaks, or longer than 8191 characters, wouldn't arrive whole), and any other batch file
+/// by its full path.
+#[cfg(windows)]
+pub(crate) fn launch_target(program: &std::ffi::OsStr) -> (OsString, Vec<OsString>) {
+    let Some(found) = which_in(&program.to_string_lossy(), search_path()).into_iter().next() else { return (program.to_owned(), Vec::new()) };
+    if !found.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat")) {
+        return (program.to_owned(), Vec::new());
+    }
+    let dir = found.parent().map(Path::to_path_buf).unwrap_or_default();
+    let shim = std::fs::metadata(&found)
+        .ok()
+        .filter(|m| m.len() <= 64 * 1024)
+        .and_then(|_| std::fs::read_to_string(&found).ok())
+        .and_then(|text| parse_npm_shim(&text));
+    match shim {
+        Some((None, target)) if is_executable(&dir.join(&target)) => (dir.join(target).into_os_string(), Vec::new()),
+        Some((Some(interpreter), target)) if dir.join(&target).is_file() => {
+            let local = dir.join(format!("{interpreter}.exe"));
+            match if local.is_file() { Some(local) } else { which_in(&interpreter, search_path()).into_iter().next() } {
+                Some(i) => (i.into_os_string(), vec![dir.join(target).into_os_string()]),
+                None => (found.into_os_string(), Vec::new()),
+            }
+        }
+        _ => (found.into_os_string(), Vec::new()),
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn launch_target(program: &std::ffi::OsStr) -> (OsString, Vec<OsString>) {
+    (program.to_owned(), Vec::new())
+}
+
+/// What an npm (or pnpm) `.cmd` shim runs: its interpreter (`node`; none when the target is an
+/// `.exe`) and the target, relative to the shim's folder.
+#[cfg(any(windows, test))]
+fn parse_npm_shim(text: &str) -> Option<(Option<String>, String)> {
+    let run = text.lines().find(|l| l.contains("%*"))?;
+    let quoted: Vec<&str> = run.split('"').skip(1).step_by(2).collect();
+    let target = quoted.iter().rev().find_map(|q| q.strip_prefix(r"%dp0%\").or_else(|| q.strip_prefix(r"%~dp0\")))?;
+    if target.to_ascii_lowercase().ends_with(".exe") {
+        return Some((None, target.to_string()));
+    }
+    let interpreter = if quoted.contains(&"%_prog%") {
+        // npm: `SET "_prog=%dp0%\node.exe"` when Node sits beside the shim, else `SET "_prog=node"`.
+        text.lines().filter_map(|l| l.trim().strip_prefix("SET \"_prog=")?.strip_suffix('"')).find(|p| !p.contains('%'))?
+    } else {
+        // pnpm: `"%~dp0\node.exe"  "%~dp0\..\pnpm\bin\pnpm.cjs" %*`.
+        quoted.iter().any(|q| q.to_ascii_lowercase().ends_with(r"\node.exe")).then_some("node")?
+    };
+    Some((Some(interpreter.to_string()), target.to_string()))
 }
 
 fn with_usual_dirs(path: Option<OsString>, home: Option<PathBuf>) -> Option<OsString> {
@@ -162,11 +222,65 @@ mod tests {
         assert_eq!(with_usual_dirs(None, None), std::env::join_paths(USUAL_DIRS).ok());
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     #[test]
-    fn path_is_unchanged_off_unix() {
-        let path = OsString::from(r"C:\Windows;C:\tools");
-        assert_eq!(with_usual_dirs(Some(path.clone()), Some(PathBuf::from(r"C:\Users\u"))), Some(path));
+    fn usual_windows_dirs_come_after_path() {
+        let home = PathBuf::from(r"C:\Users\u");
+        let path = OsString::from(r"C:\Windows;C:\Users\u\.local\bin");
+        let dirs: Vec<PathBuf> = std::env::split_paths(&with_usual_dirs(Some(path), Some(home.clone())).unwrap()).collect();
+        assert_eq!(dirs[..3], [PathBuf::from(r"C:\Windows"), home.join(r".local\bin"), home.join(r"AppData\Roaming\npm")]);
+        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len(), "nothing twice");
+    }
+
+    const NPM_SHIM: &str = "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\n\
+        IF EXIST \"%dp0%\\node.exe\" (\r\n  SET \"_prog=%dp0%\\node.exe\"\r\n) ELSE (\r\n  SET \"_prog=node\"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\n\
+        endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\"  \"%dp0%\\node_modules\\@google\\gemini-cli\\dist\\index.js\" %*\r\n";
+
+    #[test]
+    fn npm_shims_name_their_script() {
+        assert_eq!(parse_npm_shim(NPM_SHIM), Some((Some("node".into()), r"node_modules\@google\gemini-cli\dist\index.js".into())));
+        let pnpm = "@SETLOCAL\n@IF EXIST \"%~dp0\\node.exe\" (\n  \"%~dp0\\node.exe\"  \"%~dp0\\..\\pnpm\\bin\\pnpm.cjs\" %*\n) ELSE (\n  node  \"%~dp0\\..\\pnpm\\bin\\pnpm.cjs\" %*\n)\n";
+        assert_eq!(parse_npm_shim(pnpm), Some((Some("node".into()), r"..\pnpm\bin\pnpm.cjs".into())));
+        let exe = "@ECHO off\nendLocal & \"%dp0%\\node_modules\\tool\\bin\\tool.exe\"   %*\n";
+        assert_eq!(parse_npm_shim(exe), Some((None, r"node_modules\tool\bin\tool.exe".into())));
+        // Not a shim we know: the batch file is run as it is.
+        assert_eq!(parse_npm_shim("@echo off\r\n\"%NODE_EXE%\" \"%NPM_CLI_JS%\" %*\r\n"), None);
+        assert_eq!(parse_npm_shim("@echo off\r\necho hi\r\n"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn npm_shims_start_their_script_with_node() {
+        let dir = tempfile::tempdir().unwrap();
+        let shim = dir.path().join("gemini.cmd");
+        std::fs::write(&shim, NPM_SHIM).unwrap();
+        // The shim's script missing: the batch file itself.
+        assert_eq!(launch_target(shim.as_os_str()), (shim.clone().into_os_string(), Vec::new()));
+        let script = dir.path().join(r"node_modules\@google\gemini-cli\dist\index.js");
+        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
+        std::fs::write(&script, "").unwrap();
+        std::fs::write(dir.path().join("node.exe"), "").unwrap();
+        // Found without its extension too, as a bare name is.
+        assert_eq!(launch_target(dir.path().join("gemini").as_os_str()), (dir.path().join("node.exe").into_os_string(), vec![script.into_os_string()]));
+        // An .exe is left to the system's own lookup.
+        assert_eq!(launch_target(dir.path().join("node").as_os_str()), (dir.path().join("node").into_os_string(), Vec::new()));
+    }
+
+    /// A prompt with line breaks and quotes reaches the agent whole (needs Node; skipped without).
+    #[cfg(windows)]
+    #[test]
+    fn a_shim_gets_a_multiline_prompt() {
+        if which("node").is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join(r"node_modules\@google\gemini-cli\dist\index.js");
+        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
+        std::fs::write(&script, "process.stdout.write(JSON.stringify(process.argv.slice(2)))").unwrap();
+        std::fs::write(dir.path().join("gemini.cmd"), NPM_SHIM).unwrap();
+        let prompt = "Make a game.\nIt says \"hi\" & 100% works | <ok>";
+        let out = crate::Process::new(dir.path().join("gemini")).args(["-p", prompt]).run_checked().unwrap();
+        assert_eq!(serde_json::from_str::<Vec<String>>(&out.stdout_text()).unwrap(), ["-p", prompt]);
     }
 
     #[cfg(unix)]
