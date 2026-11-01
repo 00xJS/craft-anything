@@ -767,6 +767,7 @@ fn opening_a_file_lands_on_ask_with_a_first_look() {
         let engine = std::sync::Arc::new(craft_anything_engine::Engine::new(craft_anything_engine::Session::new(craft_anything_engine::Settings {
             first_run_done: true,
             deep_mode: true,
+            language: "en".into(),
             ..Default::default()
         })));
         demo::app(engine)

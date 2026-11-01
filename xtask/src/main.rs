@@ -1,9 +1,10 @@
-//! `cargo xtask <layers | locks | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>`
+//! `cargo xtask <layers | locks | i18n-coverage | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>`
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod i18n_coverage;
 mod ico;
 mod locks;
 mod secrets;
@@ -37,6 +38,7 @@ fn main() -> ExitCode {
     let ok = match args.first().map(String::as_str) {
         Some("layers") => layers(&root),
         Some("locks") => locks::check(&root),
+        Some("i18n-coverage") => i18n_coverage::check(&root),
         Some("tools") => tools(&root, args.iter().any(|a| a == "--check")),
         Some("schemas") => schemas(&root, args.iter().any(|a| a == "--check")),
         Some("wasm") => wasm(),
@@ -51,6 +53,7 @@ fn main() -> ExitCode {
         Some("ci") => {
             layers(&root)
                 && locks::check(&root)
+                && i18n_coverage::check(&root)
                 && secrets::secrets(&root, false)
                 && run("cargo", &["fmt", "--all", "--check"])
                 && run("cargo", &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])
@@ -64,7 +67,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: cargo xtask <layers | locks | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>"
+                "usage: cargo xtask <layers | locks | i18n-coverage | tools [--check] | wasm | licenses | schemas [--check] | pending [--count] | secrets [--history] | ci | version [set X.Y.Z] | ico <out.ico> <png>...>"
             );
             false
         }

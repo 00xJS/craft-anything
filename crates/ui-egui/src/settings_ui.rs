@@ -190,15 +190,16 @@ fn general(app: &mut CraftApp, ui: &mut Ui) {
 
 fn language(app: &mut CraftApp, ui: &mut Ui) {
     row(ui, "Language", "", |ui| {
-        let current = LANGUAGES.iter().find(|l| l.code == app.settings.language).map_or_else(|| tr("System"), |l| l.name.to_string());
-        egui::ComboBox::from_id_salt("lang").icon(widgets::combo_icon).selected_text(current).show_ui(ui, |ui| {
-            if ui.selectable_label(app.settings.language.is_empty(), tr("System")).clicked() {
+        let selected = (!app.settings.language.trim().is_empty()).then(|| crate::i18n::language_from_tag(&app.settings.language).unwrap_or("en"));
+        let current = LANGUAGES.iter().find(|l| Some(l.code) == selected).map(|l| l.name).unwrap_or("System");
+        egui::ComboBox::from_id_salt("lang").icon(widgets::combo_icon).selected_text(tr(current)).show_ui(ui, |ui| {
+            if ui.selectable_label(app.settings.language.trim().is_empty(), tr("System")).clicked() {
                 app.settings.language.clear();
                 crate::i18n::set_language("");
                 app.settings_changed();
             }
             for l in LANGUAGES {
-                if ui.selectable_label(app.settings.language == l.code, l.name).clicked() {
+                if ui.selectable_label(selected == Some(l.code), l.name).clicked() {
                     app.settings.language = l.code.into();
                     crate::i18n::set_language(l.code);
                     app.settings_changed();
@@ -529,7 +530,7 @@ fn builds(app: &mut CraftApp, ui: &mut Ui) {
         let current = table.image_model(a.image_model.as_deref()).or_else(|_| table.image_model(None)).map(|m| m.name.clone()).unwrap_or_default();
         egui::ComboBox::from_id_salt("image-model").icon(widgets::combo_icon).selected_text(current).show_ui(ui, |ui| {
             for m in table.images() {
-                let price = craft_anything_engines::assets::about_usd(m.cost(craft_anything_engines::assets::Shape::Square));
+                let price = crate::usage::asset_cost_words(m.cost(craft_anything_engines::assets::Shape::Square));
                 let label = format!("{} · {} {}", m.name, price, tr("a picture"));
                 let on = a.image_model.as_deref() == Some(m.id.as_str());
                 if ui.selectable_label(on, label).on_hover_text(&m.licence).clicked() && !on {

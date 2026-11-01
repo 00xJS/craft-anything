@@ -98,7 +98,7 @@ pub fn describe_value(v: &Value) -> String {
                 let val = match v {
                     Value::String(s) => s.clone(),
                     Value::Null => "none".into(),
-                    Value::Array(a) => format!("{} item(s)", a.len()),
+                    Value::Array(a) => crate::i18n::trf("{n} item(s)", &[("n", &a.len().to_string())]),
                     Value::Object(_) => "…".into(),
                     other => other.to_string(),
                 };

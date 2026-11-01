@@ -57,6 +57,17 @@ fn stack_choice() {
 }
 
 #[test]
+fn chinese_requests_keep_their_project_kind() {
+    for request in ["一个简单的贪吃蛇游戏", "簡單的貪食蛇遊戲", "复刻它的玩法"] {
+        assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");
+    }
+    for request in ["给面包店做一个网站", "為我的麵包店製作網站", "做一个网页", "製作網頁"] {
+        assert_eq!(choose(request, &TargetRef::None), ("website", stacks::BUILDERS_CHOICE), "{request}");
+    }
+    assert_eq!(choose("制作一个笔记应用", &TargetRef::None).0, "app");
+}
+
+#[test]
 fn site_dir_prefers_build_output() {
     let d = tempfile::tempdir().unwrap();
     assert!(site_dir(d.path()).is_none());

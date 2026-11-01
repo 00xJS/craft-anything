@@ -179,7 +179,10 @@ pub fn show(ui: &mut Ui, fields: &[Field], values: &mut BTreeMap<String, String>
                             _ => "",
                         };
                         ui.add(
-                            egui::TextEdit::singleline(v).desired_width(320.0).hint_text(hint).frame(widgets::text_field_frame_compact(&Tokens::get(ui.ctx()))),
+                            egui::TextEdit::singleline(v)
+                                .desired_width(320.0)
+                                .hint_text(tr(hint))
+                                .frame(widgets::text_field_frame_compact(&Tokens::get(ui.ctx()))),
                         );
                     }
                 }

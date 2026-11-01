@@ -445,7 +445,7 @@ fn key_field(app: &mut CraftApp, ui: &mut Ui, provider: &dyn AssetProvider, save
                 .desired_width(320.0)
                 .frame(widgets::text_field_frame_compact(&t)),
         );
-        widgets::named(r, &format!("{} key", provider.name()));
+        widgets::named(r, &trf("{name} key", &[("name", provider.name())]));
         let k = key.trim().to_string();
         if widgets::primary_icon(ui, None, save, !k.is_empty()).clicked() && !k.is_empty() {
             key.clear();
@@ -534,12 +534,13 @@ struct AssetPrices {
 
 impl AssetPrices {
     fn of(app: &CraftApp) -> AssetPrices {
-        use craft_anything_engines::assets::{Catalogue, Shape, about_usd, usd};
+        use crate::usage::asset_cost_words;
+        use craft_anything_engines::assets::{Catalogue, Shape, usd};
         let table = Catalogue::built_in();
         let picture =
             table.image_model(app.settings.assets.image_model.as_deref()).or_else(|_| table.image_model(None)).map(|m| m.cost(Shape::Square)).unwrap_or(0.0);
         let model = table.model_3d(None).map(|m| m.cost(true)).unwrap_or(0.0) + picture;
-        AssetPrices { model: about_usd(model), picture: about_usd(picture), budget: usd(app.settings.assets.budget()) }
+        AssetPrices { model: asset_cost_words(model), picture: asset_cost_words(picture), budget: tr(&usd(app.settings.assets.budget())) }
     }
 }
 

@@ -84,9 +84,9 @@ pub fn modals(app: &mut CraftApp, ctx: &egui::Context) {
                     ui.painter().rect_filled(rect, t.radius, t.accent_soft);
                     icons::paint(ui, rect, icon, 26.0, t.accent_ink);
                     ui.add_space(10.0);
-                    ui.label(theme::heading(title, theme::SECTION));
+                    ui.label(theme::heading(tr(title), theme::SECTION));
                     ui.add_space(4.0);
-                    ui.label(RichText::new(body).color(t.text_dim));
+                    ui.label(RichText::new(tr(body)).color(t.text_dim));
                     ui.add_space(16.0);
                     if widgets::primary(ui, "Got it").clicked() {
                         close = true;

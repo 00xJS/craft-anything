@@ -958,7 +958,7 @@ impl CraftApp {
     pub fn load_rail(&mut self, kind: RailKind) {
         let target = self.view.active_target().map(|t| (t.kind, t.path.display().to_string()));
         let Some(tool) = self.first_tool(kind.tools(target.as_ref().map(|t| t.0))) else {
-            self.state.lists.insert(kind, Fill::Unavailable(format!("{} isn't available yet in this build.", tr(kind.title()))));
+            self.state.lists.insert(kind, Fill::Unavailable(i18n::trf("{name} isn't available yet in this build.", &[("name", &tr(kind.title()))])));
             return;
         };
         if let Some(blocked) = self.blocked(tool) {
@@ -982,7 +982,7 @@ impl CraftApp {
     /// Fill a centre view for the current selection.
     pub fn load_view(&mut self, tab: CenterTab) {
         let Some(tool) = self.first_tool(tab.tools()) else {
-            self.state.views.insert(tab, Fill::Unavailable(format!("The {} view isn't available yet in this build.", tr(tab.title()))));
+            self.state.views.insert(tab, Fill::Unavailable(i18n::trf("The {name} view isn't available yet in this build.", &[("name", &tr(tab.title()))])));
             return;
         };
         let sel = self.state.selection.clone().unwrap_or(Value::Null);

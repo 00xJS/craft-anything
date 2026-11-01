@@ -149,7 +149,7 @@ pub fn json_tree(ui: &mut Ui, key: &str, v: &Value, depth: usize) {
                         json_tree(ui, k, v, depth + 1);
                     }
                     if m.len() > MAX_CHILDREN {
-                        ui.label(RichText::new(format!("… {} more", m.len() - MAX_CHILDREN)).color(t.text_faint));
+                        ui.label(RichText::new(crate::i18n::trf("… {n} more", &[("n", &(m.len() - MAX_CHILDREN).to_string())])).color(t.text_faint));
                     }
                 });
         }
@@ -163,7 +163,7 @@ pub fn json_tree(ui: &mut Ui, key: &str, v: &Value, depth: usize) {
                         json_tree(ui, &i.to_string(), v, depth + 1);
                     }
                     if a.len() > MAX_CHILDREN {
-                        ui.label(RichText::new(format!("… {} more", a.len() - MAX_CHILDREN)).color(t.text_faint));
+                        ui.label(RichText::new(crate::i18n::trf("… {n} more", &[("n", &(a.len() - MAX_CHILDREN).to_string())])).color(t.text_faint));
                     }
                 });
         }
@@ -215,7 +215,7 @@ pub fn ledger_row(ui: &mut Ui, e: &Evidence, selected: bool) -> bool {
                 ui.painter().circle_filled(r.center(), 3.5, col);
                 ui.label(RichText::new(nice_operation(&e.operation)).font(theme::medium(theme::CAPTION)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(crate::theme::confidence_label(Some(e.confidence))).size(theme::TINY).color(col));
+                    ui.label(RichText::new(tr(crate::theme::confidence_label(Some(e.confidence)))).size(theme::TINY).color(col));
                 });
             });
             ui.add(egui::Label::new(RichText::new(truncate(&e.summary, 160)).size(theme::CAPTION).color(t.text_dim)).wrap());

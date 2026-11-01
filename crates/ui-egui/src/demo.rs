@@ -100,7 +100,7 @@ fn strings_evidence() -> Option<Evidence> {
 
 /// An engine with the sample program open and a few findings in the ledger.
 pub fn engine(mode: Mode, first_run_done: bool) -> Arc<Engine> {
-    let settings = Settings { mode, first_run_done, ..Default::default() };
+    let settings = Settings { mode, first_run_done, language: "en".into(), ..Default::default() };
     let mut session = Session::new(settings);
     session.add_target(sample_target());
     for e in [strings_evidence(), functions_evidence(), percent_evidence()].into_iter().flatten() {

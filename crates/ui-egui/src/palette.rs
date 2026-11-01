@@ -82,7 +82,7 @@ pub fn show(app: &mut CraftApp, ctx: &egui::Context) {
         .filter_map(|e| {
             let hay = match e {
                 Entry::App(_, title, _) => tr(title),
-                Entry::Tool { id, title, .. } => format!("{title} {id}"),
+                Entry::Tool { id, title, .. } => format!("{} {title} {id}", tr(title)),
             };
             score(&hay, &q).map(|s| (s, e))
         })

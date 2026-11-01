@@ -576,7 +576,8 @@ fn asset_line(app: &mut CraftApp, ui: &mut Ui, ws: &Workspace) {
     }
     ui.add_space(6.0);
     let budget = ws.manifest.asset_budget_usd;
-    ui.label(RichText::new(format!("{n} · ${spent:.2} of ${budget:.2}")).font(theme::mono(12.5)).color(if spent >= budget { t.warning } else { t.text_dim }));
+    let amount = trf("{n} · ${spent} of ${budget}", &[("n", &n.to_string()), ("spent", &format!("{spent:.2}")), ("budget", &format!("{budget:.2}"))]);
+    ui.label(RichText::new(amount).font(theme::mono(12.5)).color(if spent >= budget { t.warning } else { t.text_dim }));
     let step = craft_anything_engines::assets::usd(app.asset_budget_step());
     if widgets::link(ui, &trf("Raise the budget by {amount}", &[("amount", &step)])).clicked() {
         app.raise_asset_budget();

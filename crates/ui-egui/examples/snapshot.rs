@@ -26,8 +26,9 @@ fn render(out: &std::path::Path, name: &str, w: f32, h: f32, scale: f32, make: i
     let mut harness =
         egui_kittest::Harness::builder().with_size(egui::vec2(w, h)).with_pixels_per_point(scale).with_max_steps(64).wgpu().build_eframe(move |cc| {
             CraftApp::setup_context(&cc.egui_ctx);
-            let app = make();
-            craft_anything_ui_egui::i18n::set_language(LANG.get().map_or("", String::as_str));
+            let mut app = make();
+            app.settings.language = LANG.get().cloned().unwrap_or_else(|| "en".into());
+            craft_anything_ui_egui::i18n::set_language(&app.settings.language);
             app
         });
     // Let fonts, SVG icons and fades settle.

@@ -819,7 +819,7 @@ fn ledger(app: &mut CraftApp, ui: &mut Ui) {
             ui.add_space(3.0);
         }
         if app.view.ledger_len > app.view.ledger.len() {
-            ui.label(RichText::new(format!("… {} older", app.view.ledger_len - app.view.ledger.len())).color(t.text_faint));
+            ui.label(RichText::new(crate::i18n::trf("… {n} older", &[("n", &(app.view.ledger_len - app.view.ledger.len()).to_string())])).color(t.text_faint));
         }
     });
     if let Some(id) = pick {
@@ -874,7 +874,7 @@ fn bottom(app: &mut CraftApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         let n_jobs = app.jobs.running().filter(|j| j.visible).count();
-        let jobs_title = if n_jobs > 0 { format!("Jobs ({n_jobs})") } else { "Jobs".to_string() };
+        let jobs_title = if n_jobs > 0 { crate::i18n::trf("Jobs ({n})", &[("n", &n_jobs.to_string())]) } else { tr("Jobs") };
         let tabs = [("bot", "Agent"), ("activity", jobs_title.as_str()), ("terminal", "Log")];
         let sel = match app.state.bottom {
             BottomTab::Agent => 0,
@@ -918,7 +918,7 @@ fn jobs(app: &mut CraftApp, ui: &mut Ui) {
                     Some(Err(_)) => ("triangle-alert", t.danger),
                 };
                 icons::show(ui, icon, 14.0, col);
-                ui.add_sized(Vec2::new(220.0, 18.0), egui::Label::new(RichText::new(&j.title).font(theme::medium(theme::CAPTION))).truncate());
+                ui.add_sized(Vec2::new(220.0, 18.0), egui::Label::new(RichText::new(tr(&j.title)).font(theme::medium(theme::CAPTION))).truncate());
                 let secs = j.finished_at.unwrap_or_else(std::time::Instant::now).duration_since(j.started).as_secs_f32();
                 ui.label(RichText::new(format!("{secs:.1}s")).font(theme::mono(11.5)).color(t.text_faint));
                 match &j.outcome {
