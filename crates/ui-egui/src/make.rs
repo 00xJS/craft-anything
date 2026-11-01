@@ -287,7 +287,7 @@ fn look_inside(app: &mut CraftApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     // The app's one setting (the title bar's switch), not this project's: said where it's chosen.
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(tr("How closely may we look at it?")).size(theme::BODY).color(t.text_dim));
+        ui.label(RichText::new(tr("How closely may Craft Anything look at it?")).size(theme::BODY).color(t.text_dim));
         ui.label(RichText::new(tr("For everything you make, like the switch in the title bar.")).size(theme::SMALL).color(t.text_faint));
     });
     ui.add_space(6.0);
@@ -298,8 +298,8 @@ fn look_inside(app: &mut CraftApp, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         for (on, icon, label, blurb) in [
-            (false, "shield-check", "Clean room", "Nothing inside it is read; we work from what you can see. Your version gets its own art."),
-            (true, "microscope", "Deep", "We read its code and files with every tool we have. For your private use."),
+            (false, "shield-check", "Clean room", "Nothing inside it is read; Craft Anything works from what you can see. Your version gets its own art."),
+            (true, "microscope", "Deep", "Craft Anything reads its code and files with every tool it has. For your private use."),
         ] {
             if widgets::choice_tile(ui, size, icon, label, blurb, deep == on).clicked() {
                 pick = Some(on);
