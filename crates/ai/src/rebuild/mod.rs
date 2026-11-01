@@ -789,9 +789,20 @@ impl Worker {
                 Err(e) if e.code != ErrorCode::Cancelled && tries < 3 && agent.session_id().is_some() && worth_retrying(&e.message) => {
                     tries += 1;
                     let why = e.message.chars().take(160).collect::<String>();
-                    self.step(ws, Step::Build, Status::Building, &format!("The builder stopped ({why}). Picking up where it left off…"))?;
-                    // Give a dropped connection or a busy service a moment, longer each time.
-                    for _ in 0..30 * tries {
+                    // A service that says how long to wait is waited for; otherwise a dropped
+                    // connection or a busy service gets a moment, longer each time.
+                    let wait = match retry_after(&e.message) {
+                        Some(secs) => {
+                            let note = format!("The AI service is busy or its rate limit was reached, and asked to wait {secs} s. Trying again then…");
+                            self.step(ws, Step::Build, Status::Building, &note)?;
+                            secs + 1
+                        }
+                        None => {
+                            self.step(ws, Step::Build, Status::Building, &format!("The builder stopped ({why}). Picking up where it left off…"))?;
+                            30 * tries
+                        }
+                    };
+                    for _ in 0..wait {
                         self.stop.check()?;
                         std::thread::sleep(Duration::from_secs(1));
                     }
@@ -914,4 +925,28 @@ pub fn builder_backend(cfg: &crate::AiConfig, named: Option<&str>) -> Result<cra
 fn worth_retrying(message: &str) -> bool {
     let m = message.to_ascii_lowercase();
     !["sign in", "log in", "login", "logged in", "auth", "credit", "billing", "usage limit", "not installed", "install "].iter().any(|k| m.contains(k))
+}
+
+/// The longest wait a service's "retry in …" is followed for.
+const MAX_RETRY_WAIT: u64 = 15 * 60;
+
+/// How long a busy or rate-limited service asked to wait ("Please retry in 19.05s", "retry after
+/// 2 minutes"), in whole seconds rounded up and at most [`MAX_RETRY_WAIT`] (#142).
+fn retry_after(message: &str) -> Option<u64> {
+    let m = message.to_ascii_lowercase();
+    let at = ["retry in ", "retry after ", "try again in "].iter().find_map(|p| m.find(p).map(|i| i + p.len()))?;
+    let rest = m.get(at..)?;
+    let number: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    let value: f64 = number.parse().ok()?;
+    let unit = rest.get(number.len()..).unwrap_or_default().trim_start();
+    let seconds = if unit.starts_with("ms") || unit.starts_with("millisecond") {
+        value / 1000.0
+    } else if unit.starts_with("min") || (unit.starts_with('m') && !unit.starts_with("ms")) {
+        value * 60.0
+    } else if unit.starts_with('h') {
+        value * 3600.0
+    } else {
+        value
+    };
+    Some((seconds.ceil().max(1.0) as u64).min(MAX_RETRY_WAIT))
 }
