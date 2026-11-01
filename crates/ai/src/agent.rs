@@ -48,7 +48,7 @@ pub trait ToolHost: Send + Sync {
 /// The real host: the engine.
 pub struct EngineHost(pub Arc<Engine>);
 
-/// Remove keys model APIs dislike at the schema root.
+/// Remove keys model APIs dislike at the schema root, and write boolean sub-schemas as objects.
 fn clean_schema(mut s: Value) -> Value {
     if let Some(o) = s.as_object_mut() {
         o.remove("$schema");
@@ -60,7 +60,33 @@ fn clean_schema(mut s: Value) -> Value {
             o.insert("properties".into(), json!({}));
         }
     }
+    object_subschemas(&mut s, 0);
     s
+}
+
+/// Deepest schema nesting rewritten (run-time tools bring their own schemas).
+const MAX_SCHEMA_DEPTH: usize = 64;
+
+/// `true` and `false` as sub-schemas (schemars writes `"items": true` for a list of any JSON) become
+/// `{}` and `{"not": {}}`: local servers such as LM Studio refuse anything but an object there.
+/// `additionalProperties` stays as it is: a boolean is what every API expects in it.
+fn object_subschemas(schema: &mut Value, depth: usize) {
+    let Some(o) = schema.as_object_mut().filter(|_| depth < MAX_SCHEMA_DEPTH) else { return };
+    for (key, sub) in o.iter_mut() {
+        let subs: Vec<&mut Value> = match (key.as_str(), sub) {
+            ("items" | "additionalItems" | "contains" | "not" | "if" | "then" | "else", s) => vec![s],
+            ("properties" | "patternProperties" | "$defs" | "definitions", Value::Object(m)) => m.values_mut().collect(),
+            ("anyOf" | "oneOf" | "allOf" | "prefixItems", Value::Array(a)) => a.iter_mut().collect(),
+            _ => Vec::new(),
+        };
+        for s in subs {
+            match s {
+                Value::Bool(true) => *s = json!({}),
+                Value::Bool(false) => *s = json!({"not": {}}),
+                _ => object_subschemas(s, depth + 1),
+            }
+        }
+    }
 }
 
 pub fn registry_tools(reg: &Registry, enabled: &BTreeSet<Toolset>) -> Vec<ToolDef> {
@@ -712,6 +738,60 @@ pub(crate) mod tests {
     use super::*;
     use crate::model::TurnResult;
     use std::collections::VecDeque;
+
+    /// Paths of boolean sub-schemas in `v`.
+    fn boolean_subschemas(v: &Value, path: &str, out: &mut Vec<String>) {
+        let Value::Object(o) = v else { return };
+        for (k, sub) in o {
+            let subs: Vec<(String, &Value)> = match (k.as_str(), sub) {
+                ("properties" | "$defs" | "definitions", Value::Object(m)) => m.iter().map(|(n, s)| (format!("{path}/{k}/{n}"), s)).collect(),
+                ("anyOf" | "oneOf" | "allOf" | "prefixItems", Value::Array(a)) => a.iter().enumerate().map(|(i, s)| (format!("{path}/{k}/{i}"), s)).collect(),
+                ("items" | "not", s) => vec![(format!("{path}/{k}"), s)],
+                _ => Vec::new(),
+            };
+            for (p, s) in subs {
+                if s.is_boolean() {
+                    out.push(p);
+                } else {
+                    boolean_subschemas(s, &p, out);
+                }
+            }
+        }
+    }
+
+    /// Every place a schema can sit holds an object, as LM Studio requires (#17).
+    #[test]
+    fn tool_schemas_have_only_object_subschemas() {
+        let reg = Registry::with_all_tools();
+        let all: BTreeSet<Toolset> = reg.toolsets().into_iter().collect();
+        let raw = reg.get("app_call_path_find").map(|s| reg.input_schema(s)).unwrap_or_default();
+        assert!(raw.to_string().contains("\"items\":true"), "the case from #17 is still covered");
+        let mut bad = Vec::new();
+        for t in registry_tools(&reg, &all) {
+            boolean_subschemas(&t.schema, &t.name, &mut bad);
+        }
+        assert!(bad.is_empty(), "boolean sub-schemas left: {bad:?}");
+    }
+
+    #[test]
+    fn boolean_subschemas_become_objects() {
+        let s = clean_schema(json!({
+            "type": "object", "additionalProperties": false,
+            "properties": {"functions": {"type": "array", "items": true}, "never": false, "pick": {"anyOf": [true, {"items": false}]}}
+        }));
+        assert_eq!(s["properties"]["functions"]["items"], json!({}));
+        assert_eq!(s["properties"]["never"], json!({"not": {}}));
+        assert_eq!(s["properties"]["pick"]["anyOf"], json!([{}, {"items": {"not": {}}}]));
+        assert_eq!(s["additionalProperties"], json!(false), "left as APIs expect");
+        // Deeper than the limit: the rest is left as it is.
+        let mut deep = json!(true);
+        for _ in 0..(MAX_SCHEMA_DEPTH + 10) {
+            deep = json!({"items": deep});
+        }
+        let mut bad = Vec::new();
+        boolean_subschemas(&clean_schema(deep), "", &mut bad);
+        assert_eq!(bad.len(), 1);
+    }
 
     /// A scripted model: returns canned turns and records requests.
     pub struct Scripted {
