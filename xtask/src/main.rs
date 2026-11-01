@@ -59,6 +59,7 @@ fn main() -> ExitCode {
                 && run("cargo", &["clippy", "-p", "craft-anything-engine", "--features", "wasm-plugins", "--all-targets", "--", "-D", "warnings"])
                 && run("cargo", &["test", "-p", "craft-anything-engine", "--features", "wasm-plugins"])
                 && tools(&root, true)
+                && schemas(&root, true)
                 && wasm()
         }
         _ => {
