@@ -491,7 +491,13 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
             let _ = tx.send(shown.error_event(&agent, e));
         }
     }
-    let _ = tx.send(AgentEvent::TurnDone { backend: name, input_tokens: p.input_tokens, output_tokens: p.output_tokens, cost_usd: p.cost_usd });
+    let _ = tx.send(AgentEvent::TurnDone {
+        backend: name,
+        input_tokens: p.input_tokens,
+        output_tokens: p.output_tokens,
+        cost_usd: p.cost_usd,
+        cost_is_estimate: true,
+    });
 }
 
 /// What's needed to explain a failed CLI run: the command with the person's message left out, and
@@ -632,7 +638,13 @@ impl Conversation for CliConversation {
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_cli(&spec, &text, &tx, &stop, &session, &verified)));
             if r.is_err() {
                 let _ = tx.send(AgentEvent::Error { message: "The agent runner hit a bug and stopped safely.".into(), remediation: None, log: None });
-                let _ = tx.send(AgentEvent::TurnDone { backend: spec.config.name.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None });
+                let _ = tx.send(AgentEvent::TurnDone {
+                    backend: spec.config.name.clone(),
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cost_usd: None,
+                    cost_is_estimate: false,
+                });
             }
             busy.store(false, Ordering::SeqCst);
         });

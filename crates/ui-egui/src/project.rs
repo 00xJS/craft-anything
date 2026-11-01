@@ -261,9 +261,9 @@ impl CraftApp {
                     clock.saved_again(root, false);
                     finished.push(root.clone());
                 }
-                RunEvent::Agent(AgentEvent::TurnDone { input_tokens, output_tokens, cost_usd, .. }) => {
+                RunEvent::Agent(AgentEvent::TurnDone { input_tokens, output_tokens, cost_usd, cost_is_estimate, .. }) => {
                     clock.saved_again(root, true);
-                    self.session_usage.add_turn(*input_tokens, *output_tokens, *cost_usd);
+                    self.session_usage.add_turn(*input_tokens, *output_tokens, *cost_usd, *cost_is_estimate);
                 }
                 // A run's first event is its first step: the clock starts there.
                 _ if !clock.working() => clock.saved_again(root, true),
@@ -873,7 +873,12 @@ fn steps(app: &CraftApp, ui: &mut Ui, ws: &Workspace) {
             let tip = || crate::usage::explain(&u.saved, "Every build of this project.");
             stat_row(ui, "Time spent", &crate::usage::duration_words(u.elapsed()));
             if u.saved.priced {
-                stat_row(ui, "AI cost", &crate::usage::cost_words(u.saved.cost_usd)).on_hover_text(tip());
+                let cost = crate::usage::cost_stat(&u.saved);
+                stat_row(ui, cost.label, &cost.value).on_hover_text(tip());
+                // Said outright, not only on hover: on a subscription this isn't what they pay.
+                if let Some(note) = cost.note {
+                    ui.add(egui::Label::new(RichText::new(tr(note)).color(Tokens::get(ui.ctx()).text_faint).size(theme::CAPTION)).wrap());
+                }
             }
             if u.saved.tokens() > 0 {
                 stat_row(ui, "Tokens", &crate::usage::tokens_short(u.saved.tokens())).on_hover_text(tip());

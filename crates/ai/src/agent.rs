@@ -373,7 +373,13 @@ impl AgentLoop {
         }
         self.save_transcript();
         let backend = self.chain.get(self.current).map(|s| s.name.clone()).unwrap_or_default();
-        self.emit(AgentEvent::TurnDone { backend, input_tokens: msg_usage.input_tokens, output_tokens: msg_usage.output_tokens, cost_usd: msg_cost });
+        self.emit(AgentEvent::TurnDone {
+            backend,
+            input_tokens: msg_usage.input_tokens,
+            output_tokens: msg_usage.output_tokens,
+            cost_usd: msg_cost,
+            cost_is_estimate: false,
+        });
     }
 
     /// Keep the conversation in its transcript file, when it has one.

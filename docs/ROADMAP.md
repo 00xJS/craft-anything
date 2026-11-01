@@ -775,6 +775,10 @@ Gaps found while using the app for real projects.
       command doesn't return until it closes: start it without inheriting the CLI's handles
 - [x] The desktop app keeps `desktop.log` beside its settings: startup steps, warnings, a window
       that couldn't start, panics
+- [x] The cost says when it's an estimate: Claude Code's figure is its own guess at API prices,
+      so the project page says "AI cost (estimate)" with a note that it isn't the bill, and the
+      title bar says "(estimate)"; what an API key was charged is kept apart (`api_billed_usd`
+      in usage.json; older files count as estimates)
 - [ ] Sometimes starting the app shows nothing: find why from `desktop.log` (a GOG Galaxy Vulkan
       overlay layer loads into the app; try DX12 first on Windows if that's it)
 - [x] Try again picks up where a run stopped instead of starting over: a project whose builder

@@ -1,6 +1,7 @@
 //! What the AI has used: each project's building time, tokens and reported cost (saved by its
 //! runs in `usage.json`, so they add up across restarts), and the session's total since the app
-//! opened. Claude Code prices each run; other agents give tokens only.
+//! opened. An API key's cost comes from what it was charged; Claude Code gives its own estimate
+//! at API prices, which isn't a bill (a subscription may cover it); other agents give tokens only.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -39,10 +40,42 @@ impl ProjectClock {
     }
 }
 
-/// "about $3.20" (agents report an estimate at API prices).
+/// "about $3.20".
 pub fn cost_words(usd: f64) -> String {
     trf("about ${n}", &[("n", &format!("{usd:.2}"))])
 }
+
+/// Below this, a difference between two amounts is rounding, not money.
+const NOT_MONEY: f64 = 0.005;
+
+/// How to show a project's cost. A coding agent's figure is an estimate and is called one: it's
+/// never shown as if it were what the person paid.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CostStat {
+    /// Translated when drawn.
+    pub label: &'static str,
+    pub value: String,
+    /// Shown under the number. Translated when drawn.
+    pub note: Option<&'static str>,
+}
+
+pub fn cost_stat(u: &ProjectUsage) -> CostStat {
+    let estimated = u.estimated_usd();
+    if estimated < NOT_MONEY {
+        return CostStat { label: "AI cost", value: cost_words(u.cost_usd), note: None };
+    }
+    if u.api_billed_usd < NOT_MONEY {
+        return CostStat { label: "AI cost (estimate)", value: cost_words(u.cost_usd), note: Some(ESTIMATE_NOTE) };
+    }
+    CostStat { label: "AI cost (part estimate)", value: cost_words(u.cost_usd), note: Some(ESTIMATE_NOTE) }
+}
+
+/// The cost in few words, for the title bar.
+pub fn cost_short(u: &ProjectUsage) -> String {
+    if u.estimated_usd() < NOT_MONEY { cost_words(u.cost_usd) } else { trf("{cost} (estimate)", &[("cost", &cost_words(u.cost_usd))]) }
+}
+
+const ESTIMATE_NOTE: &str = "The coding agent's estimate at API prices, not your bill. A subscription isn't charged this.";
 
 /// "830", "12k", "1.2M".
 pub fn tokens_short(n: u64) -> String {
@@ -72,8 +105,11 @@ pub fn duration_words(d: Duration) -> String {
 /// of this project." or "Since Craft Anything opened.").
 pub fn explain(u: &ProjectUsage, counts: &str) -> String {
     let mut lines = vec![trf("{in} in, {out} out.", &[("in", &tokens_words(u.input_tokens)), ("out", &tokens_words(u.output_tokens))])];
-    if u.priced {
-        lines.push(tr("The cost is the coding agent's own estimate at API prices; a subscription may cover it."));
+    if u.priced && u.estimated_usd() >= NOT_MONEY {
+        lines.push(tr(ESTIMATE_NOTE));
+        if u.api_billed_usd >= NOT_MONEY {
+            lines.push(trf("Of this, {cost} was charged to an API key.", &[("cost", &cost_words(u.api_billed_usd))]));
+        }
     }
     lines.push(tr(counts));
     lines.join("\n")
@@ -93,6 +129,40 @@ mod tests {
         assert!(c.working() && c.elapsed() >= Duration::from_secs(725));
         c.saved_again(dir.path(), false);
         assert_eq!(c.elapsed(), Duration::from_secs(725));
+    }
+
+    #[test]
+    fn a_coding_agents_cost_is_called_an_estimate_and_a_keys_is_not() {
+        let mut agent = ProjectUsage::default();
+        agent.add_turn(10, 10, Some(3.12), true);
+        let stat = cost_stat(&agent);
+        assert_eq!((stat.label, stat.value.as_str()), ("AI cost (estimate)", "about $3.12"));
+        assert!(stat.note.unwrap().contains("not your bill"));
+        assert_eq!(cost_short(&agent), "about $3.12 (estimate)");
+        assert!(explain(&agent, "x").contains("not your bill"));
+
+        let mut key = ProjectUsage::default();
+        key.add_turn(10, 10, Some(1.5), false);
+        assert_eq!(cost_stat(&key), CostStat { label: "AI cost", value: "about $1.50".into(), note: None });
+        assert_eq!(cost_short(&key), "about $1.50");
+        assert!(!explain(&key, "x").contains("estimate"));
+
+        // Both in one project: the total, said to be partly an estimate, and the charged part.
+        key.add_turn(10, 10, Some(2.0), true);
+        assert_eq!(cost_stat(&key).label, "AI cost (part estimate)");
+        assert_eq!(cost_stat(&key).value, "about $3.50");
+        assert!(explain(&key, "x").contains("about $1.50 was charged"));
+    }
+
+    #[test]
+    fn a_saved_cost_from_before_the_split_counts_as_an_estimate() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(craft_anything_engine::workspace::USAGE_FILE),
+            r#"{"version":1,"work_ms":5,"input_tokens":1,"output_tokens":1,"cost_usd":3.12,"priced":true}"#,
+        )
+        .unwrap();
+        assert_eq!(cost_stat(&ProjectUsage::load(dir.path())).label, "AI cost (estimate)");
     }
 
     #[test]

@@ -186,7 +186,7 @@ impl AcpCore {
     }
 
     fn turn_done(&self) -> Out {
-        Out::Event(AgentEvent::TurnDone { backend: self.backend.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None })
+        Out::Event(AgentEvent::TurnDone { backend: self.backend.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None, cost_is_estimate: false })
     }
 
     fn response(&mut self, id: u64, msg: &Value) -> Vec<Out> {
@@ -537,7 +537,13 @@ impl Conversation for AcpConversation {
             if let Err(e) = self.spawn() {
                 self.busy.store(false, Ordering::SeqCst);
                 let _ = self.tx.send(AgentEvent::Error { message: e.message, remediation: e.remediation, log: None });
-                let _ = self.tx.send(AgentEvent::TurnDone { backend: self.backend.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None });
+                let _ = self.tx.send(AgentEvent::TurnDone {
+                    backend: self.backend.clone(),
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cost_usd: None,
+                    cost_is_estimate: false,
+                });
                 return;
             }
         }
@@ -578,7 +584,7 @@ impl Conversation for AcpConversation {
                 )),
                 log,
             });
-            events.push(AgentEvent::TurnDone { backend: self.backend.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None });
+            events.push(AgentEvent::TurnDone { backend: self.backend.clone(), input_tokens: 0, output_tokens: 0, cost_usd: None, cost_is_estimate: false });
         }
         events
     }

@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn an_answer_is_its_words_until_the_turn_ends_and_an_error_is_an_error() {
         let words = |t: &str| AgentEvent::TextDelta { text: t.into() };
-        let done = AgentEvent::TurnDone { backend: "A".into(), input_tokens: 1, output_tokens: 1, cost_usd: Some(0.02) };
+        let done = AgentEvent::TurnDone { backend: "A".into(), input_tokens: 1, output_tokens: 1, cost_usd: Some(0.02), cost_is_estimate: false };
         let mut ok = Scripted(vec![words("They're in "), words("app/src."), done]);
         assert_eq!(collect(&mut ok, &CancelToken::default(), WAIT).unwrap(), ("They're in app/src.".to_string(), Some(0.02)));
         let mut bad = Scripted(vec![AgentEvent::Error { message: "not signed in".into(), remediation: Some("Sign in".into()), log: None }]);

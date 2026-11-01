@@ -169,6 +169,10 @@ pub enum AgentEvent {
         input_tokens: u64,
         output_tokens: u64,
         cost_usd: Option<f64>,
+        /// `cost_usd` is the agent's own guess at API prices, not what a key was charged: a
+        /// subscription may cover the whole of it.
+        #[serde(default)]
+        cost_is_estimate: bool,
     },
     Error {
         message: String,

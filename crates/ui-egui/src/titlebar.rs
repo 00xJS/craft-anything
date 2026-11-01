@@ -200,7 +200,7 @@ fn usage_pill(app: &CraftApp, ui: &mut Ui) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    let text = if u.priced { crate::usage::cost_words(u.cost_usd) } else { crate::usage::tokens_words(u.tokens()) };
+    let text = if u.priced { crate::usage::cost_short(u) } else { crate::usage::tokens_words(u.tokens()) };
     let r = widgets::pill(ui, &text, t.text_dim, t.raised);
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &text));
     r.on_hover_ui(|ui| {

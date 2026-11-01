@@ -468,8 +468,12 @@ pub struct ProjectUsage {
     pub work_ms: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
-    /// What the coding agent reported, in US dollars (its estimate at API prices).
+    /// Everything reported, in US dollars: what API keys were charged plus coding agents' own
+    /// estimates at API prices.
     pub cost_usd: f64,
+    /// The part of `cost_usd` charged to an API key. The rest is an estimate, which is all files
+    /// from before this field held.
+    pub api_billed_usd: f64,
     /// Some of it came with a price; agents that report none leave tokens only.
     pub priced: bool,
 }
@@ -497,13 +501,22 @@ impl ProjectUsage {
     }
 
     /// One agent turn's tokens and reported cost (a price that isn't a sensible number is skipped).
-    pub fn add_turn(&mut self, input: u64, output: u64, cost_usd: Option<f64>) {
+    /// `estimate`: the cost is the agent's own guess at API prices, not a key's charge.
+    pub fn add_turn(&mut self, input: u64, output: u64, cost_usd: Option<f64>, estimate: bool) {
         self.input_tokens = self.input_tokens.saturating_add(input);
         self.output_tokens = self.output_tokens.saturating_add(output);
         if let Some(c) = cost_usd.filter(|c| c.is_finite() && *c >= 0.0) {
             self.cost_usd += c;
+            if !estimate {
+                self.api_billed_usd += c;
+            }
             self.priced = true;
         }
+    }
+
+    /// The part of the cost that is a coding agent's estimate rather than a key's charge.
+    pub fn estimated_usd(&self) -> f64 {
+        (self.cost_usd - self.api_billed_usd).max(0.0)
     }
 
     pub fn tokens(&self) -> u64 {
@@ -1001,7 +1014,7 @@ mod tests {
         for cost in [Some(1.25), None, Some(f64::NAN), Some(2.0)] {
             ProjectUsage::update(dir.path(), |u| {
                 u.work_ms += 1_000;
-                u.add_turn(100, 10, cost);
+                u.add_turn(100, 10, cost, true);
             })
             .unwrap();
         }

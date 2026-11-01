@@ -412,14 +412,14 @@ impl Worker {
     /// Add the time worked since the last record (and an agent turn's tokens and reported cost)
     /// to the project's usage.json. The run is its only writer; a failure is logged and the build
     /// carries on.
-    fn record_usage(&mut self, turn: Option<(u64, u64, Option<f64>)>) {
+    fn record_usage(&mut self, turn: Option<(u64, u64, Option<f64>, bool)>) {
         let Some(clock) = self.usage.as_mut() else { return };
         let ms = u64::try_from(clock.since.elapsed().as_millis()).unwrap_or(u64::MAX);
         clock.since = Instant::now();
         let saved = ProjectUsage::update(&clock.root, |u| {
             u.work_ms = u.work_ms.saturating_add(ms);
-            if let Some((input, output, cost)) = turn {
-                u.add_turn(input, output, cost);
+            if let Some((input, output, cost, estimate)) = turn {
+                u.add_turn(input, output, cost, estimate);
             }
         });
         if let Err(e) = saved {
@@ -811,8 +811,8 @@ impl Worker {
                     AgentEvent::Error { message, remediation, .. } => failed = Some((message.clone(), remediation.clone())),
                     _ => {}
                 }
-                if let AgentEvent::TurnDone { input_tokens, output_tokens, cost_usd, .. } = &e {
-                    self.record_usage(Some((*input_tokens, *output_tokens, *cost_usd)));
+                if let AgentEvent::TurnDone { input_tokens, output_tokens, cost_usd, cost_is_estimate, .. } = &e {
+                    self.record_usage(Some((*input_tokens, *output_tokens, *cost_usd, *cost_is_estimate)));
                 }
                 let done = matches!(e, AgentEvent::TurnDone { .. });
                 self.emit(RunEvent::Agent(e));

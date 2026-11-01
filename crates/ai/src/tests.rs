@@ -174,7 +174,7 @@ fn anthropic_streaming_tool_loop_through_the_engine() {
     assert_eq!(text, "Checking Nothing is open.");
     assert!(ev.iter().any(|e| matches!(e, AgentEvent::ToolFinished { tool, ok: true, .. } if tool == "core_session_show")));
     assert!(ev.iter().any(|e| matches!(e, AgentEvent::ToolFinished { tool, ok: true, .. } if tool == "core_targets_list")));
-    let AgentEvent::TurnDone { backend, input_tokens, output_tokens, cost_usd } = ev.last().unwrap().clone() else { panic!() };
+    let AgentEvent::TurnDone { backend, input_tokens, output_tokens, cost_usd, .. } = ev.last().unwrap().clone() else { panic!() };
     assert_eq!((backend.as_str(), input_tokens, output_tokens), ("Claude", 300, 50));
     assert!(cost_usd.unwrap() > 0.0);
 
