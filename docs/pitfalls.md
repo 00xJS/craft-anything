@@ -29,6 +29,9 @@ added an app the new rule rejected; both were green on their own branch.
   `git merge-tree --write-tree origin/main origin/<branch>` for conflicts, then a temporary branch
   with the merge, `cargo test --workspace`, clippy and `cargo xtask layers`.
 - After merging several PRs in a row, run the full checks on `main` once more.
+- It happened again with translations: #117 added UI strings and #115, merged right after it,
+  added a check that every string has a Chinese translation, so `cargo xtask ci` failed on
+  `main`. A PR that adds a check, or adds what a check covers, is tested on top of the other.
 
 **A dependency change merged without its lockfile.** Changes were staged with
 `git add -A crates apps docs`, which leaves out the root `Cargo.lock`, so a new dependency reached
