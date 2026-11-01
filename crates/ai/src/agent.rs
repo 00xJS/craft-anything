@@ -11,11 +11,12 @@ use crate::prompt;
 use crate::{AgentEvent, Conversation};
 use craft_anything_engine::{CallOptions, Caller, CancelToken, Consent, Engine, Registry, ToolOutput, Toolset};
 use craft_anything_evidence::{ErrorCode, ToolError};
+use craft_anything_platform::sync::Mutex;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 /// Byte budget for one tool result sent to the model.

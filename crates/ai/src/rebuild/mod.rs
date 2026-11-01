@@ -27,12 +27,13 @@ use craft_anything_engines::game;
 use craft_anything_evidence::{ErrorCode, ToolError};
 pub use craft_anything_platform::serve::StaticServer;
 use craft_anything_platform::serve::serve_dir;
+use craft_anything_platform::sync::Mutex;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
 mod brief;

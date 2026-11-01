@@ -20,11 +20,12 @@ pub mod prompts;
 use craft_anything_engine::tools::investigation_tools;
 use craft_anything_engine::{CallOptions, Caller, CancelToken, Consent, Engine, Progress, ToolOutput, Toolset};
 use craft_anything_evidence::{ErrorCode, ToolError, is_evidence_id};
+use craft_anything_platform::sync::Mutex;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 

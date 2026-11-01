@@ -673,9 +673,10 @@ fn android_jeb_decompile(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput,
 mod tests {
     use super::*;
     use crate::{CallOptions, Caller, Engine};
+    use craft_anything_platform::sync::Mutex;
     use std::io::BufRead;
     use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     fn engine(url: Option<String>) -> Engine {
         let mut s = crate::testing::session();

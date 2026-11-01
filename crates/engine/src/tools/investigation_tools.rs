@@ -11,11 +11,12 @@ use crate::project::write_atomic;
 use crate::session::Session;
 use crate::tool::{Ctx, Effects, Requires, ToolOutput, ToolSpec, Toolset, empty_schema, parse_params, schema_of};
 use craft_anything_evidence::{Confidence, ErrorCode, ToolError};
+use craft_anything_platform::sync::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 
 pub fn specs() -> Vec<ToolSpec> {
     let w = Effects::MUTATES_SESSION.union(Effects::WRITES_FILESYSTEM);

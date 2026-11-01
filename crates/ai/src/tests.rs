@@ -2,10 +2,10 @@
 //! engine runs the tools. No real network.
 
 use super::*;
+use craft_anything_platform::sync::Mutex;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
-use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
 struct Seen {

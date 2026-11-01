@@ -179,9 +179,10 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, ToolError> {
 mod tests {
     use super::*;
     use crate::assets::Catalogue;
+    use craft_anything_platform::sync::Mutex;
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     /// A tiny local server that answers each request in turn and records what it was sent.
     fn serve(answers: Vec<(u16, String)>) -> (String, Arc<Mutex<Vec<String>>>) {

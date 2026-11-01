@@ -14,11 +14,12 @@ use super::web_common::{self, Browser, LaunchOptions};
 use crate::tool::{Ctx, Effects, Requires, ToolOutput, ToolSpec, Toolset, parse_params, schema_of};
 use craft_anything_engines::cdp::{self, CdpClient, CdpEvent, Deadline, Endpoint, PAGE_MAX_MESSAGE};
 use craft_anything_evidence::{Authority, Confidence, Coverage, ErrorCode, EvidenceBuilder, Limitation, Location, Subject, ToolError, sha256_hex};
+use craft_anything_platform::sync::Mutex;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub fn specs() -> Vec<ToolSpec> {

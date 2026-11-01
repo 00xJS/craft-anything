@@ -68,6 +68,9 @@ jobs:
       - name: Dependency layering
         run: cargo run --locked -q -p xtask -- layers
 
+      - name: Session locks taken twice
+        run: cargo run --locked -q -p xtask -- locks
+
       - name: Tool list
         run: cargo run --locked -q -p xtask -- tools --check
 

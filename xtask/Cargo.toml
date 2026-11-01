@@ -8,3 +8,5 @@ publish = false
 [dependencies]
 craft-anything-engine = { workspace = true }
 toml = { workspace = true }
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }

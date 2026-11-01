@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 craft-anything-engine = { workspace = true }
+craft-anything-platform = { workspace = true }
 craft-anything-ai = { workspace = true }
 craft-anything-setup = { workspace = true }
 craft-anything-ui-egui = { workspace = true }

@@ -68,6 +68,10 @@ what happens without a program builds its session in the mode the tool runs in.
 `a`, so `b`'s tests never ran; the rerun was filtered to the failing test, and a broken engine id
 reached `main`. Run with `--no-fail-fast`, and after a fix rerun the whole crates, not a filter.
 
+**A test that changes the whole process.** A UI test raised the process-wide stuck-lock banner; in
+CI the banner moved the layout under another test running beside it, and its click missed. It passed
+25 runs on a Mac. Anything a test sets for the whole process goes in a test program of its own.
+
 **Fixtures that leak into each other.** A "nothing here" path sat beside a fake game folder in the
 same temp directory, and game detection walked up and found the game. Give each case its own
 `tempfile::tempdir()`.
@@ -295,6 +299,13 @@ and run `cargo xtask secrets` before every commit (the `.githooks/pre-commit` ho
 **Docs that drift.** `STATUS.md` described a branch 25 commits old and the tool count was stale.
 Update STATUS, the roadmap and generated docs (`cargo xtask tools`, `cargo xtask schemas`) in the
 same PR as the change.
+
+**A second lock in one statement.** `CliSpec { deep: !engine.session().clean_room(), logs: engine.session().config_dir(), … }`
+looked like two quick reads, but an unbound guard lives to the end of the statement, so the second
+waited on the first forever. Every build froze after studying its target while the card calmly
+said "This is a big one", and no test ran that line. Read the session once; `cargo xtask locks`
+and `platform::sync` now catch this. A wait message must not reassure about what it can't see:
+say how long it's been since anything happened. Find a hang with `sample <pid>`: it names the lock.
 
 **An error that points at nothing.** "Check the output below; run Claude Code by hand" came with no
 output below (the event carried only message and remediation) and no command, and the program

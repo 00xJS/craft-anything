@@ -26,11 +26,12 @@ use crate::session::Session;
 use crate::tool::{Ctx, Effects, Requires, ToolOutput};
 use craft_anything_engines::mcp_client::{McpClient, RemoteTool, Server, ServerCommand, ServerUrl, content_text, url_allowed};
 use craft_anything_evidence::{Authority, Confidence, Environment, ErrorCode, EvidenceBuilder, Subject, ToolError};
+use craft_anything_platform::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 /// How long a server may take to start and answer the handshake or its tool list.

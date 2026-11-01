@@ -18,13 +18,14 @@ use crate::model::Stop;
 use crate::{AgentEvent, BackendConfig, Conversation};
 use craft_anything_evidence::ToolError;
 use craft_anything_platform::process::Process;
+use craft_anything_platform::sync::Mutex;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 /// Name our MCP server is registered under.

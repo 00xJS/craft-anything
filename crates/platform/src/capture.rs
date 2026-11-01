@@ -30,10 +30,11 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 // Only the Unix capture (and its tests) use these.
+use crate::sync::Mutex;
 #[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(unix)]
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 #[cfg(unix)]
 use std::time::{Instant, SystemTime};
 

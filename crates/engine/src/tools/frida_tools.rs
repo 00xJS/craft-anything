@@ -18,12 +18,13 @@ use crate::tool::{Ctx, Effects, Requires, ToolOutput, ToolSpec, Toolset, parse_p
 use craft_anything_engines::frida::{Attach, Frida, Remote, Selector};
 use craft_anything_evidence::{Authority, Confidence, Coverage, Environment, ErrorCode, Evidence, EvidenceBuilder, Limitation, Subject, ToolError, sha256_hex};
 use craft_anything_platform::process::{Cancel, Output};
+use craft_anything_platform::sync::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 pub fn specs() -> Vec<ToolSpec> {

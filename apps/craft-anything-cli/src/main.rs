@@ -193,6 +193,7 @@ fn usage(msg: &str) -> u8 {
 
 /// The engine with settings loaded, the run's mode, and the project (if any) opened.
 pub fn make_engine(project: Option<&Path>, deep_for_run: Option<bool>) -> Result<Arc<Engine>, ToolError> {
+    craft_anything_platform::sync::start_watchdog(craft_anything_engine::settings::config_dir().join("logs"));
     let mut session = Session::new(Settings::load());
     session.deep_for_run = deep_for_run;
     if let Some(dir) = project {

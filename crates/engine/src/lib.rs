@@ -37,8 +37,9 @@ pub use target::{Target, TargetKind};
 pub use tool::{Caller, CancelToken, Ctx, Effects, Progress, Requires, ToolOutput, ToolSpec, Toolset};
 
 use craft_anything_evidence::{ErrorCode, ToolError};
+use craft_anything_platform::sync::{Mutex, MutexGuard};
 use serde_json::Value;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::PoisonError;
 
 /// Whether the caller has the user's consent for a tool that runs code or changes a device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -140,11 +141,13 @@ impl Engine {
     }
 
     /// Lock the session (recovering from a poisoned lock rather than cascading a panic).
+    #[track_caller]
     pub fn session(&self) -> MutexGuard<'_, Session> {
         self.session.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Try to lock without blocking (the UI uses this so a long tool never freezes a frame).
+    #[track_caller]
     pub fn try_session(&self) -> Option<MutexGuard<'_, Session>> {
         match self.session.try_lock() {
             Ok(g) => Some(g),
@@ -231,7 +234,19 @@ impl Engine {
         let spec = *self.registry.get(id).ok_or_else(|| {
             ToolError::invalid(format!("No tool named {id}")).with_remediation("List tools with `craft-anything-cli commands` or the command palette.")
         })?;
-        let mut session = self.session();
+        // Stop works while waiting for the session, and a holder that looks stuck is an error here,
+        // not a wait forever. Tools are long jobs: the label says so (they have their own deadlines).
+        let cancel = opts.cancel.clone();
+        let mut session = match self.session.lock_unless(&|| cancel.is_cancelled()) {
+            Ok(g) => g.unwrap_or_else(PoisonError::into_inner),
+            Err(craft_anything_platform::sync::GaveUp::Stopped) => return Err(ToolError::cancelled()),
+            Err(craft_anything_platform::sync::GaveUp::Stuck(why)) => {
+                return Err(ToolError::new(ErrorCode::TimedOut, format!("{} couldn't start because another part of the app is stuck.", spec.title))
+                    .with_remediation("Restart the app; your work is kept.")
+                    .with_details(serde_json::json!({"lock": why})));
+            }
+        };
+        session.label(spec.id);
         if session.clean_room() && !clean_room::allows(spec.id) {
             return Err(clean_room::refusal(spec.id));
         }

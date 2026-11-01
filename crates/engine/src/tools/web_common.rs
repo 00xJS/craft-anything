@@ -1230,7 +1230,7 @@ mod tests {
 
 /// The last lines a launched browser wrote to stderr, for a failure's message.
 #[derive(Clone, Default)]
-struct StderrTail(std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>);
+struct StderrTail(std::sync::Arc<craft_anything_platform::sync::Mutex<std::collections::VecDeque<String>>>);
 
 impl StderrTail {
     fn push(&self, line: &str) {

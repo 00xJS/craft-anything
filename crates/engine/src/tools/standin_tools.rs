@@ -13,6 +13,7 @@ use crate::versioned::{Step, upgrade};
 use craft_anything_analysis::standin::{self, Answer, BodyLeftOut, BuildOptions, NearbyRoute, NoMatchReason, STANDIN_VERSION, StandIn, Turns};
 use craft_anything_evidence::{Authority, Confidence, Coverage, ErrorCode, EvidenceBuilder, Limitation, Location, Subject, ToolError, sha256_hex};
 use craft_anything_platform::standin_server::{self, Answerer, Limits, LoopbackServer, Request, Response};
+use craft_anything_platform::sync::Mutex;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,7 +21,7 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 
 /// What `web_standin_build` writes in the folder it's given.
 pub const STANDIN_FILE: &str = "standin.json";

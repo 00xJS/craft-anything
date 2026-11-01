@@ -1126,6 +1126,7 @@ version = "0.1.0"
 dependencies = [
  "craft-anything-ai",
  "craft-anything-engine",
+ "craft-anything-platform",
  "craft-anything-setup",
  "craft-anything-ui-egui",
  "eframe",
@@ -1313,6 +1314,7 @@ version = "0.1.0"
 dependencies = [
  "craft-anything-engine",
  "craft-anything-evidence",
+ "craft-anything-platform",
  "log",
  "serde",
  "serde_json",
@@ -7959,6 +7961,8 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "craft-anything-engine",
+ "proc-macro2",
+ "syn 2.0.119",
  "toml 0.9.12+spec-1.1.0",
 ]
 
