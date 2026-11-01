@@ -333,6 +333,20 @@ fn a_cut_off_turn_is_resumed_unless_the_person_must_act() {
     assert_eq!(RunOptions::default().max_rounds, 6, "room to keep fixing until it works");
 }
 
+/// #142: a rate-limited service's own wait is followed (rounded up, capped), not a fixed one.
+#[test]
+fn a_services_requested_wait_is_read() {
+    assert_eq!(retry_after("OpenCode stopped with exit code 1: Please retry in 19.052906498s."), Some(20));
+    assert_eq!(retry_after("Rate limit reached. Retry after 2 minutes"), Some(120));
+    assert_eq!(retry_after("try again in 500ms"), Some(1));
+    assert_eq!(retry_after("Please try again in 3h"), Some(MAX_RETRY_WAIT));
+    assert_eq!(retry_after("Retry in 45 seconds"), Some(45));
+    for no_wait in ["API Error: 529 overloaded", "please retry in a moment", "retry in ."] {
+        assert_eq!(retry_after(no_wait), None, "{no_wait}");
+    }
+    assert!(worth_retrying("Please retry in 19.05s"), "a rate limit is waited out, not handed to the person");
+}
+
 #[test]
 fn games_get_the_mechanics_sheet_and_decompile_only_in_deep_mode() {
     let d = tempfile::tempdir().unwrap();
