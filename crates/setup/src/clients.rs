@@ -163,7 +163,16 @@ pub struct Client {
     pub manual: Option<&'static str>,
 }
 
+/// Other names people use for a client (its program's name).
+const ALIASES: &[(&str, &str)] = &[("agy", "antigravity")];
+
 impl Client {
+    /// Whether `name` (an id, `-` or `_`, or an alias) means this client.
+    pub fn is(&self, name: &str) -> bool {
+        let name = name.replace('-', "_");
+        name == self.id || ALIASES.iter().any(|(alias, id)| name == *alias && *id == self.id)
+    }
+
     pub fn detected(&self) -> bool {
         self.config.exists() || self.markers.iter().any(|m| m.exists())
     }
@@ -438,6 +447,16 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), cs.len());
         assert!(cs.iter().all(|c| c.config.starts_with("/home/u") || c.format == Format::Manual || host.os == Os::Windows));
+    }
+
+    #[test]
+    fn a_client_is_named_by_id_dashes_or_its_program() {
+        let cs = clients(&Host::with_home("/home/u"));
+        let named = |n: &str| cs.iter().filter(|c| c.is(n)).map(|c| c.id).collect::<Vec<_>>();
+        assert_eq!(named("antigravity"), ["antigravity"]);
+        assert_eq!(named("agy"), ["antigravity"]);
+        assert_eq!(named("kimi-code"), ["kimi_code"]);
+        assert!(named("nope").is_empty());
     }
 
     #[test]

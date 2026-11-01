@@ -194,8 +194,7 @@ pub fn plan(host: &Host, req: &PlanRequest) -> Result<Plan, ToolError> {
     let selected: Vec<&Client> = if !req.clients.is_empty() {
         let mut v = Vec::new();
         for id in &req.clients {
-            let id_norm = id.replace('-', "_");
-            match all.iter().find(|c| c.id == id_norm || (id_norm == "agy" && c.id == "antigravity")) {
+            match all.iter().find(|c| c.is(id)) {
                 Some(c) => v.push(c),
                 None => {
                     let ids: Vec<&str> = all.iter().map(|c| c.id).collect();
