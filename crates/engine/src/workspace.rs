@@ -10,6 +10,7 @@
 //!   app/                 the generated project (its own git repository)
 //!   checks/              comparisons of the build against the target, one folder per round
 //!   inbox/               questions and approvals waiting for the person
+//!   build-activity.log   what the runs did, line by line (with .old.log, the one before it)
 //! ```
 //!
 //! A project can also start in a folder the person picks ([`Workspace::create_at`]). When it
@@ -478,6 +479,11 @@ pub struct ProjectUsage {
     pub priced: bool,
 }
 
+/// What a project's runs did, line by line; the run is its only writer.
+pub const ACTIVITY_LOG: &str = "build-activity.log";
+/// The log before it, set aside when it grew long.
+pub const ACTIVITY_LOG_OLD: &str = "build-activity.old.log";
+
 /// Where [`ProjectUsage`] is kept in the project folder.
 pub const USAGE_FILE: &str = "usage.json";
 pub const USAGE_VERSION: u32 = 1;
@@ -878,6 +884,8 @@ pub const OWN_NAMES: &[&str] = &[
     crate::feed::FEED_FILE,
     crate::questions::QUESTIONS_FILE,
     USAGE_FILE,
+    ACTIVITY_LOG,
+    ACTIVITY_LOG_OLD,
     ASSETS,
     "transcript.json",
     "extract-transcript.json",

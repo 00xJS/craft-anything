@@ -64,6 +64,7 @@ pub const TOOLS: &[&str] = &[
     "project_pin_delete",
     "rebuild_start",
     "rebuild_status",
+    "rebuild_activity_show",
     "rebuild_check",
     "rebuild_note",
     "rebuild_note_withdraw",

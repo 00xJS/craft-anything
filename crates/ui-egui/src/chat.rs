@@ -24,6 +24,8 @@ pub fn apply_event(chat: &mut Vec<ChatItem>, e: AgentEvent) {
                 chat.push(ChatItem::Assistant { text, backend: None, streaming: true });
             }
         }
+        // For logs, not the conversation.
+        AgentEvent::Output { .. } => {}
         AgentEvent::Status { text } => {
             if let Some(ChatItem::Status(s)) = chat.last_mut() {
                 *s = text;

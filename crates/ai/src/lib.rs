@@ -144,6 +144,11 @@ pub enum AgentEvent {
     Status {
         text: String,
     },
+    /// A line a program printed outside the conversation (its stderr), for logs: never part of
+    /// the answer.
+    Output {
+        text: String,
+    },
     ToolStarted {
         call_id: String,
         tool: String,

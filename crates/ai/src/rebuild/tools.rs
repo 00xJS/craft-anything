@@ -36,6 +36,17 @@ pub fn specs() -> Vec<ToolSpec> {
             run: rebuild_status,
         },
         ToolSpec {
+            id: "rebuild_activity_show",
+            title: "Show a build's activity",
+            summary: "What a project's builds did, line by line, newest last: each stage, every command and file the builder touched and how it ended, what it said, and what programs printed outside the conversation. Secrets are hidden. Works while a build runs and after. `limit` lines (200 by default, at most 2000), `offset` lines back from the newest.",
+            beginner: "Shows the details of what a build has been doing.",
+            toolset: Toolset::Projects,
+            effects: Effects::READ_ONLY.union(Effects::CARRIES_TARGET_CONTENT),
+            requires: Requires::Nothing,
+            input_schema: schema_of::<ActivityParams>,
+            run: rebuild_activity_show,
+        },
+        ToolSpec {
             id: "rebuild_note",
             title: "Add to a running build",
             summary: "Tell a running build something more; the agent reads it at its next step. With no build running, start a follow-up with rebuild_start instead.",
@@ -172,6 +183,19 @@ fn d_wait_minutes() -> u64 {
 pub struct ProjectParams {
     /// The project's folder.
     pub project: PathBuf,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActivityParams {
+    /// The project's folder.
+    pub project: PathBuf,
+    /// How many lines to return (200 by default, at most 2000).
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// How many lines back from the newest to end at (0 by default).
+    #[serde(default)]
+    pub offset: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -354,6 +378,19 @@ fn rebuild_status(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolEr
     })))
 }
 
+fn rebuild_activity_show(_ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {
+    let p: ActivityParams = parse_params(params)?;
+    let ws = open(&p.project)?;
+    let limit = p.limit.unwrap_or(200).min(2000);
+    let (lines, total) = super::activity::read_log(&ws.root, p.offset.unwrap_or(0), limit)?;
+    Ok(ToolOutput::Value(json!({
+        "project": ws.root.display().to_string(),
+        "log": ws.root.join(craft_anything_engine::workspace::ACTIVITY_LOG).display().to_string(),
+        "lines": lines,
+        "total_lines_read": total,
+    })))
+}
+
 fn rebuild_note(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {
     let p: NoteParams = parse_params(params)?;
     let ws = open(&p.project)?;
@@ -467,6 +504,12 @@ mod tests {
         assert!(e.call("rebuild_start", json!({"request": "x", "build_with": "cobol", "projects_dir": d.path()}), ok()).is_err());
         // Status, notes and stop on a project with nothing running.
         let ws = Workspace::create(d.path(), "Snake", "A snake game", TargetRef::None).unwrap();
+        // A project's activity reads through the tool, none yet being no lines, not an error.
+        let shown = e.call("rebuild_activity_show", json!({"project": ws.root}), ok()).unwrap().to_json();
+        assert_eq!(shown["result"]["lines"], json!([]), "{shown}");
+        std::fs::write(ws.root.join(craft_anything_engine::workspace::ACTIVITY_LOG), "one\ntwo\nthree\n").unwrap();
+        let shown = e.call("rebuild_activity_show", json!({"project": ws.root, "limit": 1, "offset": 1}), ok()).unwrap().to_json();
+        assert_eq!(shown["result"]["lines"], json!(["two"]), "{shown}");
         let st = e.call("rebuild_status", json!({"project": ws.root}), ok()).unwrap().to_json();
         assert_eq!(st["result"]["running"], false);
         assert_eq!(st["result"]["queued"], Value::Null);

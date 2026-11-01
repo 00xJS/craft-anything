@@ -474,6 +474,7 @@ impl AcpConversation {
         *self.lock() = Some(Shared { core, stdin: None, stderr: VecDeque::new(), approver: self.approver.clone() });
         let (shared, tx, busy) = (self.shared.clone(), self.tx.clone(), self.busy.clone());
         let shared_err = self.shared.clone();
+        let tx_err = tx.clone();
         let mut proc = Process::new(&self.program)
             .args(&self.args)
             .cwd(&self.cwd)
@@ -490,6 +491,9 @@ impl AcpConversation {
                 }
             })
             .on_stderr_line(move |l| {
+                if !l.trim().is_empty() {
+                    let _ = tx_err.send(AgentEvent::Output { text: l.to_string() });
+                }
                 let mut g = shared_err.lock().unwrap_or_else(PoisonError::into_inner);
                 if let Some(s) = g.as_mut() {
                     if s.stderr.len() >= 20 {
