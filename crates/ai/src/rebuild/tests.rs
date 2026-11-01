@@ -751,6 +751,190 @@ fn clean_room_studies_nothing_inside_and_deep_mode_looks() {
 }
 
 /// A Worker for checks, on a session with Deep mode on or off.
+/// A kind whose check can't run while `app/check-fails` still counts down, and a stand-in coding
+/// agent that notes each prompt it gets in `prompts.txt` beside the project.
+struct FlakyKind;
+struct FlakyCheck;
+
+impl Check for FlakyCheck {
+    fn id(&self) -> &'static str {
+        "flaky"
+    }
+    fn run(&self, cx: &mut CheckCx) -> Result<CheckResult, ToolError> {
+        let file = cx.ws.app_dir().join("check-fails");
+        let left: u32 = std::fs::read_to_string(&file).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+        if left > 0 {
+            std::fs::write(&file, (left - 1).to_string()).unwrap();
+            return Err(ToolError::new(ErrorCode::EngineMissing, "the WebSocket is closed"));
+        }
+        Ok(CheckResult::new(self.id(), cx.round, true, "Fine."))
+    }
+}
+
+impl TargetKind for FlakyKind {
+    fn id(&self) -> &'static str {
+        "flaky"
+    }
+    fn words(&self) -> KindWords {
+        KindWords { button: "Open", icon: "box", ready: "Ready", change_hint: "Ask" }
+    }
+    fn detect(&self, _cx: &DetectCx) -> Option<u32> {
+        Some(1000)
+    }
+    fn default_stack(&self, _cx: &DetectCx) -> &'static str {
+        "Anything"
+    }
+    fn goal(&self) -> &'static str {
+        "a thing"
+    }
+    fn checks(&self, _ws: &Workspace) -> Vec<Box<dyn Check>> {
+        vec![Box::new(FlakyCheck)]
+    }
+}
+
+#[cfg(unix)]
+mod picking_up_a_build {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    struct Bench {
+        _dir: tempfile::TempDir,
+        hub: AiHub,
+        projects: PathBuf,
+        prompts: PathBuf,
+    }
+
+    fn bench() -> Bench {
+        let dir = tempfile::tempdir().unwrap();
+        let prompts = dir.path().join("prompts.txt");
+        let agent = dir.path().join("agent.sh");
+        std::fs::write(&agent, format!("#!/bin/sh\nfor last; do :; done\nprintf '%s\\n===\\n' \"$last\" >> '{}'\necho Done.\n", prompts.display())).unwrap();
+        std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let engine = Arc::new(Engine::new(craft_anything_engine::testing::session()));
+        let hub = AiHub::with_stores(engine, dir.path().join("settings.toml"), crate::KeyStore::file_only(dir.path().join("keys.toml")));
+        let mut cfg = hub.config();
+        cfg.upsert(crate::BackendEntry {
+            config: crate::BackendConfig {
+                name: "Stand-in".into(),
+                kind: BackendKind::AgentCli,
+                model: "stand-in".into(),
+                base_url: None,
+                ssh_host: None,
+                enabled: true,
+            },
+            options: crate::BackendOptions { command: Some(agent.display().to_string()), ..Default::default() },
+        });
+        hub.engine.session().settings.ai = cfg.to_table().unwrap();
+        let projects = dir.path().join("projects");
+        std::fs::create_dir_all(&projects).unwrap();
+        Bench { _dir: dir, hub, projects, prompts }
+    }
+
+    fn try_it(b: &Bench, ws: &Workspace) -> (bool, Vec<feed::FeedItem>) {
+        let mut kinds = KindRegistry::built_in();
+        kinds.register(Arc::new(FlakyKind));
+        let run =
+            RebuildRun::start(&b.hub, Workspace::open(&ws.root).unwrap(), RunOptions { kinds, backend: Some("Stand-in".into()), ..RunOptions::default() })
+                .unwrap();
+        let began = Instant::now();
+        let mut ok = None;
+        while ok.is_none() {
+            assert!(began.elapsed() < Duration::from_secs(30), "the run never finished");
+            match run.rx.recv_timeout(Duration::from_secs(30)) {
+                Ok(RunEvent::Finished { ok: o, .. }) => ok = Some(o),
+                Ok(_) => {}
+                Err(e) => panic!("the run went away: {e}"),
+            }
+        }
+        (ok.unwrap(), feed::load(&Workspace::open(&ws.root).unwrap()))
+    }
+
+    fn prompts_given(b: &Bench) -> usize {
+        std::fs::read_to_string(&b.prompts).unwrap_or_default().matches("===").count()
+    }
+
+    fn studied(feed: &[feed::FeedItem]) -> bool {
+        feed.iter().any(|i| matches!(i, feed::FeedItem::Step { step: Step::Study, .. }))
+    }
+
+    /// A project whose builder has worked: its session and its study are there.
+    fn worked_on(b: &Bench) -> Workspace {
+        let mut ws = Workspace::create(&b.projects, "x", "A thing", TargetRef::None).unwrap();
+        ws.manifest.agent_session = Some("session-1".into());
+        ws.manifest.stack = "Anything".into();
+        ws.save().unwrap();
+        std::fs::create_dir_all(ws.capture_dir()).unwrap();
+        std::fs::create_dir_all(ws.app_dir()).unwrap();
+        ws
+    }
+
+    #[test]
+    fn try_again_after_a_check_that_could_not_run_only_checks() {
+        let b = bench();
+        let mut ws = worked_on(&b);
+        ws.manifest.awaiting_check = true;
+        ws.save().unwrap();
+        let (ok, feed) = try_it(&b, &ws);
+        assert!(ok, "{feed:?}");
+        assert_eq!(prompts_given(&b), 0, "the builder had finished: it isn't asked again");
+        assert!(!studied(&feed), "the original isn't studied again");
+        let ws = Workspace::open(&ws.root).unwrap();
+        assert!(!ws.manifest.awaiting_check);
+        assert_eq!(ws.manifest.checks.len(), 1);
+    }
+
+    #[test]
+    fn try_again_after_the_builder_stopped_carries_on_instead_of_starting_over() {
+        let b = bench();
+        let ws = worked_on(&b);
+        let (ok, feed) = try_it(&b, &ws);
+        assert!(ok, "{feed:?}");
+        assert!(!studied(&feed), "the original isn't studied again");
+        let told = std::fs::read_to_string(&b.prompts).unwrap();
+        assert!(told.contains("Pick up where you left off"), "{told}");
+        assert!(!told.contains("Their request"), "not the first-build brief again: {told}");
+    }
+
+    #[test]
+    fn a_new_project_still_starts_from_the_top() {
+        let b = bench();
+        let ws = Workspace::create(&b.projects, "x", "A thing", TargetRef::None).unwrap();
+        let (ok, feed) = try_it(&b, &ws);
+        assert!(ok, "{feed:?}");
+        let told = std::fs::read_to_string(&b.prompts).unwrap();
+        assert!(!told.contains("Pick up where you left off"), "{told}");
+    }
+
+    #[test]
+    fn a_check_that_could_not_run_gets_a_second_go_and_the_build_is_not_blamed() {
+        let b = bench();
+        let mut ws = worked_on(&b);
+        std::fs::write(ws.app_dir().join("check-fails"), "1").unwrap();
+        ws.manifest.awaiting_check = true;
+        ws.save().unwrap();
+        let (ok, _) = try_it(&b, &ws);
+        assert!(ok, "one lost browser doesn't fail a finished build");
+
+        // It keeps failing: the run stops, says the build is fine, and Try again only checks.
+        let mut ws = worked_on(&b);
+        ws.manifest.name = "y".into();
+        ws.manifest.awaiting_check = false;
+        ws.save().unwrap();
+        std::fs::write(ws.app_dir().join("check-fails"), "2").unwrap();
+        let (ok, feed) = try_it(&b, &ws);
+        assert!(!ok);
+        assert!(
+            feed.iter().any(|i| matches!(i, feed::FeedItem::Error { message, .. } if message.contains("The build is finished, but it couldn't be checked"))),
+            "{feed:?}"
+        );
+        let asked = prompts_given(&b);
+        assert!(Workspace::open(&ws.root).unwrap().manifest.awaiting_check, "the builder's turn is on record");
+        let (ok, _) = try_it(&b, &ws);
+        assert!(ok);
+        assert_eq!(prompts_given(&b), asked, "and it isn't asked to build again");
+    }
+}
+
 fn check_worker(ws: &Workspace, deep: bool) -> Worker {
     let mut s = craft_anything_engine::testing::session();
     s.settings.deep_mode = deep;

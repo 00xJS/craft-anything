@@ -777,6 +777,16 @@ Gaps found while using the app for real projects.
       that couldn't start, panics
 - [ ] Sometimes starting the app shows nothing: find why from `desktop.log` (a GOG Galaxy Vulkan
       overlay layer loads into the app; try DX12 first on Windows if that's it)
+- [x] Try again picks up where a run stopped instead of starting over: a project whose builder
+      has worked isn't studied again or given the first brief; when the builder had finished and
+      only the check didn't (`awaiting_check` in craft.json), only the check runs. A check that
+      returns an error gets a second go, and then the run says the build is finished but couldn't
+      be checked
+- [ ] Find why a site capture lost its browser ("the WebSocket is closed", 419 ms into
+      `web_site_capture` for a second page, seen once; the same capture passed 41 s earlier)
+- [ ] Two engine tests fail on a Mac, on `main` too: `real_binary_end_to_end_if_present` expects
+      `/bin/ls` to be Linux, and `auto_mode_keeps_going_but_never_does_the_dangerous_things` is
+      refused `rm -rf` in a temp folder under `/var/folders`
 
 ### R2.10 Pinned builds
 Owner: maintainers · Status: in progress
