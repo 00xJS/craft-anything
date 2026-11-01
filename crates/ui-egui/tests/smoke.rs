@@ -45,6 +45,8 @@ fn first_run_walks_through_four_screens() {
     h.run_steps(3);
     assert_eq!(h.state().state.first_run, FirstRunStep::Purpose);
     assert!(h.state().state.backend.is_none());
+    // Why we ask is read on the page, not only on hover (#71).
+    h.get_by_label_contains("Saying why helps you keep to it");
     h.get_by_label("I'm learning how things work").click();
     h.run_steps(2);
     h.get_by_label("Continue").click();

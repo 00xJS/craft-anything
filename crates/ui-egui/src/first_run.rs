@@ -259,9 +259,16 @@ fn purpose(app: &mut CraftApp, ui: &mut Ui, width: f32) {
         }
     });
     ui.add_space(4.0);
-    ui.label(RichText::new(tr("Why we ask")).color(t.accent_ink).size(theme::SMALL)).on_hover_text(tr(
-        "Looking inside software you own or are allowed to examine is normal and often protected (learning, compatibility, security). Saying why helps you keep to it; it stays on this computer.",
-    ));
+    // Shown, not a hover tip in link colour: a click on it did nothing and read as broken (#71).
+    ui.scope(|ui| {
+        ui.set_max_width(width);
+        ui.label(RichText::new(tr("Why we ask")).size(theme::SMALL).color(t.text_dim).strong());
+        ui.label(RichText::new(tr(
+            "Looking inside software you own or are allowed to examine is normal and often protected (learning, compatibility, security). Saying why helps you keep to it; it stays on this computer.",
+        ))
+        .size(theme::SMALL)
+        .color(t.text_dim));
+    });
     ui.add_space(14.0);
     if widgets::primary(ui, "Continue").clicked() {
         app.state.first_run = FirstRunStep::Done;
