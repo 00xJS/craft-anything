@@ -380,3 +380,21 @@ fn effects_are_honest() {
     assert!(build.effects.contains(Effects::WRITES_FILESYSTEM) && build.effects.contains(Effects::CARRIES_TARGET_CONTENT));
     assert!(r.get("web_standin_show").unwrap().effects.contains(Effects::CARRIES_TARGET_CONTENT));
 }
+
+/// A rebuilt stand-in takes over its predecessor's port even while the system holds it a moment
+/// longer; a new one doesn't wait (seen in CI as "Address already in use").
+#[test]
+fn a_takeover_waits_for_its_port_and_a_new_start_does_not() {
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = held.local_addr().unwrap().port();
+    let answerer: Arc<dyn Answerer> = Arc::new(|_: &Request| Response::json(200, &json!({})));
+    let err = serve_on(port, answerer.clone(), Duration::ZERO).map(|_| ()).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        drop(held);
+    });
+    let server = serve_on(port, answerer, TAKEOVER_WAIT).unwrap();
+    assert_eq!(server.port, port);
+    release.join().unwrap();
+}
