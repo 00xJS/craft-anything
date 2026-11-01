@@ -201,16 +201,20 @@ fn web_site_open(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolErr
         (e, f) => format!("{opened} While loading: {e} error(s), {f} failed request(s)."),
     };
     let browser = site.handle();
-    let ev = EvidenceBuilder::new("web_site_open", Subject { kind: "website".into(), sha256: None, name: Some(shown.clone()) }, browser_env(&browser))
-        .params(json!({"url": shown, "width": p.width, "height": p.height}))
-        .result(json!({"url": final_url, "title": title, "facts": facts, "health": health, "browser": site.product}))
-        .summary(summary)
-        .confidence(Confidence::Observed)
-        .authority(Authority::OurRun)
-        .limitation(Limitation::new("private_profile", "A fresh private browser: pages behind a login show their signed-out state."))
-        .coverage(Coverage::complete(1))
-        .location(Location::new("url", shown))
-        .build()?;
+    let ev = EvidenceBuilder::new(
+        "web_site_open",
+        Subject { kind: "website".into(), sha256: None, name: Some(shown.clone()) },
+        browser_env(ctx.session.clean_room(), &browser),
+    )
+    .params(json!({"url": shown, "width": p.width, "height": p.height}))
+    .result(json!({"url": final_url, "title": title, "facts": facts, "health": health, "browser": site.product}))
+    .summary(summary)
+    .confidence(Confidence::Observed)
+    .authority(Authority::OurRun)
+    .limitation(Limitation::new("private_profile", "A fresh private browser: pages behind a login show their signed-out state."))
+    .coverage(Coverage::complete(1))
+    .location(Location::new("url", shown))
+    .build()?;
     Ok(ToolOutput::evidence(ev))
 }
 
@@ -513,20 +517,20 @@ fn web_page_states_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutpu
         format!("Opened {} of {found} control(s) on {shown}; {pictured} pictured in {}.", states.len(), out.display())
     };
     let browser = site.handle();
-    let ev =
-        EvidenceBuilder::new("web_page_states_capture", Subject { kind: "website".into(), sha256: None, name: Some(shown.clone()) }, browser_env(&browser))
-            .params(json!({"max_states": p.max_states, "width": p.width}))
-            .result(json!({"url": start, "found": found, "states": states, "folder": out.display().to_string()}))
-            .summary(summary)
-            .confidence(Confidence::Observed)
-            .authority(Authority::OurRun)
-            .limitation(Limitation::new(
-                "first_controls",
-                "Only the first controls found are opened, one at a time; menus inside menus and hover-only menus are not.",
-            ))
-            .coverage(Coverage::complete(states.len() as u64))
-            .location(Location::new("url", start))
-            .build()?;
+    let ev = EvidenceBuilder::new(
+        "web_page_states_capture",
+        Subject { kind: "website".into(), sha256: None, name: Some(shown.clone()) },
+        browser_env(ctx.session.clean_room(), &browser),
+    )
+    .params(json!({"max_states": p.max_states, "width": p.width}))
+    .result(json!({"url": start, "found": found, "states": states, "folder": out.display().to_string()}))
+    .summary(summary)
+    .confidence(Confidence::Observed)
+    .authority(Authority::OurRun)
+    .limitation(Limitation::new("first_controls", "Only the first controls found are opened, one at a time; menus inside menus and hover-only menus are not."))
+    .coverage(Coverage::complete(states.len() as u64))
+    .location(Location::new("url", start))
+    .build()?;
     Ok(ToolOutput::evidence(ev))
 }
 
@@ -808,7 +812,7 @@ fn web_site_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
         out.display()
     );
     let browser = site.handle();
-    let ev = EvidenceBuilder::new("web_site_capture", Subject { kind: "website".into(), sha256: None, name: Some(shown.clone()) }, browser_env(&browser))
+    let ev = EvidenceBuilder::new("web_site_capture", Subject { kind: "website".into(), sha256: None, name: Some(shown.clone()) }, browser_env(ctx.session.clean_room(), &browser))
         .params(json!({"widths": p.widths, "max_height": p.max_height, "include_html": p.include_html, "noise_pass": p.noise_pass, "visitor_view": visitor}))
         .result(json!({
             "output_directory": out.display().to_string(),
@@ -1306,12 +1310,16 @@ mod tests {
                 let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len());
             }
         });
-        let e = crate::Engine::new(crate::testing::session());
+        // In Clean room, a visitor's view: its evidence says so (#157).
+        let mut s = crate::testing::session();
+        s.settings.deep_mode = false;
+        let e = crate::Engine::new(s);
         let cli = || crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted);
         e.call("web_site_open", json!({"url": url}), cli()).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("capture");
-        e.call("web_site_capture", json!({"output_directory": out.display().to_string(), "widths": [1440]}), cli()).unwrap();
+        let v = e.call("web_site_capture", json!({"output_directory": out.display().to_string(), "widths": [1440]}), cli()).unwrap().to_json();
+        assert_eq!(v["environment"]["clean_room"], true, "{}", v["environment"]);
         let shot = web_common::decode_png(&std::fs::read(out.join("screenshot-1440.png")).unwrap()).unwrap();
         let at = |x: u32, y: u32| shot.rgba.get(((y * shot.width + x) * 4) as usize..((y * shot.width + x) * 4 + 3) as usize).unwrap().to_vec();
         assert_eq!(at(20, 1700), [255, 0, 0], "the section shown on scroll is in the picture");

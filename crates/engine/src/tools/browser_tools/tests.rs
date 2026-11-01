@@ -608,7 +608,7 @@ fn make_capture(scripts: &[&str], elements: &[&str]) -> Value {
     let ev = EvidenceBuilder::new(
         "web_page_show",
         Subject { kind: "website".into(), sha256: None, name: Some("https://a".into()) },
-        crate::tools::web_common::cdp_env(None),
+        crate::tools::web_common::cdp_env(false, None),
     )
     .result(result)
     .summary("x")
