@@ -917,6 +917,32 @@ fn command_palette_opens_and_lists_tools() {
     assert!(!h.state().state.palette.open);
 }
 
+/// #53: an agent app installed where it isn't looked for gets its program chosen in Settings → AI,
+/// and goes back to being found by its usual name.
+#[test]
+fn an_agent_apps_program_is_set_in_settings() {
+    use craft_anything_ai::{BackendConfig, BackendKind};
+    let mut h = harness(|| {
+        let a = demo::app(demo::engine(Mode::Experienced, true));
+        let cfg =
+            BackendConfig { name: "OpenCode".into(), kind: BackendKind::AgentCli, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true };
+        a.hub.add_backend(cfg, None).unwrap();
+        a
+    });
+    h.state_mut().refresh_backends();
+    assert!(wait(&mut h, |a| a.backends.iter().any(|b| b.name == "OpenCode")));
+    h.state_mut().state.settings_open = true;
+    h.state_mut().state.settings_tab = craft_anything_ui_egui::state::SettingsTab::Ai;
+    h.run_steps(2);
+    h.get_by_label("Program: found automatically");
+    h.state_mut().set_agent_program("OpenCode", Some("/opt/oc/opencode".into()));
+    assert!(wait(&mut h, |a| a.agent_programs.get("OpenCode").map(String::as_str) == Some("/opt/oc/opencode")));
+    h.run_steps(2);
+    h.get_by_label("Program: /opt/oc/opencode");
+    h.get_by_label("Find it automatically").click();
+    assert!(wait(&mut h, |a| a.agent_programs.is_empty()));
+}
+
 #[test]
 fn settings_window_tabs_draw() {
     let mut h = harness(|| {

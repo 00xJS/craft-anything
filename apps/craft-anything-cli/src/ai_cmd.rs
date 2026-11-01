@@ -56,6 +56,9 @@ pub enum AiCommand {
     On { name: String },
     /// Turn a backend off: nothing uses it, and it keeps its settings and key.
     Off { name: String },
+    /// Set the program an agent app runs, when it's installed where it isn't found (leave the
+    /// path out to find it by its usual name again).
+    Program { name: String, path: Option<String> },
     /// Send a tiny request and report latency.
     Test { name: String },
     /// Choose the backend that builds (leave the name out to go back to automatic).
@@ -239,6 +242,13 @@ pub fn ai(cli: &Cli, c: &AiCommand, f: Format) -> u8 {
                 Err(e) => fail(&e, f),
             }
         }
+        AiCommand::Program { name, path } => match hub.set_command(name, path.as_deref()) {
+            Ok(found) => {
+                emit(&json!({"name": name, "program": path, "found": found}), f);
+                if found { 0 } else { 1 }
+            }
+            Err(e) => fail(&e, f),
+        },
         AiCommand::Builder { name } => match hub.set_role(craft_anything_ai::Role::Builder, name.as_deref()) {
             Ok(()) => {
                 emit(&json!({"builder": name}), f);

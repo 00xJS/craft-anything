@@ -151,8 +151,9 @@ pub enum Done {
         result: Result<Value, ToolError>,
     },
     Detected(Vec<Detected>),
-    /// The configured backends, and the ones chosen to build with and to extract with.
-    Backends(Vec<BackendConfig>, Option<String>, Option<String>),
+    /// The configured backends, the ones chosen to build with and to extract with, and the
+    /// program each agent app set to one runs.
+    Backends(Vec<BackendConfig>, Option<String>, Option<String>, std::collections::BTreeMap<String, String>),
     Picked {
         pick: Pick,
         path: Option<PathBuf>,
@@ -241,6 +242,8 @@ pub enum Pick {
     GameFolder,
     /// Where to save a picture from a game.
     SavePicture,
+    /// The program an agent app runs ([`CraftApp::picking_program_for`] says which).
+    AgentProgram,
 }
 
 /// One open target, as the UI shows it.
@@ -326,6 +329,10 @@ pub struct CraftApp {
     pub jobs: jobs::Jobs<Done>,
     pub conversation: Option<Box<dyn Conversation>>,
     pub backends: Vec<BackendConfig>,
+    /// The program each agent app set to one runs, by backend name (Settings → AI).
+    pub agent_programs: std::collections::BTreeMap<String, String>,
+    /// The agent app whose program the file dialog is choosing.
+    pub picking_program_for: Option<String>,
     /// The backend the person chose to build with (Settings → AI), if any.
     pub builder: Option<String>,
     /// The backend chosen to take a game's files out in Deep mode, if any.
@@ -416,6 +423,8 @@ impl CraftApp {
             jobs: jobs::Jobs::default(),
             conversation: None,
             backends: Vec::new(),
+            agent_programs: Default::default(),
+            picking_program_for: None,
             builder: None,
             extractor: None,
             detected: None,
@@ -917,6 +926,7 @@ impl CraftApp {
                 Pick::ExtraProjectsDir => pollster::block_on(d.set_title(tr("Pick a folder with projects in it")).pick_folder()),
                 Pick::GameFolder => pollster::block_on(d.set_title(tr("Pick the game's folder")).pick_folder()),
                 Pick::SavePicture => pollster::block_on(d.set_title(tr("Save the picture")).add_filter("PNG", &["png"]).set_file_name(&suggested).save_file()),
+                Pick::AgentProgram => pollster::block_on(d.set_title(tr("Where is the program?")).pick_file()),
                 Pick::Pictures | Pick::Attach => None,
             };
             Ok(Done::Picked { pick, path: handle.map(|h| h.path().to_path_buf()) })
@@ -1252,13 +1262,14 @@ impl CraftApp {
                 self.log(false, format!("Found {} AI option(s) on this computer", d.len()));
                 self.detected = Some(d);
             }
-            Done::Backends(b, builder, extractor) => {
+            Done::Backends(b, builder, extractor, programs) => {
                 if self.state.backend.as_ref().is_some_and(|n| !b.iter().any(|c| &c.name == n)) {
                     self.state.backend = None;
                 }
                 self.backends = b;
                 self.builder = builder;
                 self.extractor = extractor;
+                self.agent_programs = programs;
             }
             Done::BackendAdded { name, result } => match result {
                 Ok(()) => {
@@ -1292,6 +1303,11 @@ impl CraftApp {
                         Pick::ExtraProjectsDir => self.add_project_folder(path),
                         Pick::GameFolder => game_files::folder_picked(self, path),
                         Pick::SavePicture => game_files::save_to(self, path),
+                        Pick::AgentProgram => {
+                            if let Some(name) = self.picking_program_for.take() {
+                                self.set_agent_program(&name, Some(path.display().to_string()));
+                            }
+                        }
                         // Several files: these come back as Done::Pictures / Done::ToAttach.
                         Pick::Pictures | Pick::Attach => {}
                     }
@@ -1604,7 +1620,7 @@ pub fn app_icon(size: f32) -> egui::Image<'static> {
 /// Run an action; a panic is logged and swallowed so one bad action never takes the app down.
 /// The configured backends and the ones chosen to build and to extract (read off the UI thread).
 pub(crate) fn backends(hub: &AiHub) -> Done {
-    Done::Backends(hub.backends(), hub.chosen(craft_anything_ai::Role::Builder), hub.chosen(craft_anything_ai::Role::Extractor))
+    Done::Backends(hub.backends(), hub.chosen(craft_anything_ai::Role::Builder), hub.chosen(craft_anything_ai::Role::Extractor), hub.commands())
 }
 
 pub fn guard<R>(what: &str, f: impl FnOnce() -> R) -> Option<R> {

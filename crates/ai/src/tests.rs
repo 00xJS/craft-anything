@@ -159,6 +159,19 @@ fn the_person_chooses_who_builds() {
     assert_eq!(h.chosen(Role::Builder), None, "back to automatic");
 }
 
+/// #53: an agent app installed where it isn't looked for gets its program set (and cleared).
+#[test]
+fn an_agent_apps_program_is_set_and_cleared() {
+    let (h, _d) = hub();
+    add(&h, "OpenCode", BackendKind::AgentCli, "http://127.0.0.1:9", None);
+    assert!(h.commands().is_empty());
+    assert!(h.set_command("OpenCode", Some("  /opt/oc/bin/opencode ")).unwrap());
+    assert_eq!(h.commands().get("OpenCode").map(String::as_str), Some("/opt/oc/bin/opencode"));
+    assert!(!h.set_command("Nobody", Some("/x")).unwrap(), "only a configured backend");
+    assert!(h.set_command("OpenCode", Some(" ")).unwrap());
+    assert!(h.commands().is_empty(), "blank finds it by its usual name again");
+}
+
 fn add(h: &AiHub, name: &str, kind: BackendKind, base: &str, key: Option<&str>) {
     h.add_backend(
         BackendConfig { name: name.into(), kind, model: String::new(), base_url: Some(base.into()), ssh_host: None, enabled: true },

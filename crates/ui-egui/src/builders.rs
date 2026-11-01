@@ -83,6 +83,15 @@ impl CraftApp {
         });
     }
 
+    /// Run an agent app from this program (`None`: find it by its usual name again).
+    pub fn set_agent_program(&mut self, name: &str, program: Option<String>) {
+        let (hub, name) = (self.hub.clone(), name.to_string());
+        self.jobs.spawn(tr("Set an AI's program"), false, move |_| {
+            hub.set_command(&name, program.as_deref()).map_err(|e| e.message)?;
+            Ok(crate::backends(&hub))
+        });
+    }
+
     /// Remove an AI and its stored key.
     pub fn remove_backend(&mut self, name: &str) {
         let (hub, name) = (self.hub.clone(), name.to_string());
