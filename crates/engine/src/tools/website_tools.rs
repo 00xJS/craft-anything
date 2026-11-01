@@ -671,6 +671,28 @@ const BLUEPRINT_JS: &str = r#"(() => {
   };
 })()"#;
 
+/// Scroll through the page as a visitor would, so sections that appear as they come into view and
+/// lazy images are there for the full-page picture (#160), then back to the top. At most a few
+/// seconds; returns how far it scrolled.
+const REVEAL_JS: &str = r#"(async () => {
+  const pause = ms => new Promise(r => setTimeout(r, ms));
+  const end = Date.now() + 5000;
+  const step = Math.max(200, Math.floor(innerHeight * 0.8));
+  const bottom = () => Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) - innerHeight;
+  let y = 0;
+  while (y < bottom() && Date.now() < end) {
+    y = Math.min(y + step, bottom());
+    scrollTo(0, y);
+    await pause(120);
+  }
+  for (const img of document.images) if (img.loading === 'lazy') img.loading = 'eager';
+  const loading = [...document.images].filter(i => !i.complete).map(i => new Promise(r => { i.addEventListener('load', r, {once: true}); i.addEventListener('error', r, {once: true}); }));
+  await Promise.race([Promise.all(loading), pause(Math.max(300, end - Date.now()))]);
+  scrollTo(0, 0);
+  await pause(200);
+  return y;
+})()"#;
+
 /// Our read-only layout script, run at every width: the page's width (wider than the window means
 /// it scrolls sideways), heading and text sizes, and each landmark and section's padding, gap,
 /// background, content column and how many items sit side by side.
@@ -811,6 +833,8 @@ fn capture_into(ctx: &Ctx<'_>, client: &mut CdpClient, out: &Path, p: &CapturePa
         ctx.report(Some(i as f32 / p.widths.len() as f32), format!("Photographing the page at {w} px…"));
         set_viewport(client, w, 900, dl)?;
         settle(client, 900)?;
+        // A page that can't be scrolled through is still photographed as it is.
+        let _ = eval(client, REVEAL_JS, dl);
         if i == 0 {
             // The blueprint is read at the first width, where the layout is the reference one.
             blueprint = eval(client, BLUEPRINT_JS, dl)?;
@@ -1246,5 +1270,37 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(20), "waited {:?}", started.elapsed());
         assert!(err.message.starts_with("Couldn't start the private browser") && err.message.contains("closed after"), "{}", err.message);
         assert!(err.remediation.is_some_and(|r| r.contains("Settings")));
+    }
+
+    /// #160: a section that only shows once it's scrolled into view is in the full-page picture.
+    /// Live: it needs a Chromium-based browser, so it runs with `--ignored`.
+    #[test]
+    #[ignore]
+    fn sections_shown_on_scroll_are_photographed() {
+        use std::io::{Read, Write};
+        let page = r#"<!doctype html><html><body style="margin:0">
+<div style="height:1400px;background:#fff">Top</div>
+<div id="late" style="height:600px;background:#fff">Shown on scroll</div>
+<script>new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) e.target.style.background = '#ff0000'; })).observe(document.getElementById('late'));</script>
+</body></html>"#;
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut s in listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len());
+            }
+        });
+        let e = crate::Engine::new(crate::testing::session());
+        let cli = || crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted);
+        e.call("web_site_open", json!({"url": url}), cli()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("capture");
+        e.call("web_site_capture", json!({"output_directory": out.display().to_string(), "widths": [1440]}), cli()).unwrap();
+        let shot = web_common::decode_png(&std::fs::read(out.join("screenshot-1440.png")).unwrap()).unwrap();
+        let at = |x: u32, y: u32| shot.rgba.get(((y * shot.width + x) * 4) as usize..((y * shot.width + x) * 4 + 3) as usize).unwrap().to_vec();
+        assert_eq!(at(20, 1700), [255, 0, 0], "the section shown on scroll is in the picture");
+        assert_eq!(at(20, 200), [255, 255, 255]);
     }
 }
