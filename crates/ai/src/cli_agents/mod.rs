@@ -715,6 +715,12 @@ mod tests {
     fn codex_and_gemini_args() {
         let a = build_args(adapter_for("codex").as_ref(), &BackendOptions::default(), "q", "P:", &mcp(), None, Access::Analyse);
         assert_eq!(&a[..2], &["exec".to_string(), "--json".to_string()]);
+        // #69: project folders aren't git repositories; the flag comes once, also when the
+        // backend's own args already have it.
+        let skip = |a: &[String]| a.iter().filter(|x| *x == "--skip-git-repo-check").count();
+        assert_eq!(skip(&a), 1);
+        let o = BackendOptions { args: vec!["--skip-git-repo-check".into()], ..Default::default() };
+        assert_eq!(skip(&build_args(adapter_for("codex").as_ref(), &o, "q", "P:", &mcp(), None, Access::Build)), 1);
         assert!(a.contains(&"mcp_servers.craft-anything.command=\"/opt/ca/craft-anything-cli\"".to_string()));
         assert!(a.contains(&"mcp_servers.craft-anything.args=[\"mcp\", \"--project\", \"/p/x.cany\"]".to_string()));
         assert_eq!(a.last().unwrap(), "P:q");
