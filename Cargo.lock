@@ -1346,6 +1346,7 @@ dependencies = [
  "craft-anything-engine",
  "craft-anything-engines",
  "craft-anything-evidence",
+ "craft-anything-formats",
  "craft-anything-platform",
  "log",
  "schemars",

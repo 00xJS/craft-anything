@@ -16,7 +16,6 @@
 pub mod clients;
 pub mod config;
 pub mod doctor;
-pub mod jsonc;
 pub mod plan;
 pub mod skill;
 pub mod tools;

@@ -34,6 +34,7 @@ pub mod hints;
 pub mod il2cpp;
 pub mod java_class;
 pub mod java_ops;
+pub mod jsonc;
 pub mod keyed_archive;
 pub mod macho;
 pub mod macho_deps;
