@@ -216,8 +216,8 @@ mod tests {
         let inbox = Inbox::new(ws.inbox_dir());
         let id = inbox.post(craft_anything_engine::inbox::RequestKind::Question, "Blue?", "", vec![], true, None).unwrap();
         let q = inbox.pending().into_iter().find(|r| r.id == id).unwrap();
-        log.record(&RunEvent::Ask(q));
-        record_answer(&ws, &id, "Yes").unwrap();
+        log.record(&RunEvent::Ask(q.clone()));
+        record_answer(&ws, &q, "Yes").unwrap();
         log.record(&RunEvent::Finished { ok: true, message: "Ready.".into(), paused: false });
         assert!(load(&ws).iter().any(|i| matches!(i, FeedItem::Ask { answer: Some(a), .. } if a == "Yes")));
     }
