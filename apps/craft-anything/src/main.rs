@@ -42,6 +42,7 @@ fn main() -> eframe::Result {
     if let Ok(icon) = eframe::icon_data::from_png_bytes(craft_anything_ui_egui::APP_ICON_PNG) {
         viewport = viewport.with_icon(Arc::new(icon));
     }
+    #[cfg_attr(not(windows), expect(unused_mut, reason = "only Windows picks its own graphics adapter"))]
     let mut options = eframe::NativeOptions { viewport, ..Default::default() };
     #[cfg(windows)]
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
