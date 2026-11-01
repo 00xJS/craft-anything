@@ -151,6 +151,9 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
       prologue and PLT scans stepped past `u64::MAX`, which in release wrapped to 0 and walked the
       whole 64-bit space (`native_functions_list` on a 4 KB ELF whose `.text` is at
       `0xffffffffffffffc0` never returned, and Stop couldn't end it). Found by mutation fuzzing of `crates/disasm`
+- [x] The Agent console keeps its size: its history and prompt box came out 17 points taller than
+      the bottom panel, which grew by that every frame until its maximum and then cut off the top
+      of the Agent / Jobs / Log tabs (`chat::conversation`)
 - [ ] `yaxpeax-arm` 0.5.0 panics ("register number out of range") on an A32 `STRD`/`LDRD` with
       Rt = 15 (e.g. the word `0xc0c7fef3`), so one such word fails the whole analysis of a 32-bit
       ARM program; decode it as invalid instead

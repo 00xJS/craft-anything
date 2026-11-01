@@ -242,6 +242,12 @@ right before that tool runs, never a folder that another tool must create itself
 frame and used to size the feed on the next, so every time it grew or shrank one frame showed it
 100 px too low, and typing looked like flicker. When a layout uses a size from the last frame,
 call `ctx.request_discard` when it changed, so egui lays the frame out again before showing it.
+The same layout then came out 17 points taller than the space it was given: it left out the item
+spacing after the feed, and `ui.horizontal` centred the 85-point box 12 points down in its row.
+The agent console's panel grows to fit its content, so it grew 17 points every frame until its
+maximum, and then the top of its tabs was cut off. When a part is sized to fill what's left, count
+the item spacing and use `horizontal_top` for tall rows, and test that the panel's size holds still
+over several frames.
 
 **A library default that blinked over a text field.** egui's scroll areas fade their edge when
 there's more below; the prompt box's one measured a few points of overflow on the frame after each

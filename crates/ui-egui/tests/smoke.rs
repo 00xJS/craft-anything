@@ -885,6 +885,24 @@ fn workbench_lists_fall_back_gracefully() {
 }
 
 #[test]
+fn the_agent_console_keeps_its_size() {
+    // The console's history and prompt box came out 17 points taller than the panel, so the panel
+    // grew by that every frame until its maximum, and then the top of its tabs was cut off.
+    let mut h = harness_sized(egui::vec2(1890.0, 1025.0), || {
+        let mut a = demo::app(demo::engine(Mode::Experienced, true));
+        demo::fill_workbench(&mut a);
+        a
+    });
+    h.run_steps(4);
+    assert!(wait(&mut h, |a| a.jobs.running().all(|j| !j.visible)), "the lists finished loading");
+    h.get_by_label("Agent").click();
+    h.run_steps(2);
+    let top = h.get_by_label("Agent").rect().top();
+    h.run_steps(10);
+    assert_eq!(h.get_by_label("Agent").rect().top(), top, "the agent console grew while nothing changed");
+}
+
+#[test]
 fn command_palette_opens_and_lists_tools() {
     let mut h = harness(|| demo::app(demo::engine(Mode::Experienced, true)));
     h.run_steps(3);

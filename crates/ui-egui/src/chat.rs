@@ -225,13 +225,17 @@ pub fn conversation(app: &mut CraftApp, ui: &mut Ui, dense: bool) {
     // a panel never grows to fit us.
     let comp_id = ui.id().with(("composer-h", dense));
     let comp_h = ui.data(|d| d.get_temp::<f32>(comp_id)).unwrap_or(if dense { 48.0 } else { 70.0 });
-    let rest = Vec2::new(width, (ui.available_height() - comp_h - COMPOSER_GAP).max(40.0));
+    // The item spacing after the history counts too. Anything here that comes out taller than the
+    // space given makes the agent console's panel grow by that much every frame, until it reaches
+    // its maximum and the top of its tab strip is cut off.
+    let rest = Vec2::new(width, (ui.available_height() - comp_h - COMPOSER_GAP - ui.spacing().item_spacing.y).max(40.0));
     ui.allocate_ui_with_layout(rest, egui::Layout::top_down(egui::Align::Min), |ui| {
         ui.set_min_height(rest.y);
         history(app, ui, dense, pad, max_w)
     });
     ui.add_space(COMPOSER_GAP);
-    let r = ui.horizontal(|ui| {
+    // Top-aligned: `horizontal` centres in its row, which put the box 12 points below the gap.
+    let r = ui.horizontal_top(|ui| {
         ui.add_space(pad);
         composer(app, ui, max_w, dense);
     });
