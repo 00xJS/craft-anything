@@ -42,7 +42,11 @@ fn main() -> eframe::Result {
     if let Ok(icon) = eframe::icon_data::from_png_bytes(craft_anything_ui_egui::APP_ICON_PNG) {
         viewport = viewport.with_icon(Arc::new(icon));
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    let mut options = eframe::NativeOptions { viewport, ..Default::default() };
+    #[cfg(windows)]
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        setup.native_adapter_selector = Some(Arc::new(pick_adapter));
+    }
     let run = eframe::run_native(
         "Craft Anything",
         options,
@@ -62,6 +66,55 @@ fn main() -> eframe::Result {
         Err(e) => log::error!("the window couldn't start: {e}"),
     }
     run
+}
+
+/// Windows: the adapter that draws the window. GL comes after every other one, Windows' own
+/// software renderer (WARP) included: in a VMware VM, GL is the way to the virtual GPU and draws a
+/// black window (#27). GL stays the last resort, and `WGPU_BACKEND` still narrows the choice.
+#[cfg(windows)]
+fn pick_adapter(adapters: &[eframe::wgpu::Adapter], surface: Option<&eframe::wgpu::Surface<'_>>) -> Result<eframe::wgpu::Adapter, String> {
+    let picked = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).min_by_key(|a| {
+        let info = a.get_info();
+        adapter_rank(info.backend, info.device_type)
+    });
+    match picked {
+        Some(a) => {
+            log::info!("drawing with {:?}", a.get_info());
+            Ok(a.clone())
+        }
+        None => Err(format!("None of the {} graphics adapters found can draw this window.", adapters.len())),
+    }
+}
+
+/// Lower is better: GL last, then the fastest kind of device first (wgpu's own high-performance
+/// preference).
+#[cfg(windows)]
+fn adapter_rank(backend: eframe::wgpu::Backend, device: eframe::wgpu::DeviceType) -> (bool, u8) {
+    use eframe::wgpu::DeviceType;
+    let speed = match device {
+        DeviceType::DiscreteGpu => 0,
+        DeviceType::IntegratedGpu => 1,
+        DeviceType::VirtualGpu => 2,
+        DeviceType::Cpu => 3,
+        DeviceType::Other => 4,
+    };
+    (backend == eframe::wgpu::Backend::Gl, speed)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use eframe::wgpu::{Backend as B, DeviceType as T};
+
+    /// #27: a VMware VM offers its virtual GPU over GL and WARP over DX12; GL drew a black window.
+    #[test]
+    fn gl_comes_after_warp_and_every_gpu() {
+        let best = |c: &[(B, T)]| c.iter().enumerate().min_by_key(|(_, (b, t))| adapter_rank(*b, *t)).map(|(i, _)| i);
+        assert_eq!(best(&[(B::Gl, T::Other), (B::Dx12, T::Cpu)]), Some(1), "VMware: WARP, not GL");
+        assert_eq!(best(&[(B::Gl, T::IntegratedGpu), (B::Dx12, T::Cpu)]), Some(1));
+        assert_eq!(best(&[(B::Dx12, T::IntegratedGpu), (B::Vulkan, T::DiscreteGpu), (B::Dx12, T::Cpu)]), Some(1), "fastest GPU first");
+        assert_eq!(best(&[(B::Gl, T::Other)]), Some(0), "GL when it's all there is");
+    }
 }
 
 /// Kept small: started afresh once it passes this size.
