@@ -19,13 +19,17 @@ pub fn which_all(name: &str) -> Vec<PathBuf> {
 const USUAL_HOME_DIRS: &[&str] = &[".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin"];
 #[cfg(unix)]
 const USUAL_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
-// Claude Code's installer, npm (without a custom prefix), bun and cargo; the installers don't
-// always put these on PATH.
+// Claude Code's installer, npm (without a custom prefix), WinGet's portable packages (Claude
+// Code's WinGet install), bun and cargo; PATH may not have them yet in an app started before
+// the install.
 #[cfg(windows)]
-const USUAL_HOME_DIRS: &[&str] = &[r".local\bin", r"AppData\Roaming\npm", r".bun\bin", r".cargo\bin"];
+const USUAL_HOME_DIRS: &[&str] = &[r".local\bin", r"AppData\Roaming\npm", r"AppData\Local\Microsoft\WinGet\Links", r".bun\bin", r".cargo\bin"];
 #[cfg(not(any(unix, windows)))]
 const USUAL_HOME_DIRS: &[&str] = &[];
-#[cfg(not(unix))]
+// WinGet's portable packages installed for every user (`--scope machine`).
+#[cfg(windows)]
+const USUAL_DIRS: &[&str] = &[r"C:\Program Files\WinGet\Links"];
+#[cfg(not(any(unix, windows)))]
 const USUAL_DIRS: &[&str] = &[];
 const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
 
@@ -233,7 +237,10 @@ mod tests {
         let path = OsString::from(r"C:\Windows;C:\Users\u\.local\bin");
         let dirs: Vec<PathBuf> = std::env::split_paths(&with_usual_dirs(Some(path), Some(home.clone())).unwrap()).collect();
         assert_eq!(dirs[..3], [PathBuf::from(r"C:\Windows"), home.join(r".local\bin"), home.join(r"AppData\Roaming\npm")]);
-        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len(), "nothing twice");
+        assert_eq!(dirs.len(), 1 + USUAL_HOME_DIRS.len() + USUAL_DIRS.len(), "nothing twice");
+        // Each way Claude Code installs on Windows: native, npm, WinGet (per user and machine-wide).
+        assert!(dirs.contains(&home.join(r"AppData\Local\Microsoft\WinGet\Links")));
+        assert!(dirs.contains(&PathBuf::from(r"C:\Program Files\WinGet\Links")));
     }
 
     const NPM_SHIM: &str = "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\n\
