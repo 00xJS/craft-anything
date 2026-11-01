@@ -20,6 +20,11 @@ the `&&` chain stopped, but the next lines still ran, so #138 merged the claim c
 work's title. Run commit, push, create and merge as separate steps and read each result; run the
 hook with the project's toolchain (`RUSTUP_TOOLCHAIN=1.99.0 git commit …`).
 
+**A merge of commits no check ran on.** A script waited for one CI run of a PR, then merged
+whatever the PR's head was by then; its author had pushed two more commits meanwhile, so #141
+reached `main` with code neither CI nor review had seen. Merge with `--match-head-commit` set to
+the commit the green run tested (`gh run view <id> --json headSha`), never to a head read later.
+
 **A squash commit names the wrong PR number.** The subject was written as "(#12)" before the PR
 existed; it became #11. Take the number from `gh pr create`'s output (`${URL##*/}`) and use it.
 
