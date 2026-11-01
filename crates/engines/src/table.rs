@@ -144,7 +144,15 @@ const fn mac(base: Base, rel: &'static str) -> KnownPath {
     KnownPath { os: "macos", base, rel }
 }
 
+const fn linux(dir: &'static str, rel: &'static str) -> KnownPath {
+    KnownPath { os: "linux", base: Base::Dir(dir), rel }
+}
+
 const NO_PATHS: &[KnownPath] = &[];
+
+/// Linux packages put Ghidra in a folder of its own and only a start script on PATH (`/usr/bin/ghidra`):
+/// Arch and its derivatives in `/opt/ghidra`, Debian and Kali in `/usr/share/ghidra` (#85).
+const GHIDRA_PATHS: &[KnownPath] = &[linux("/opt/ghidra", "support/analyzeHeadless"), linux("/usr/share/ghidra", "support/analyzeHeadless")];
 
 /// Browsers on Windows and macOS rarely put themselves on PATH.
 const CHROMIUM_PATHS: &[KnownPath] = &[
@@ -322,7 +330,7 @@ pub const ENGINES: &[ExternalEngine] = &[
         needed_for: "Deep mode: richer decompiled code",
         exes: &["analyzeHeadless"],
         exes_windows: &["analyzeHeadless.bat"],
-        known_paths: NO_PATHS,
+        known_paths: GHIDRA_PATHS,
         path_setting: false,
         install: Install::Guided { pins: GHIDRA_PINS, how: GHIDRA_SETUP },
     },
