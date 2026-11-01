@@ -1,7 +1,8 @@
 //! Reading and editing one client's config text, per format. Pure text in, text out.
 
 use crate::clients::{Client, Format, SERVER_NAME};
-use crate::{jsonc, yaml};
+use crate::yaml;
+use craft_anything_formats::jsonc;
 use serde_json::Value;
 
 /// Parse the whole config to JSON-like data. An empty file is `{}` unless the client forbids it.
