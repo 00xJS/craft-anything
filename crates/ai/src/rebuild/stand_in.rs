@@ -53,7 +53,9 @@ impl StandIns {
                 tx,
                 feed: feed.clone(),
             });
+            let activity = feed.lock().unwrap_or_else(PoisonError::into_inner).activity();
             Ok(RebuildRun {
+                activity,
                 rx,
                 stop: CancelToken::default(),
                 inbox: Inbox::new(ws.inbox_dir()),

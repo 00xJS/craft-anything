@@ -961,9 +961,22 @@ fn feed(app: &mut CraftApp, ui: &mut Ui, ws: &Workspace) {
                 _ => 0,
             })
             .sum();
-        let detail = (done > 0).then(|| crate::i18n::trf("{n} actions done so far", &[("n", &done.to_string())]));
-        let began = app.open_run().map(RebuildRun::started);
-        widgets::working_since(ui, title.unwrap_or("Working on it"), detail.as_deref(), began);
+        // The action under way, in words when it's one of ours.
+        let current = items[step.map_or(0, |s| s + 1)..].iter().rev().find_map(|i| match i {
+            FeedItem::Work { tools, .. } => tools.iter().rev().find(|(_, d)| d.is_none()).map(|(t, _)| t.as_str()),
+            _ => None,
+        });
+        let current = current.map(|t| app.engine.registry().canonical(t).and_then(|id| app.engine.registry().get(id)).map_or(t, |s| s.title));
+        let detail = [
+            current.map(|c| crate::i18n::trf("Now: {what}", &[("what", c)])),
+            (done > 0).then(|| crate::i18n::trf("{n} actions done so far", &[("n", &done.to_string())])),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("  ·  ");
+        let (began, quiet) = app.open_run().map_or((None, None), |r| (Some(r.started()), Some(r.quiet_for())));
+        widgets::working_since(ui, title.unwrap_or("Working on it"), (!detail.is_empty()).then_some(detail.as_str()), began, quiet);
     }
     for (id, a, shown) in answers {
         app.answer_request(&id, a, shown);

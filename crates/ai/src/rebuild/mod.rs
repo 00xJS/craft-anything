@@ -181,6 +181,7 @@ pub struct RebuildRun {
     feed: Arc<Mutex<feed::FeedLog>>,
     pub root: PathBuf,
     started: Instant,
+    activity: Arc<feed::Activity>,
 }
 
 impl RebuildRun {
@@ -268,7 +269,8 @@ impl RebuildRun {
                 r2.store(false, Ordering::SeqCst);
             })
             .map_err(|e| ToolError::internal(e.to_string()))?;
-        Ok(RebuildRun { rx, stop, inbox, running, preview, notes, feed, root, started: Instant::now() })
+        let activity = feed.lock().unwrap_or_else(PoisonError::into_inner).activity();
+        Ok(RebuildRun { rx, stop, inbox, running, preview, notes, feed, root, started: Instant::now(), activity })
     }
 
     /// Add something while it works; the agent reads it at its next step, and only then does it
@@ -346,6 +348,11 @@ impl RebuildRun {
     /// When it began working (a queued run begins when its turn comes).
     pub fn started(&self) -> Instant {
         self.started
+    }
+
+    /// How long since the run last had anything to say. Cheap: safe to read while drawing.
+    pub fn quiet_for(&self) -> Duration {
+        self.activity.quiet_for()
     }
 
     pub fn preview_url(&self) -> Option<String> {
@@ -439,7 +446,12 @@ impl Worker {
         self.stop.check()?;
         // The person started this run for this target, which is the consent for opening it.
         let opts = CallOptions::new(Caller::Ui).with_consent(craft_anything_engine::Consent::Granted).with_cancel(self.stop.clone());
-        self.engine.call(tool, params, opts)
+        // Said as it happens, so a long step shows what it's doing and the feed counts it.
+        let call_id = format!("run-{tool}");
+        self.emit(RunEvent::Agent(AgentEvent::ToolStarted { call_id: call_id.clone(), tool: tool.to_string(), input: Value::Null }));
+        let result = self.engine.call(tool, params, opts);
+        self.emit(RunEvent::Agent(AgentEvent::ToolFinished { call_id, tool: tool.to_string(), ok: result.is_ok(), summary: String::new(), evidence_id: None }));
+        result
     }
 
     /// Point the engine at this workspace: its investigation project and inbox.
@@ -579,6 +591,7 @@ impl Worker {
         let api_loop = api.is_some();
         // A coding agent that never saved a session starts over, so it needs the brief.
         let has_history = resumable && (api_loop || ws.manifest.agent_session.is_some());
+        self.step(ws, Step::Build, Status::Building, "Getting the builder ready…")?;
         let spec = self.agent_spec(ws, &entry, opts);
         let mut agent: Box<dyn Conversation> = match api {
             Some(a) => Box::new(a),
