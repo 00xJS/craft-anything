@@ -664,7 +664,12 @@ fn reach(e: &BackendEntry, key: Option<String>) -> Result<u64, String> {
         }
         BackendKind::OpenaiCompatible => {
             let b = base.unwrap_or("http://127.0.0.1:11434/v1");
-            if detect::port_open(b, Duration::from_millis(500)) { Ok(()) } else { Err(format!("nothing is listening at {b}")) }
+            if !detect::port_open(b, Duration::from_millis(500)) {
+                Err(format!("nothing is listening at {b}"))
+            } else {
+                // An open port isn't a model server: another program may hold it (#37).
+                openai::OpenAi::compatible(&e.config.name, b, key, &e.config.model).list_models(t).map(|_| ()).map_err(|x| x.message)
+            }
         }
         BackendKind::AgentCli => {
             let program = e.options.command.clone().unwrap_or_else(|| cli_agents::program_for(&e.config.model));

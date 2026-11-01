@@ -175,31 +175,10 @@ mod tests {
         assert!(t.elapsed() < Duration::from_secs(1));
     }
 
-    /// A stand-in server on a free port that answers every request with `status` and `body`.
-    fn serve(status: &'static str, body: &'static str) -> String {
-        use std::io::{Read as _, Write as _};
-        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}/v1", l.local_addr().unwrap());
-        std::thread::spawn(move || {
-            for mut s in l.incoming().flatten() {
-                let (mut got, mut buf) = (Vec::new(), [0u8; 4096]);
-                while !got.windows(4).any(|w| w == b"\r\n\r\n") {
-                    match s.read(&mut buf) {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => got.extend_from_slice(&buf[..n]),
-                    }
-                }
-                if !got.is_empty() {
-                    let _ = write!(s, "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
-                }
-            }
-        });
-        base
-    }
-
     /// #30: another program on a model server's port isn't offered as one.
     #[test]
     fn only_a_server_that_lists_models_is_offered() {
+        use crate::tests::serve;
         assert!(probe_local("llama.cpp server", &serve("404 Not Found", "404 page not found")).is_none(), "a Go web server's 404");
         assert!(probe_local("llama.cpp server", &serve("200 OK", "<html><body>Admin</body></html>")).is_none(), "a web page");
         let found = probe_local("llama.cpp server", &serve("200 OK", r#"{"object":"list","data":[{"id":"qwen3-8b"}]}"#)).unwrap();
