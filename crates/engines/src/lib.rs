@@ -82,7 +82,7 @@ fn in_managed(dir: &Path, exes: &[&str]) -> Option<PathBuf> {
 }
 
 /// Standard install locations for programs that don't put themselves on PATH (browsers on
-/// Windows and macOS), most common first.
+/// Windows and macOS, Ghidra from Linux packages), most common first.
 pub fn well_known(id: &str) -> Vec<PathBuf> {
     engine(id).map(ExternalEngine::known_install_paths).unwrap_or_default()
 }
@@ -135,7 +135,9 @@ mod tests {
         // Nothing but folders: still none, not a panic.
         let empty = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(empty.path().join("ghidra").join("ghidra_12.1.4_PUBLIC")).unwrap();
-        assert!(locate("ghidra", &NoOverrides, empty.path()).is_none());
+        // (Unless this computer has Ghidra on PATH or from a system package.)
+        let installed = find_on_path(&[exe]).is_some() || well_known("ghidra").iter().any(|p| p.is_file());
+        assert!(locate("ghidra", &NoOverrides, empty.path()).is_none() || installed);
     }
 
     #[test]
@@ -145,6 +147,13 @@ mod tests {
         if cfg!(any(windows, target_os = "macos")) {
             assert!(paths.iter().any(|p| p.to_string_lossy().contains("Chrome")));
             assert!(paths.iter().any(|p| p.to_string_lossy().contains("Edge")));
+        }
+        // #85: Linux packages put Ghidra in its own folder with only a start script on PATH.
+        let ghidra = well_known("ghidra");
+        if cfg!(target_os = "linux") {
+            assert_eq!(ghidra, [PathBuf::from("/opt/ghidra/support/analyzeHeadless"), PathBuf::from("/usr/share/ghidra/support/analyzeHeadless")]);
+        } else {
+            assert!(ghidra.is_empty());
         }
     }
 }
