@@ -30,7 +30,7 @@ fn main() -> eframe::Result {
     let hub = Arc::new(AiHub::new(engine.clone()));
     log::info!("engine and AI ready; opening the window");
 
-    let mut viewport = eframe::egui::ViewportBuilder::default()
+    let viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Craft Anything")
         .with_app_id("ai.storyteller.craft-anything")
         .with_inner_size([1360.0, 860.0])
@@ -39,9 +39,11 @@ fn main() -> eframe::Result {
         .with_decorations(false)
         .with_resizable(true)
         .with_drag_and_drop(true);
-    if let Ok(icon) = eframe::icon_data::from_png_bytes(craft_anything_ui_egui::APP_ICON_PNG) {
-        viewport = viewport.with_icon(Arc::new(icon));
-    }
+    // On macOS a window icon replaces the Dock icon, and the bundle's own icon is the one padded to
+    // Apple's icon grid (the full tile looked bigger than other apps', #102). An empty icon keeps
+    // the bundle's; no icon at all would bring eframe's own.
+    let icon = if cfg!(target_os = "macos") { None } else { eframe::icon_data::from_png_bytes(craft_anything_ui_egui::APP_ICON_PNG).ok() };
+    let viewport = viewport.with_icon(Arc::new(icon.unwrap_or_default()));
     #[cfg_attr(not(windows), expect(unused_mut, reason = "only Windows picks its own graphics adapter"))]
     let mut options = eframe::NativeOptions { viewport, ..Default::default() };
     #[cfg(windows)]
