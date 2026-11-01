@@ -89,7 +89,19 @@ pub fn doctor(host: &Host, req: &DoctorRequest) -> DoctorReport {
     // Registrations.
     let all = clients(host);
     let explicit = !req.clients.is_empty();
-    let selected: Vec<_> = all.iter().filter(|c| if explicit { req.clients.iter().any(|id| id.replace('-', "_") == c.id) } else { c.detected() }).collect();
+    let selected: Vec<_> = all
+        .iter()
+        .filter(|c| {
+            if explicit {
+                req.clients.iter().any(|id| {
+                    let norm = id.replace('-', "_");
+                    norm == c.id || (norm == "agy" && c.id == "antigravity")
+                })
+            } else {
+                c.detected()
+            }
+        })
+        .collect();
     let mut skill_dirs: Vec<PathBuf> = Vec::new();
     for c in &selected {
         let name = format!("registration:{}", c.id);

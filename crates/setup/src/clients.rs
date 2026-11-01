@@ -26,6 +26,7 @@ pub const ENV_KEYS: &[&str] = &[
     "DSH_HOME",
     "KIMI_CODE_HOME",
     "FACTORY_HOME_OVERRIDE",
+    "ANTIGRAVITY_HOME",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -307,9 +308,20 @@ pub fn clients(host: &Host) -> Vec<Client> {
     });
     add("hermes", "Hermes", hermes.join("config.yaml"), vec![hermes.clone()], Format::Yaml, vec!["mcp_servers"], Shape::Enabled, Some(hermes.join("skills")));
 
-    // Antigravity
-    let ag = h.join(".gemini").join("config");
-    add("antigravity", "Antigravity", ag.join("mcp_config.json"), vec![ag.clone()], Format::Jsonc, vec!["mcpServers"], Shape::Plain, Some(ag.join("skills")));
+    // Antigravity (agy)
+    let ag_home = host.var("ANTIGRAVITY_HOME").unwrap_or_else(|| h.clone());
+    let ag = ag_home.join(".gemini").join("config");
+    let ag_cli = ag_home.join(".gemini").join("antigravity-cli");
+    add(
+        "antigravity",
+        "Antigravity",
+        ag.join("mcp_config.json"),
+        vec![ag.clone(), ag_cli],
+        Format::Jsonc,
+        vec!["mcpServers"],
+        Shape::Plain,
+        Some(ag.join("skills")),
+    );
 
     // Grok Build
     let grok = host.var("GROK_HOME").unwrap_or_else(|| h.join(".grok"));
