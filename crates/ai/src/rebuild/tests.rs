@@ -750,52 +750,51 @@ fn clean_room_studies_nothing_inside_and_deep_mode_looks() {
     }
 }
 
-/// A Worker for checks, on a session with Deep mode on or off.
-/// A kind whose check can't run while `app/check-fails` still counts down, and a stand-in coding
-/// agent that notes each prompt it gets in `prompts.txt` beside the project.
-struct FlakyKind;
-struct FlakyCheck;
-
-impl Check for FlakyCheck {
-    fn id(&self) -> &'static str {
-        "flaky"
-    }
-    fn run(&self, cx: &mut CheckCx) -> Result<CheckResult, ToolError> {
-        let file = cx.ws.app_dir().join("check-fails");
-        let left: u32 = std::fs::read_to_string(&file).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
-        if left > 0 {
-            std::fs::write(&file, (left - 1).to_string()).unwrap();
-            return Err(ToolError::new(ErrorCode::EngineMissing, "the WebSocket is closed"));
-        }
-        Ok(CheckResult::new(self.id(), cx.round, true, "Fine."))
-    }
-}
-
-impl TargetKind for FlakyKind {
-    fn id(&self) -> &'static str {
-        "flaky"
-    }
-    fn words(&self) -> KindWords {
-        KindWords { button: "Open", icon: "box", ready: "Ready", change_hint: "Ask" }
-    }
-    fn detect(&self, _cx: &DetectCx) -> Option<u32> {
-        Some(1000)
-    }
-    fn default_stack(&self, _cx: &DetectCx) -> &'static str {
-        "Anything"
-    }
-    fn goal(&self) -> &'static str {
-        "a thing"
-    }
-    fn checks(&self, _ws: &Workspace) -> Vec<Box<dyn Check>> {
-        vec![Box::new(FlakyCheck)]
-    }
-}
-
 #[cfg(unix)]
 mod picking_up_a_build {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    /// A kind whose check can't run while `app/check-fails` still counts down, and a stand-in coding
+    /// agent that notes each prompt it gets in `prompts.txt` beside the project.
+    struct FlakyKind;
+    struct FlakyCheck;
+
+    impl Check for FlakyCheck {
+        fn id(&self) -> &'static str {
+            "flaky"
+        }
+        fn run(&self, cx: &mut CheckCx) -> Result<CheckResult, ToolError> {
+            let file = cx.ws.app_dir().join("check-fails");
+            let left: u32 = std::fs::read_to_string(&file).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+            if left > 0 {
+                std::fs::write(&file, (left - 1).to_string()).unwrap();
+                return Err(ToolError::new(ErrorCode::EngineMissing, "the WebSocket is closed"));
+            }
+            Ok(CheckResult::new(self.id(), cx.round, true, "Fine."))
+        }
+    }
+
+    impl TargetKind for FlakyKind {
+        fn id(&self) -> &'static str {
+            "flaky"
+        }
+        fn words(&self) -> KindWords {
+            KindWords { button: "Open", icon: "box", ready: "Ready", change_hint: "Ask" }
+        }
+        fn detect(&self, _cx: &DetectCx) -> Option<u32> {
+            Some(1000)
+        }
+        fn default_stack(&self, _cx: &DetectCx) -> &'static str {
+            "Anything"
+        }
+        fn goal(&self) -> &'static str {
+            "a thing"
+        }
+        fn checks(&self, _ws: &Workspace) -> Vec<Box<dyn Check>> {
+            vec![Box::new(FlakyCheck)]
+        }
+    }
 
     struct Bench {
         _dir: tempfile::TempDir,
