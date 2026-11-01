@@ -1,10 +1,12 @@
-//! Find AI that's ready to use on this machine: env keys, local servers, agent CLIs, ssh hosts.
-//! Probes run in parallel and the whole scan is bounded (about a second).
+//! Find AI that's ready to use on this machine: env keys, local servers (also those set up in
+//! OpenCode), agent CLIs, ssh hosts. Probes run in parallel and the whole scan is bounded (about a
+//! second).
 
 use crate::openai::{LOCAL_SERVERS, OpenAi};
 use crate::{BackendConfig, BackendKind, Detected};
 use craft_anything_evidence::ErrorCode;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -91,17 +93,77 @@ pub fn agent_clis() -> Vec<Detected> {
         .collect()
 }
 
+/// The most servers taken from OpenCode's settings.
+const OPENCODE_MAX: usize = 6;
+
+/// Where OpenCode keeps its settings (as setup registers it): `OPENCODE_CONFIG`, else
+/// `opencode.jsonc` or `opencode.json` in `$XDG_CONFIG_HOME/opencode` (`~/.config/opencode`).
+fn opencode_config(var: impl Fn(&str) -> Option<String>, home: Option<PathBuf>) -> Option<PathBuf> {
+    if let Some(p) = var("OPENCODE_CONFIG").filter(|p| !p.trim().is_empty()) {
+        return Some(PathBuf::from(p));
+    }
+    let dir = var("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| home.map(|h| h.join(".config")))?.join("opencode");
+    ["opencode.jsonc", "opencode.json"].iter().map(|n| dir.join(n)).find(|p| p.is_file())
+}
+
+/// The OpenAI-compatible servers OpenCode's settings name on this computer or its network
+/// (`provider.<id>.options.baseURL`), as (name, base URL): one on another port or machine is
+/// offered too (#83, #73). Hosted services are left out; they need a key this scan doesn't have.
+pub fn opencode_servers(text: &str) -> Vec<(String, String)> {
+    let Ok(doc) = craft_anything_formats::jsonc::parse(text, false) else { return Vec::new() };
+    let config = doc.to_value();
+    let Some(providers) = config.get("provider").and_then(serde_json::Value::as_object) else { return Vec::new() };
+    providers
+        .iter()
+        .filter_map(|(id, p)| {
+            let base = p.pointer("/options/baseURL")?.as_str()?.trim().trim_end_matches('/');
+            let name = p.get("name").and_then(serde_json::Value::as_str).filter(|n| !n.trim().is_empty()).unwrap_or(id);
+            on_this_network(base).then(|| (format!("{} from OpenCode", name.trim()), base.to_string()))
+        })
+        .take(OPENCODE_MAX)
+        .collect()
+}
+
+/// An http(s) address on this computer or its local network.
+fn on_this_network(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")) else { return false };
+    let host = rest.split('/').next().unwrap_or_default();
+    // `[::1]:1234`, `127.0.0.1:1234` or `name:1234`.
+    let host = match host.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => host.rsplit_once(':').map_or(host, |(h, _)| h),
+    };
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        Ok(std::net::IpAddr::V6(ip)) => ip.is_loopback() || ip.is_unique_local(),
+        Err(_) => host.eq_ignore_ascii_case("localhost") || host.to_ascii_lowercase().ends_with(".local"),
+    }
+}
+
+/// Every local server to probe: the usual addresses, then those OpenCode names elsewhere.
+fn local_servers() -> Vec<(String, String)> {
+    let mut all: Vec<(String, String)> = LOCAL_SERVERS.iter().map(|(l, b)| (l.to_string(), b.to_string())).collect();
+    let config = opencode_config(|v| std::env::var(v).ok(), dirs::home_dir());
+    let text = config.filter(|p| std::fs::metadata(p).is_ok_and(|m| m.len() <= 1024 * 1024)).and_then(|p| std::fs::read_to_string(p).ok());
+    for (label, base) in text.as_deref().map(opencode_servers).unwrap_or_default() {
+        if !all.iter().any(|(_, b)| b.trim_end_matches('/') == base) {
+            all.push((label, base));
+        }
+    }
+    all
+}
+
 /// Everything, bounded by [`TOTAL`].
 pub fn detect_all() -> Vec<Detected> {
     let start = Instant::now();
     let (tx, rx) = mpsc::channel::<(usize, Vec<Detected>)>();
     let mut jobs = 0usize;
-    for (i, (label, base)) in LOCAL_SERVERS.iter().enumerate() {
+    for (i, (label, base)) in local_servers().into_iter().enumerate() {
         let tx = tx.clone();
         if std::thread::Builder::new()
             .name("ai-detect".into())
             .spawn(move || {
-                let _ = tx.send((i + 10, probe_local(label, base).into_iter().collect()));
+                let _ = tx.send((i + 10, probe_local(&label, &base).into_iter().collect()));
             })
             .is_ok()
         {
@@ -184,6 +246,71 @@ mod tests {
         let found = probe_local("llama.cpp server", &serve("200 OK", r#"{"object":"list","data":[{"id":"qwen3-8b"}]}"#)).unwrap();
         assert_eq!((found.suggestion.name.as_str(), found.suggestion.model.as_str()), ("llama.cpp server (local)", "qwen3-8b"));
         assert!(probe_local("Ollama", &serve("200 OK", r#"{"object":"list","data":[]}"#)).is_some(), "running with no model yet");
+    }
+
+    /// #83: a server set up in OpenCode (here LM Studio on another port) is offered; hosted
+    /// services and broken settings aren't.
+    #[test]
+    fn servers_set_up_in_opencode_are_offered() {
+        let config = r#"{
+          // LM Studio on its own port, as in #73
+          "provider": {
+            "lmstudio": { "name": "LM Studio", "options": { "baseURL": "http://127.0.0.1:1235/v1/" } },
+            "box": { "options": { "baseURL": "http://192.168.1.20:11434/v1" } },
+            "cloud": { "name": "Hosted", "options": { "baseURL": "https://api.example.com/v1" } },
+            "nourl": { "name": "No address" },
+          },
+        }"#;
+        assert_eq!(
+            opencode_servers(config),
+            [
+                // In the order of their ids.
+                ("box from OpenCode".to_string(), "http://192.168.1.20:11434/v1".to_string()),
+                ("LM Studio from OpenCode".to_string(), "http://127.0.0.1:1235/v1".to_string()),
+            ]
+        );
+        assert!(opencode_servers("not json {").is_empty());
+        assert!(opencode_servers(r#"{"provider": []}"#).is_empty());
+        let many: String =
+            (0..20).map(|i| format!(r#""p{i}": {{"options": {{"baseURL": "http://localhost:{}/v1"}}}}"#, 9000 + i)).collect::<Vec<_>>().join(",");
+        assert_eq!(opencode_servers(&format!(r#"{{"provider": {{{many}}}}}"#)).len(), OPENCODE_MAX);
+        // Found the same way as a server at a usual address.
+        let url = crate::tests::serve("200 OK", r#"{"object":"list","data":[{"id":"gemma"}]}"#);
+        let found = opencode_servers(&format!(r#"{{"provider": {{"lmstudio": {{"name": "LM Studio", "options": {{"baseURL": "{url}"}}}}}}}}"#));
+        let (label, base) = found.first().unwrap();
+        assert_eq!(probe_local(label, base).unwrap().suggestion.name, "LM Studio from OpenCode (local)");
+    }
+
+    #[test]
+    fn only_addresses_on_this_computer_or_network_count() {
+        for url in [
+            "http://localhost:1234/v1",
+            "http://127.0.0.1/v1",
+            "http://[::1]:8080",
+            "http://10.0.0.5:8000/v1",
+            "https://studio.local:1234/v1",
+            "http://172.20.0.2:1234",
+        ] {
+            assert!(on_this_network(url), "{url}");
+        }
+        for url in ["https://api.openai.com/v1", "http://8.8.8.8/v1", "ftp://127.0.0.1", "127.0.0.1:1234", ""] {
+            assert!(!on_this_network(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn opencode_settings_are_found_where_opencode_keeps_them() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(opencode_config(|k| (k == "OPENCODE_CONFIG").then(|| "/x/oc.json".to_string()), None), Some(PathBuf::from("/x/oc.json")));
+        assert_eq!(opencode_config(|_| None, Some(d.path().to_path_buf())), None, "nothing there");
+        let dir = d.path().join(".config").join("opencode");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("opencode.json"), "{}").unwrap();
+        assert_eq!(opencode_config(|_| None, Some(d.path().to_path_buf())), Some(dir.join("opencode.json")));
+        std::fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
+        assert_eq!(opencode_config(|_| None, Some(d.path().to_path_buf())), Some(dir.join("opencode.jsonc")), "jsonc first");
+        let xdg = d.path().join(".config").to_string_lossy().into_owned();
+        assert_eq!(opencode_config(|k| (k == "XDG_CONFIG_HOME").then(|| xdg.clone()), None), Some(dir.join("opencode.jsonc")));
     }
 
     #[test]
