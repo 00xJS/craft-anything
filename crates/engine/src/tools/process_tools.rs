@@ -453,6 +453,7 @@ fn runtime_walkthrough_record(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOu
 pub struct CompareParams {
     /// The first run: runtime_walkthrough_record evidence (inline, {"kind":"saved",…} or a bare id).
     pub left: Value,
+    /// The second run, in the same forms.
     pub right: Value,
 }
 

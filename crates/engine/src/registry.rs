@@ -198,6 +198,17 @@ mod tests {
     }
 
     #[test]
+    fn every_mcp_input_property_has_an_object_schema() {
+        let r = Registry::with_all_tools();
+        for spec in r.all() {
+            let schema = &r.mcp_descriptor(spec)["inputSchema"];
+            for (property, value) in schema["properties"].as_object().into_iter().flatten() {
+                assert!(value.is_object(), "{}.{property} schema must be an object, got {value}", spec.id);
+            }
+        }
+    }
+
+    #[test]
     fn any_name_a_client_uses_resolves_to_the_tool_id() {
         let r = Registry::with_all_tools();
         assert_eq!(r.canonical("core_session_show"), Some("core_session_show"));
