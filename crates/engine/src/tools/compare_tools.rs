@@ -483,9 +483,13 @@ fn comparison_is_changed(result: &Value) -> bool {
     if let Some(s) = result.get("overall").and_then(Value::as_str) {
         return s != "unchanged";
     }
+    // A comparison that says whether the two are identical decides; a moved file counts (#286).
+    if let Some(same) = result.get("identical").and_then(Value::as_bool) {
+        return !same;
+    }
     if let Some(counts) = result.get("counts") {
         let n = |k: &str| counts.get(k).and_then(Value::as_u64).unwrap_or(0);
-        return n("added") + n("removed") + n("changed") > 0;
+        return n("added") + n("removed") + n("changed") + n("moved") > 0;
     }
     false
 }
@@ -778,6 +782,15 @@ mod tests {
     use crate::{CallOptions, Caller, Engine};
     use craft_anything_testkit as tk;
     use serde_json::{Value, json};
+
+    /// #286: an archive comparison where a file only moved was summarised as unchanged.
+    #[test]
+    fn a_moved_file_is_a_change() {
+        let moved = json!({"identical": false, "counts": {"added": 0, "removed": 0, "changed": 0, "moved": 1, "unchanged": 0}});
+        assert!(super::comparison_is_changed(&moved));
+        assert!(super::comparison_is_changed(&json!({"counts": {"moved": 1}})));
+        assert!(!super::comparison_is_changed(&json!({"identical": true, "counts": {"unchanged": 3}})));
+    }
 
     fn call_val(e: &Engine, id: &str, p: Value) -> Result<Value, craft_anything_evidence::ToolError> {
         e.call(id, p, CallOptions::new(Caller::Cli)).map(|o| o.to_json())
