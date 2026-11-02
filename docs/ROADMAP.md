@@ -141,7 +141,10 @@ No `deny.toml` exists. The survey found no GPL, AGPL or SSPL crates, and only MP
 
 ### R0.5 Small correctness items from the survey
 Owner: open · Status: done (branch chore/r0.5-cleanups)
+- [x] Disclosed partially read SQLite cell payloads, preserved column positions, and withheld hashes of incomplete BLOBs.
+- [x] Filled missing trailing SQLite record fields from literal column defaults and disclosed unsupported defaults as NULL.
 - [x] Restored rowid aliases in SQLite INTEGER primary-key columns while preserving stored values and non-alias keys.
+- [x] Read and counted WITHOUT ROWID table records from leaf and interior index pages, restored declaration column order, and reported absent rowids as null.
 - [x] Decode Objective-C chained pointer offsets past file-empty PAGEZERO mappings (#296).
 - [x] Recognise root-relative macOS bundles and nested XPC services in Apple app graphs (#282).
 - [x] Checked arithmetic on file offsets in `elf.rs`: `va_to_off` adds a segment's file offset to an
