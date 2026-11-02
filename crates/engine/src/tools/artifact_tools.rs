@@ -256,6 +256,32 @@ pub(crate) fn create_absent_dir(p: &str) -> Result<PathBuf, ToolError> {
     Ok(path)
 }
 
+/// Removes a folder from [`create_absent_dir`] when the tool stops before writing anything into
+/// it, so the same call can be retried (#234). Call `keep` once the tool has succeeded.
+pub(crate) struct UnlessWritten<'a> {
+    dir: &'a Path,
+    keep: bool,
+}
+
+impl<'a> UnlessWritten<'a> {
+    pub(crate) fn new(dir: &'a Path) -> Self {
+        UnlessWritten { dir, keep: false }
+    }
+
+    pub(crate) fn keep(mut self) {
+        self.keep = true;
+    }
+}
+
+impl Drop for UnlessWritten<'_> {
+    fn drop(&mut self) {
+        if !self.keep {
+            // remove_dir only removes an empty folder, so anything written stays.
+            let _ = std::fs::remove_dir(self.dir);
+        }
+    }
+}
+
 /// Turn an archive member name into safe relative components, or explain why not.
 pub(crate) fn safe_components(name: &str) -> Result<Vec<String>, &'static str> {
     if name.contains('\0') {

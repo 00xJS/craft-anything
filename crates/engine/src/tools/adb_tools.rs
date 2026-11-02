@@ -13,7 +13,7 @@
 //! which reports exactly that) returns a clear `EngineMissing`; when the device is missing or
 //! unauthorised they return `NotFound` / `NoPermission`. Nothing ever hangs.
 
-use super::artifact_tools::create_absent_dir;
+use super::artifact_tools::{UnlessWritten, create_absent_dir};
 use super::native_common::spec;
 use crate::tool::{Ctx, Effects, Requires, ToolOutput, ToolSpec, Toolset, parse_params, schema_of};
 use craft_anything_engines::adb::{self, Adb, Device};
@@ -958,6 +958,7 @@ fn adb_app_download(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let serial = serial_of(&p.serial)?;
     let package = adb::validate_package(&p.package)?;
     let outdir = create_absent_dir(&p.output_directory)?;
+    let made = UnlessWritten::new(&outdir);
     let adb = adb_for(ctx)?.timeout(Duration::from_secs(300)).idle_timeout(Duration::from_secs(120));
     ensure_online(&adb, serial)?;
     let path_text = shell_text(&adb, serial, &format!("pm path {package}"), "pm path")?;
@@ -992,6 +993,7 @@ fn adb_app_download(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
         ))
         .coverage(Coverage::complete(pulled.len() as u64))
         .build()?;
+    made.keep();
     done(e)
 }
 
@@ -1007,6 +1009,7 @@ fn adb_file_download(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Too
     let serial = serial_of(&p.serial)?;
     let path = adb::validate_device_path(&p.device_path)?;
     let outdir = create_absent_dir(&p.output_directory)?;
+    let made = UnlessWritten::new(&outdir);
     let adb = adb_for(ctx)?.timeout(Duration::from_secs(300)).idle_timeout(Duration::from_secs(120));
     ensure_online(&adb, serial)?;
     let out = adb.targeted(serial, ["pull", path, &outdir.to_string_lossy()])?;
@@ -1021,6 +1024,7 @@ fn adb_file_download(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Too
         .location(Location::new("path", outdir.to_string_lossy()))
         .coverage(Coverage::complete(files.len() as u64))
         .build()?;
+    made.keep();
     done(e)
 }
 
@@ -1028,6 +1032,7 @@ fn adb_screenshot_take(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, T
     let p: OutputDirParams = parse_params(params)?;
     let serial = serial_of(&p.serial)?;
     let outdir = create_absent_dir(&p.output_directory)?;
+    let made = UnlessWritten::new(&outdir);
     let adb = adb_for(ctx)?.timeout(Duration::from_secs(60));
     ensure_online(&adb, serial)?;
     let out = adb.exec_out(serial, "screencap -p")?;
@@ -1047,6 +1052,7 @@ fn adb_screenshot_take(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, T
         .location(Location::new("path", file.to_string_lossy()))
         .coverage(Coverage::complete(1))
         .build()?;
+    made.keep();
     done(e)
 }
 
@@ -1054,6 +1060,7 @@ fn adb_bugreport_save(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, To
     let p: OutputDirParams = parse_params(params)?;
     let serial = serial_of(&p.serial)?;
     let outdir = create_absent_dir(&p.output_directory)?;
+    let made = UnlessWritten::new(&outdir);
     // Bug reports can take minutes; keep a generous wall deadline but an idle deadline so a truly
     // stuck run still ends.
     let adb = adb_for(ctx)?.timeout(Duration::from_secs(600)).idle_timeout(Duration::from_secs(180));
@@ -1071,6 +1078,7 @@ fn adb_bugreport_save(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, To
         .location(Location::new("path", outdir.to_string_lossy()))
         .coverage(Coverage::complete(files.len() as u64))
         .build()?;
+    made.keep();
     done(e)
 }
 
@@ -1416,6 +1424,31 @@ mod tests {
             assert_eq!(err.code, ErrorCode::EngineMissing, "{id} gave {:?}", err.code);
             assert!(err.remediation.is_some());
         }
+    }
+
+    /// #234: a call that fails before writing anything leaves no folder, so the same call can be
+    /// tried again; a folder with something in it, or a kept one, stays.
+    #[test]
+    fn a_failed_call_leaves_its_output_folder_free() {
+        let (e, d) = engine_without_adb();
+        if !adb_locatable(&e) {
+            for id in ["adb_screenshot_take", "adb_bugreport_save", "adb_file_download", "adb_app_download"] {
+                let out = d.path().join(id);
+                let args = json!({"serial": "emulator-5554", "package": "com.example.app", "device_path": "/sdcard/x", "output_directory": out});
+                assert_eq!(call_err(&e, id, args.clone()).code, ErrorCode::EngineMissing, "{id}");
+                assert!(!out.exists(), "{id} left {out:?} behind");
+                assert_eq!(call_err(&e, id, args).code, ErrorCode::EngineMissing, "{id}: the retry was blocked");
+            }
+        }
+        let (empty, written, kept) = (d.path().join("empty"), d.path().join("written"), d.path().join("kept"));
+        for dir in [&empty, &written, &kept] {
+            std::fs::create_dir(dir).unwrap();
+        }
+        std::fs::write(written.join("part"), b"x").unwrap();
+        drop(UnlessWritten::new(&empty));
+        drop(UnlessWritten::new(&written));
+        UnlessWritten::new(&kept).keep();
+        assert!(!empty.exists() && written.exists() && kept.exists());
     }
 
     #[test]
