@@ -205,8 +205,13 @@ fn core_target_open(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
         Some("dos-com") => target.kind = TargetKind::DosCom,
         Some(other) => return Err(ToolError::invalid(format!("unknown format {other}; use raw-binary or dos-com"))),
     }
-    // Opening the same content twice keeps one target per sha256.
-    let existing = ctx.session.targets().find(|t| t.target.sha256 == target.sha256 && t.target.kind == target.kind).map(|t| t.target.id.clone());
+    // Opening the same content twice keeps one target per sha256; new raw-binary settings replace
+    // it (and what was worked out with the old ones), rather than being dropped (#305).
+    let existing = ctx
+        .session
+        .targets()
+        .find(|t| t.target.sha256 == target.sha256 && t.target.kind == target.kind && t.target.raw == target.raw)
+        .map(|t| t.target.id.clone());
     if let Some(existing) = existing {
         ctx.session.set_active(&existing)?;
     } else {
@@ -632,6 +637,25 @@ mod tests {
         e.call("core_target_close", json!(null), CallOptions::new(Caller::Cli)).unwrap();
         let st = e.call("core_session_show", json!({}), CallOptions::new(Caller::Cli)).unwrap().to_json();
         assert_eq!(st["result"]["open"], false);
+    }
+
+    /// #305: reopening the same raw bytes with another architecture or address kept the first.
+    #[test]
+    fn reopening_raw_bytes_with_new_settings_uses_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("code.bin");
+        std::fs::write(&f, [0xc0, 0x03, 0x5f, 0xd6]).unwrap(); // arm64 `ret`
+        let e = Engine::new(crate::testing::session());
+        let call = |id: &str, p: serde_json::Value| e.call(id, p, CallOptions::new(Caller::Mcp)).unwrap().to_json();
+        let open = |arch: &str, at: &str| call("core_target_open", json!({"path": f, "format": "raw-binary", "architecture": arch, "entry_point": at}));
+        assert_eq!(open("x86", "0x1000")["result"]["raw"], json!({"architecture": "x86", "entry_point": 0x1000}));
+        call("native_instruction_show", json!({"address": "0x1000"}));
+        let again = open("arm64", "0x8000");
+        assert_eq!(again["result"]["raw"], json!({"architecture": "arm64", "entry_point": 0x8000}));
+        let insn = call("native_instruction_show", json!({"address": "0x8000"}));
+        assert!(insn["result"].to_string().contains("ret"), "{insn}");
+        assert_eq!(open("arm64", "0x8000")["result"]["raw"]["entry_point"], 0x8000, "the same settings reuse the target");
+        assert_eq!(call("core_session_show", json!({}))["result"]["targets"].as_array().map(Vec::len), Some(1), "still one target");
     }
 
     #[test]
