@@ -144,6 +144,22 @@ fn malformed_config_blocks_plan_and_uninstall() {
     assert!(read(h.join(".cursor/mcp.json")).contains("craft-anything-cli"));
 }
 
+/// #238: Pi's folder exists but its mcp.json doesn't yet; setup creates it. An empty file is
+/// still refused.
+#[test]
+fn pi_config_is_created_when_missing() {
+    let fx = fixture();
+    let pi = fx.host.home.join(".pi/agent/mcp.json");
+    std::fs::create_dir_all(pi.parent().unwrap()).unwrap();
+    let p = plan(&fx.host, &req(&fx, &["pi"])).unwrap();
+    assert!(!p.blocked, "{p:?}");
+    assert_eq!(apply(&p).status, "configured");
+    let v: serde_json::Value = serde_json::from_str(&read(&pi)).unwrap();
+    assert_eq!(v["mcpServers"]["craft-anything"]["args"][0], "mcp");
+    std::fs::write(&pi, "").unwrap();
+    assert!(plan(&fx.host, &req(&fx, &["pi"])).unwrap().blocked);
+}
+
 #[test]
 fn strict_json_client_rejects_comments() {
     let fx = fixture();

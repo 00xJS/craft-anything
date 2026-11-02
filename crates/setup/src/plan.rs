@@ -148,7 +148,8 @@ pub fn inspect_client(c: &Client, command: &[String]) -> Action {
             return a;
         }
     };
-    let base = text.clone().unwrap_or_default();
+    // A missing file is created; only an existing empty one is invalid where empty is (#238).
+    let base = text.clone().unwrap_or_else(|| if c.empty_is_invalid { "{}".into() } else { String::new() });
     let existing = match config::read_entry(c, &base) {
         Ok(e) => e,
         Err(e) => {
@@ -169,7 +170,7 @@ pub fn inspect_client(c: &Client, command: &[String]) -> Action {
     }
     match config::set_entry(c, &base, &desired) {
         Ok(new) => {
-            a.preview = preview(&base, &new);
+            a.preview = preview(text.as_deref().unwrap_or_default(), &new);
             a.action = if text.is_some() { ActionKind::Update } else { ActionKind::Create };
             a.backup = text.as_ref().map(|_| backup_path(&c.config));
             a.old_text = text;
