@@ -914,8 +914,8 @@ mod picking_up_a_build {
             fn streams_json(&self) -> bool {
                 false
             }
-            fn check_tool_server(&self) -> Result<(), ToolError> {
-                crate::cli_agents::cli_can_start(None)
+            fn check_tool_server(&self, stop: &CancelToken) -> Result<(), ToolError> {
+                crate::cli_agents::cli_can_start(None, stop)
             }
         }
         let b = bench();

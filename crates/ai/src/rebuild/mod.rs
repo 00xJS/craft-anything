@@ -578,7 +578,7 @@ impl Worker {
         let remote = entry.config.ssh_host.as_deref().is_some_and(|h| !h.trim().is_empty());
         if !remote && api.is_none() {
             let adapter = opts.adapters.for_agent(&entry.config.model);
-            crate::cli_agents::check_builder_tools(adapter.as_ref(), &entry.config.model, &entry.options)?;
+            crate::cli_agents::check_builder_tools(adapter.as_ref(), &entry.config.model, &entry.options, &self.stop)?;
             let program = entry.options.command.clone().unwrap_or_else(|| crate::cli_agents::program_for(&entry.config.model));
             if adapter.signed_in(&program) == Some(false) {
                 let who = crate::cli_agents::display_for(&entry.config.model);
