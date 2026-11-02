@@ -578,9 +578,11 @@ const BLUEPRINT_JS: &str = r#"(() => {
   const tally = (m, k) => { if (k) m[k] = (m[k] || 0) + 1; };
   const top = (m, n) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n).map(([value, count]) => ({value, count}));
   const fonts = {}, sizes = {}, weights = {}, colors = {}, backgrounds = {}, radii = {}, shadows = {}, bgImages = {}, spacing = {}, maxWidths = {};
-  // Colours as #rrggbb(aa), whatever notation the CSS used (oklch, hsl, named…): painted on a 1×1 canvas and read back.
+  // Colours as #rrggbb(aa), whatever notation the CSS used. Computed rgb()/rgba() is read as numbers: a canvas read
+  // can be off by one per channel (Brave adds noise to it, #154). Anything else (oklch, color()…) is painted on a 1×1
+  // canvas and read back.
   const cv = document.createElement('canvas'); cv.width = cv.height = 1; const g = cv.getContext('2d', {willReadFrequently: true}); const seenHex = {};
-  const hex = c => { if (!c || !g) return c; if (c in seenHex) return seenHex[c]; g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); const d = g.getImageData(0, 0, 1, 1).data; const h2 = x => x.toString(16).padStart(2, '0'); return seenHex[c] = '#' + h2(d[0]) + h2(d[1]) + h2(d[2]) + (d[3] < 255 ? h2(d[3]) : ''); };
+  const hex = c => { if (!c) return c; if (c in seenHex) return seenHex[c]; const h2 = x => x.toString(16).padStart(2, '0'); const m = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(c); if (m) { const a = m[4] === undefined ? 1 : +m[4]; return seenHex[c] = '#' + h2(+m[1]) + h2(+m[2]) + h2(+m[3]) + (a < 1 ? h2(Math.round(a * 255)) : ''); } if (!g) return c; g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); const d = g.getImageData(0, 0, 1, 1).data; return seenHex[c] = '#' + h2(d[0]) + h2(d[1]) + h2(d[2]) + (d[3] < 255 ? h2(d[3]) : ''); };
   const els = [document.documentElement, document.body, ...Array.from(document.querySelectorAll('body *')).slice(0, 12000)].filter(Boolean);
   for (const el of els) {
     if (!shown(el)) continue;
@@ -707,7 +709,8 @@ const LAYOUT_JS: &str = r#"(() => {
   const shown = el => { const r = el.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return false; const s = getComputedStyle(el); return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0'; };
   const size = sel => { const el = Array.from(document.querySelectorAll(sel)).slice(0, 50).find(shown); return el ? px(getComputedStyle(el).fontSize) : 0; };
   const cv = document.createElement('canvas'); cv.width = cv.height = 1; const g = cv.getContext('2d', {willReadFrequently: true});
-  const hex = c => { if (!g) return c; g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); const d = g.getImageData(0, 0, 1, 1).data; const h2 = x => x.toString(16).padStart(2, '0'); return '#' + h2(d[0]) + h2(d[1]) + h2(d[2]) + (d[3] < 255 ? h2(d[3]) : ''); };
+  // Computed rgb()/rgba() is read as numbers; a canvas read can be off by one (#154).
+  const hex = c => { const h2 = x => x.toString(16).padStart(2, '0'); const m = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(c); if (m) { const a = m[4] === undefined ? 1 : +m[4]; return '#' + h2(+m[1]) + h2(+m[2]) + h2(+m[3]) + (a < 1 ? h2(Math.round(a * 255)) : ''); } if (!g) return c; g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); const d = g.getImageData(0, 0, 1, 1).data; return '#' + h2(d[0]) + h2(d[1]) + h2(d[2]) + (d[3] < 255 ? h2(d[3]) : ''); };
   // Items side by side: the most children of one box sharing a top edge, counting only children at
   // least 15% of the block's width (cards and columns, not inline links or logo strips).
   const perRow = (root, width) => {
@@ -1378,18 +1381,10 @@ mod tests {
         assert!(!out.exists(), "no folder is made for a capture that can't happen");
     }
 
-    /// #155: a pill made with `calc(infinity * 1px)` (Tailwind's `rounded-full`) is recorded as
-    /// `9999px`, not the browser's clamped `3.35544e+07px`. Live: it needs a Chromium-based
-    /// browser (`--ignored`).
-    #[test]
-    #[ignore]
-    fn an_endless_corner_radius_is_recorded_as_a_pill() {
+    /// `capture.json` of `page`, served from a local port and captured at 1440 px. Live: it needs a
+    /// Chromium-based browser.
+    fn capture_of(page: &'static str) -> Value {
         use std::io::{Read, Write};
-        let page = r#"<!doctype html><html><body>
-<a style="border-radius:calc(infinity * 1px);background:#1e66f5;padding:8px">One</a>
-<a style="border-radius:calc(infinity * 1px) calc(infinity * 1px) 4px 4px;background:#1e66f5;padding:8px">Two</a>
-<a style="border-radius:12px;background:#1e66f5;padding:8px">Three</a>
-</body></html>"#;
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
         std::thread::spawn(move || {
@@ -1405,9 +1400,36 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("capture");
         e.call("web_site_capture", json!({"output_directory": out.display().to_string(), "widths": [1440]}), cli()).unwrap();
-        let capture: Value = serde_json::from_str(&std::fs::read_to_string(out.join("capture.json")).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(out.join("capture.json")).unwrap()).unwrap()
+    }
+
+    /// #155: a pill made with `calc(infinity * 1px)` (Tailwind's `rounded-full`) is recorded as
+    /// `9999px`, not the browser's clamped `3.35544e+07px`. Live (`--ignored`).
+    #[test]
+    #[ignore]
+    fn an_endless_corner_radius_is_recorded_as_a_pill() {
+        let page = r#"<!doctype html><html><body>
+<a style="border-radius:calc(infinity * 1px);background:#1e66f5;padding:8px">One</a>
+<a style="border-radius:calc(infinity * 1px) calc(infinity * 1px) 4px 4px;background:#1e66f5;padding:8px">Two</a>
+<a style="border-radius:12px;background:#1e66f5;padding:8px">Three</a>
+</body></html>"#;
+        let capture = capture_of(page);
         let mut radii: Vec<&str> = capture["design"]["radii"].as_array().unwrap().iter().filter_map(|r| r["value"].as_str()).collect();
         radii.sort_unstable();
         assert_eq!(radii, ["12px", "9999px", "9999px 9999px 4px 4px"]);
+    }
+
+    /// #154: colours are the page's own CSS values, not a canvas read that can be off by one per
+    /// channel; see-through ones keep their alpha. Live (`--ignored`).
+    #[test]
+    #[ignore]
+    fn captured_colours_are_the_css_values() {
+        let capture = capture_of(
+            r#"<!doctype html><html><body style="background:#F5F2EC;color:#2D2B26"><p>Text</p><p style="background:rgba(30, 102, 245, 0.5)">Half</p></body></html>"#,
+        );
+        let values = |k: &str| capture["design"][k].as_array().unwrap().iter().filter_map(|c| c["value"].as_str().map(String::from)).collect::<Vec<_>>();
+        assert!(values("backgrounds").contains(&"#f5f2ec".to_string()), "{:?}", values("backgrounds"));
+        assert!(values("backgrounds").contains(&"#1e66f580".to_string()), "{:?}", values("backgrounds"));
+        assert_eq!(values("text_colors"), ["#2d2b26"]);
     }
 }
