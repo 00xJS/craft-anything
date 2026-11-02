@@ -1223,7 +1223,7 @@ mod tests {
             6, b's', b'e', b'c', b'o', b'n', b'd', // "second"
         ];
         let frame = eth(0x0800, &ipv4_pkt(17, [8, 8, 8, 8], [192, 168, 1, 10], &udp(53, 50000, &txt_response(&rdata))));
-        let d = decode(1, &frame).unwrap();
+        let d = decode(1, &frame);
         let dns = d.dns.unwrap();
         assert_eq!(dns.answers.len(), 1);
         assert_eq!(dns.answers[0].rtype, "TXT");
@@ -1236,7 +1236,7 @@ mod tests {
         // A zero-length character string does not end the record.
         let rdata = [0, 6, b's', b'e', b'c', b'o', b'n', b'd'];
         let frame = eth(0x0800, &ipv4_pkt(17, [8, 8, 8, 8], [192, 168, 1, 10], &udp(53, 50000, &txt_response(&rdata))));
-        let d = decode(1, &frame).unwrap();
+        let d = decode(1, &frame);
         let dns = d.dns.unwrap();
         assert_eq!(dns.answers.len(), 1);
         assert_eq!(dns.answers[0].value, "second");
