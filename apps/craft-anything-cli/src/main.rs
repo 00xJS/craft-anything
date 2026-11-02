@@ -332,7 +332,11 @@ fn capabilities(cli: &Cli, f: Format) -> u8 {
                 .in_toolset(*t)
                 .map(|s| {
                     let a = engine.availability(s, &session);
-                    json!({"tool": s.id, "available": a.available || s.requires == Requires::Target, "needs_target": s.requires == Requires::Target, "reason": if s.requires == Requires::Target { None } else { a.reason }})
+                    // Before anything is open a target tool is still offered (needs_target says what
+                    // it waits for), but not one the mode refuses (#249).
+                    let refused = session.clean_room() && !craft_anything_engine::clean_room::allows(s.id);
+                    let waived = s.requires == Requires::Target && !refused;
+                    json!({"tool": s.id, "available": a.available || waived, "needs_target": s.requires == Requires::Target, "reason": if waived { None } else { a.reason }})
                 })
                 .collect();
             json!({"id": t.id(), "title": t.title(), "tools": tools})

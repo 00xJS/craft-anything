@@ -23,6 +23,24 @@ fn commands_and_exit_codes() {
     assert_eq!(e["error"]["code"], "bad_input");
 }
 
+/// #249: in Clean room a target tool the mode refuses was listed as available, because nothing
+/// being open yet was waived for every target tool.
+#[test]
+fn capabilities_keep_the_clean_room_refusal() {
+    let cfg = tempfile::tempdir().unwrap();
+    let tool = |args: &[&str], id: &str| {
+        let out = cli(args, cfg.path());
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let tools = v["toolsets"].as_array().unwrap().iter().flat_map(|t| t["tools"].as_array().unwrap().clone());
+        tools.into_iter().find(|t| t["tool"] == id).unwrap_or_else(|| panic!("{id} not in {v}"))
+    };
+    let clean = tool(&["--format", "json", "capabilities"], "native_function_pseudocode");
+    assert_eq!((clean["available"].as_bool(), clean["needs_target"].as_bool()), (Some(false), Some(true)), "{clean}");
+    assert!(clean["reason"].as_str().is_some_and(|r| !r.is_empty()), "{clean}");
+    let deep = tool(&["--deep", "--format", "json", "capabilities"], "native_function_pseudocode");
+    assert_eq!((deep["available"].as_bool(), deep["reason"].is_null()), (Some(true), true), "{deep}");
+}
+
 /// After the tool name, `--project` is the tool's own option when it has one (it used to be taken
 /// as the global investigation folder, which was then created there).
 #[test]
