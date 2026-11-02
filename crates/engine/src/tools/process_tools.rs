@@ -569,8 +569,8 @@ fn dispatched(v: &Value) -> usize {
 fn compare_filesystem(l: &Value, r: &Value) -> Dimension {
     let both_observed = l.pointer("/filesystem").is_some_and(Value::is_object) && r.pointer("/filesystem").is_some_and(Value::is_object);
     if both_observed {
-        let lc = changed_paths(l);
-        let rc = changed_paths(r);
+        let lc = changes(l);
+        let rc = changes(r);
         let status = if lc == rc { "unchanged" } else { "changed" };
         Dimension { dimension: "filesystem", status, detail: json!({"left_changes": lc.len(), "right_changes": rc.len()}) }
     } else {
@@ -578,13 +578,14 @@ fn compare_filesystem(l: &Value, r: &Value) -> Dimension {
     }
 }
 
-fn changed_paths(v: &Value) -> std::collections::BTreeSet<String> {
+/// Each changed path with how it changed: deleting a file and creating it are different runs (#300).
+fn changes(v: &Value) -> std::collections::BTreeSet<(String, String)> {
     v.pointer("/filesystem/effects")
         .and_then(Value::as_array)
         .map(|a| {
             a.iter()
-                .filter(|e| matches!(e.get("change").and_then(Value::as_str), Some("created") | Some("deleted") | Some("modified")))
-                .filter_map(|e| e.get("path").and_then(Value::as_str).map(String::from))
+                .filter_map(|e| Some((e.get("path")?.as_str()?.to_string(), e.get("change")?.as_str()?.to_string())))
+                .filter(|(_, c)| matches!(c.as_str(), "created" | "deleted" | "modified"))
                 .collect()
         })
         .unwrap_or_default()
@@ -597,6 +598,18 @@ mod tests {
 
     fn call_consent(e: &Engine, id: &str, p: Value) -> Result<Value, craft_anything_evidence::ToolError> {
         e.call(id, p, CallOptions::new(Caller::Cli).with_consent(Consent::Granted)).map(|o| o.to_json())
+    }
+
+    /// #300: one run deleting a file and the other creating it matched, as only paths were compared.
+    #[test]
+    fn deleting_and_creating_a_file_differ() {
+        let run = |effects: Value| json!({"filesystem": {"effects": effects}});
+        let fx = |change: &str, path: &str| json!([{"path": path, "change": change}]);
+        let status = |l: Value, r: Value| super::compare_filesystem(&run(l), &run(r)).status;
+        assert_eq!(status(fx("deleted", "/w/a"), fx("created", "/w/a")), "changed");
+        assert_eq!(status(fx("deleted", "/w/a"), fx("deleted", "/w/a")), "unchanged");
+        assert_eq!(status(fx("deleted", "/w/a"), fx("deleted", "/w/b")), "changed");
+        assert_eq!(status(fx("unchanged", "/w/a"), json!([])), "unchanged");
     }
 
     #[test]
