@@ -194,6 +194,8 @@ Built with	构建工具
 Built with {stack}, as you asked, so no game engine is needed.	已按你的要求使用 {stack} 构建，因此不需要游戏引擎。
 Call graph	调用图
 Call path	调用路径
+Call the build done	将构建标为完成
+Called done. A new message carries on from here.	已标为完成。发送新消息即可从这里继续。
 Cancel	取消
 Cancel: don't use this folder	取消：不使用此文件夹
 Capture a website for rebuilding	采集网站用于重建
@@ -544,6 +546,7 @@ It isn't on this computer yet. Craft Anything can download Ghidra {version} and 
 It isn't on this computer yet. Install Ghidra {version} from its release page, then choose its folder.	这台计算机尚未安装 Ghidra。请从发布页面安装 Ghidra {version}，然后选择其文件夹。
 It's already open.	它已经打开了。
 It's already open. Right-click it to open another copy.	已经打开。右键点击可再打开一个副本。
+It's done	就这样吧
 It's mine, or I'm allowed to look	这是我的，或我已获准查看
 Its copy is deleted, with anything it saved there. The project itself stays as it is.	将删除此副本及其保存的所有内容。项目本身保持不变。
 Its folder is deleted with everything in it: what was built, the checks and the conversation.	将删除其文件夹及其中的全部内容：构建成果、检查结果和对话。
@@ -563,6 +566,7 @@ Just look inside	只查看内部
 Keep going without asking	继续执行，无须询问
 Keep it	保留
 Keep it in the sidebar to open any time, whatever later builds change.	将其保留在侧栏中，随时打开，不受后续构建改动的影响。
+Keep the build as it is and stop offering to carry on.	保留构建的现状，不再提示继续。
 Keep this version in the sidebar to open any time.	将此版本保留在侧栏中，随时打开。
 Keeps this version exactly as it is now. Later builds can't change or break it, and anything it saves stays with the copy.	完整保留当前版本。后续构建无法修改或破坏它，它保存的所有内容也会留在此副本中。
 Key saved	密钥已保存
