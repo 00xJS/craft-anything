@@ -721,7 +721,8 @@ What the person asks for comes first, in every kind; the stack table is only the
 - [ ] Build check: a page asked for in plain HTML and CSS has nothing to build, but the check
       only knows Cargo.toml, package.json and engine projects ("No project to build found in
       app/"), so a builder added a placeholder package.json (`"build": "node -e \"0\""`) to pass;
-      count a static site (an `index.html` in app/) as built
+      count a static site (an `index.html` in app/) as built (#496) — claimed: maintainers' agent,
+      branch bugfix/r2.7-static-site-build-check
 - [x] CLI: after the tool name, `--project` is the tool's own option when it has one
       (`rebuild-check --project <folder>`, `project-show --project <folder>`), as `--format` is;
       otherwise, and always before the tool name, it's the global investigation folder
