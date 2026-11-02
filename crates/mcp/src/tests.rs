@@ -63,6 +63,20 @@ fn approval_tool_answers_in_the_permission_prompt_shape() {
     assert_eq!(bad["behavior"], "deny", "a malformed request is refused in the protocol's own words");
 }
 
+/// #253: an allowed action with a large input came back as an `over_limit` error with no decision.
+#[test]
+fn a_large_approval_keeps_its_decision() {
+    let input = json!({"file_path": "x", "note": "a".repeat(4096)});
+    let out = run_with(
+        ServerOptions { max_response_bytes: 300, ..Default::default() },
+        &[req(1, "tools/call", json!({"name": "core_action_approve", "arguments": {"tool_name": "Read", "input": input, "tool_use_id": "t"}}))],
+    );
+    let r = response(&out, 1)["result"].clone();
+    assert_eq!(r["isError"], false, "{r}");
+    let decision: Value = serde_json::from_str(r["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(decision, json!({"behavior": "allow", "updatedInput": input}));
+}
+
 fn tool_names(v: &Value) -> Vec<String> {
     v["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect()
 }
