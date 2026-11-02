@@ -729,8 +729,17 @@ pub fn effects(before: &[FileState], after: &[FileState], roots_exhausted: bool)
         match bmap.get(path) {
             None => out.push(Effect { path: (*path).to_string(), change: if roots_exhausted { "created" } else { "unknown" }, size: Some(a.size) }),
             Some(b) => {
-                let changed = b.sha256 != a.sha256 || b.size != a.size || b.kind != a.kind;
-                out.push(Effect { path: (*path).to_string(), change: if changed { "modified" } else { "unchanged" }, size: Some(a.size) });
+                let changed = b.size != a.size || b.kind != a.kind || b.symlink_target != a.symlink_target;
+                // A file left unhashed (over the hashing budget, or unreadable) may have been
+                // rewritten at the same size, so equal sizes don't make it unchanged (#229).
+                let change = if changed || (b.sha256.is_some() && a.sha256.is_some() && b.sha256 != a.sha256) {
+                    "modified"
+                } else if a.kind == "file" && (b.sha256.is_none() || a.sha256.is_none()) {
+                    "unknown"
+                } else {
+                    "unchanged"
+                };
+                out.push(Effect { path: (*path).to_string(), change, size: Some(a.size) });
             }
         }
     }
@@ -741,6 +750,26 @@ pub fn effects(before: &[FileState], after: &[FileState], roots_exhausted: bool)
     }
     out.sort_by(|x, y| x.path.cmp(&y.path));
     out
+}
+
+#[cfg(test)]
+mod effect_tests {
+    use super::*;
+
+    /// #229: a same-size rewrite of a file neither snapshot hashed isn't known to be unchanged.
+    #[test]
+    fn an_unhashed_file_of_the_same_size_is_unknown() {
+        let file = |sha: Option<&str>| FileState { path: "data.bin".into(), kind: "file", size: 10, sha256: sha.map(str::to_string), symlink_target: None };
+        let link = |to: &str| FileState { path: "l".into(), kind: "symlink", size: 1, sha256: None, symlink_target: Some(to.into()) };
+        let change = |b: FileState, a: FileState| effects(&[b], &[a], true).first().map(|e| e.change);
+        assert_eq!(change(file(None), file(None)), Some("unknown"));
+        assert_eq!(change(file(Some("aa")), file(None)), Some("unknown"));
+        assert_eq!(change(file(Some("aa")), file(Some("aa"))), Some("unchanged"));
+        assert_eq!(change(file(Some("aa")), file(Some("bb"))), Some("modified"));
+        assert_eq!(change(file(None), FileState { size: 11, ..file(None) }), Some("modified"));
+        assert_eq!(change(link("a"), link("a")), Some("unchanged"));
+        assert_eq!(change(link("a"), link("b")), Some("modified"), "a symlink pointed elsewhere at the same length");
+    }
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
