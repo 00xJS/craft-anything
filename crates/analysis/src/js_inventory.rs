@@ -74,9 +74,11 @@ impl Inventory {
         m
     }
 
-    /// `inv_` + sha256 over (path, sha256) pairs: equal content trees share an id.
+    /// `inv_` + sha256 over (path, sha256) pairs, sorted: equal content trees share an id whatever
+    /// order their archive lists them in (#281).
     pub fn content_id(&self) -> String {
-        let pairs: Vec<(&str, Option<&str>)> = self.entries.iter().map(|e| (e.path.as_str(), e.sha256.as_deref())).collect();
+        let mut pairs: Vec<(&str, Option<&str>)> = self.entries.iter().map(|e| (e.path.as_str(), e.sha256.as_deref())).collect();
+        pairs.sort_unstable();
         format!("inv_{}", sha256_hex(craft_anything_evidence::canonical_json(&json!(pairs)).as_bytes()))
     }
 }
@@ -479,6 +481,21 @@ mod tests {
         b.add_file("new.js", b"4", 0).unwrap();
         let d = compare_inventories(&a.finish(), &b.finish(), 100);
         assert_eq!(d["counts"], json!({"added": 1, "removed": 0, "changed": 1, "moved": 1, "unchanged": 1}));
+    }
+
+    /// #281: the same files listed in another order are the same content tree.
+    #[test]
+    fn member_order_does_not_change_the_content_id() {
+        let zip = |files: &[(&str, &[u8])]| {
+            let mut i = Inventorier::new("a.zip", "zip", InvLimits::default(), &|| false);
+            i.add_archive("", &fx::zip_stored(files), "zip", 0).unwrap();
+            i.finish()
+        };
+        let (x, y): (&[u8], &[u8]) = (b"one", b"two");
+        let (ab, ba) = (zip(&[("a.txt", x), ("b.txt", y)]), zip(&[("b.txt", y), ("a.txt", x)]));
+        assert_eq!(ab.content_id(), ba.content_id());
+        assert_eq!(compare_inventories(&ab, &ba, 100)["identical"], true);
+        assert_ne!(ab.content_id(), zip(&[("a.txt", y), ("b.txt", x)]).content_id(), "swapped contents differ");
     }
 
     /// #283: two identical old files both "moved" to one new file, and nothing was removed.
