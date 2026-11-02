@@ -909,12 +909,13 @@ Gaps found while using the app for real projects.
 Owner: maintainers · Status: in progress
 Keep a build that works at hand: pin it, and open it from the sidebar whatever the builder does
 to the project next. Pins are the engine's (tools), kept in the project's `pinned/` folder.
+- [x] Keep runtime assets in `obj` folders when pinning or copying a project; only exclude recognised compiler intermediates, and retain the selected direct-launch program in a pin (#274).
 - [x] Pin a build as a frozen copy (the default: the app's files and the program, without what
       a build makes again, in `pinned/<n>/`, with its size shown first) or as a live pin that runs
       the project's app as it is; open, stop, rename and remove pins; one copy runs per folder
       (pins and Play alike) unless another is asked for; a start that quits at once says so with
       its last output (`project_pin_create`, `project_pins_list`, `project_pin_open`,
-      `project_pin_stop`, `project_pin_rename`, `project_pin_delete`; `pin.json` version 1;
+      `project_pin_stop`, `project_pin_rename`, `project_pin_delete`; `pin.json` version 2 (version 1 still reads);
       `platform::Launched`)
 - [x] A light pin in place of the live one, which only opened what Play opens: the program, the
       code and anything a program may write to are copied, dependencies and media are hard-linked

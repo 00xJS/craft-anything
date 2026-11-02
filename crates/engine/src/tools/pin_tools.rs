@@ -187,6 +187,10 @@ pub(crate) fn start(ctx: &mut Ctx<'_>, app: &Path, log: &Path, another: bool, la
         return Err(ToolError::new(ErrorCode::NotFound, "There's nothing to start: no built program here.")
             .with_remediation("Finish a build first (rebuild), or open the folder to look."));
     };
+    start_program(ctx, app, log, another, label, (program, args))
+}
+
+fn start_program(ctx: &mut Ctx<'_>, app: &Path, log: &Path, another: bool, label: &str, (program, args): (PathBuf, Vec<String>)) -> Result<Value, ToolError> {
     if let Some(dir) = log.parent() {
         std::fs::create_dir_all(dir).map_err(|e| ToolError::io(dir.display(), e))?;
     }
@@ -264,7 +268,8 @@ fn project_pin_open(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let p: OpenParams = parse_params(params)?;
     let ws = open_project(&p.project)?;
     let pin = pins::get(&ws, p.pin)?;
-    let mut out = start(ctx, &pin.app_dir(&ws), &pin.log_path(&ws), p.another, &pin.name)?;
+    let launch = pin.launch(&ws, godot(ctx).as_deref())?;
+    let mut out = start_program(ctx, &pin.app_dir(&ws), &pin.log_path(&ws), p.another, &pin.name, launch)?;
     if let Some(o) = out.as_object_mut() {
         o.insert("pin".into(), json!(pin.id));
     }
@@ -305,6 +310,45 @@ mod tests {
     use super::*;
     use crate::workspace::TargetRef;
     use crate::{CallOptions, Caller, Consent, Engine};
+
+    #[cfg(unix)]
+    #[test]
+    fn opening_a_pin_keeps_the_program_selected_before_copying() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::{Duration, SystemTime};
+
+        let d = tempfile::tempdir().unwrap();
+        let ws = Workspace::create(d.path(), "Game", "a packaged game", TargetRef::None).unwrap();
+        let build = ws.app_dir().join("Build");
+        std::fs::create_dir_all(build.join("obj")).unwrap();
+        let game = build.join("game");
+        let helper = build.join("obj/helper");
+        for (path, output, seconds) in [(&game, "selected-game", 20), (&helper, "wrong-helper", 10)] {
+            std::fs::write(path, format!("#!/bin/sh\nprintf '%s\\n' '{output}'\n")).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let times = std::fs::FileTimes::new().set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds));
+            std::fs::File::options().write(true).open(path).unwrap().set_times(times).unwrap();
+        }
+        assert_eq!(crate::outputs::packaged_program(&build), Some(game));
+        let e = Engine::new(crate::testing::session());
+        let call = |id: &str, params: Value| {
+            e.call(id, params, CallOptions::new(Caller::Cli).with_consent(Consent::Granted)).map(|out| out.to_json()["result"].clone())
+        };
+        for mode in ["frozen", "light"] {
+            let made = call("project_pin_create", json!({"project": ws.root, "mode": mode})).unwrap();
+            let id = made["pin"]["id"].as_u64().unwrap() as u32;
+            let pin = pins::get(&ws, id).unwrap();
+            let copy = pin.app_dir(&ws);
+            let future = std::fs::FileTimes::new().set_modified(SystemTime::now() + Duration::from_secs(60));
+            std::fs::File::options().write(true).open(copy.join("Build/obj/helper")).unwrap().set_times(future).unwrap();
+            assert_eq!(crate::outputs::packaged_program(&copy.join("Build")), Some(copy.join("Build/obj/helper")));
+            let opened = call("project_pin_open", json!({"project": ws.root, "pin": id})).unwrap();
+            assert_eq!(opened["started"], copy.join("Build/game").display().to_string());
+            assert_eq!(pins::tail(&pin.log_path(&ws)), "selected-game");
+            std::fs::remove_file(copy.join("Build/game")).unwrap();
+            assert_eq!(call("project_pin_open", json!({"project": ws.root, "pin": id})).unwrap_err().code, ErrorCode::NotFound);
+        }
+    }
 
     #[test]
     fn pin_list_rename_and_remove_from_the_cli() {

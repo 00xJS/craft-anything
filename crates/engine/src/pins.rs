@@ -34,9 +34,15 @@ use std::time::Duration;
 pub const PINNED: &str = "pinned";
 pub const PIN_FILE: &str = "pin.json";
 /// The current `pin.json` format version.
-pub const PIN_VERSION: u32 = 1;
-/// Steps that bring an older `pin.json` forward (none yet: version 1 is the first).
-const PIN_STEPS: &[versioned::Step<Value>] = &[];
+pub const PIN_VERSION: u32 = 2;
+/// Version 2 remembers the program selected for an argument-free launch inside the copied app.
+const PIN_STEPS: &[versioned::Step<Value>] = &[pin_v1_to_v2];
+
+fn pin_v1_to_v2(doc: &mut Value) -> Result<(), String> {
+    let object = doc.as_object_mut().ok_or_else(|| "a pin must be an object".to_string())?;
+    object.insert("program".into(), Value::Null);
+    Ok(())
+}
 const _: () = assert!(PIN_STEPS.len() as u32 + 1 == PIN_VERSION, "one step per pin.json version after the first");
 /// A start that ends within this long is reported as having quit straight away.
 pub const QUICK_EXIT: Duration = Duration::from_secs(2);
@@ -100,6 +106,10 @@ pub struct Pin {
     /// What a light pin shares with the project.
     #[serde(default)]
     pub shared_bytes: u64,
+    /// The selected program relative to the copied app, for a launch without arguments.
+    /// Older pins and launches through an external runtime keep the existing discovery path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<PathBuf>,
 }
 
 impl Pin {
@@ -117,6 +127,33 @@ impl Pin {
 
     pub fn log_path(&self, ws: &Workspace) -> PathBuf {
         self.dir(ws).join("last-run.log")
+    }
+
+    /// Resolve the recorded program within the copy; old pins retain their discovery behavior.
+    pub(crate) fn launch(&self, ws: &Workspace, godot: Option<&Path>) -> Result<(PathBuf, Vec<String>), ToolError> {
+        let app = self.app_dir(ws);
+        if self.mode.keeps_copy()
+            && let Some(relative) = &self.program
+        {
+            if relative.as_os_str().is_empty() || !relative.components().all(|part| matches!(part, std::path::Component::Normal(_))) {
+                return Err(ToolError::invalid("The pin's recorded program must be a relative path inside its app."));
+            }
+            let program = app.join(relative);
+            if !program.is_file() || !crate::outputs::is_program(&program) {
+                return Err(ToolError::new(ErrorCode::NotFound, "The program recorded by this pin is missing or cannot be started.")
+                    .with_remediation("Restore the pin's program or pin a working build again."));
+            }
+            let resolved = program.canonicalize().map_err(|e| ToolError::io(program.display(), e))?;
+            let root = app.canonicalize().map_err(|e| ToolError::io(app.display(), e))?;
+            if !resolved.starts_with(root) {
+                return Err(ToolError::invalid("The pin's recorded program points outside its app."));
+            }
+            return Ok((program, Vec::new()));
+        }
+        crate::outputs::launch(&app, godot).ok_or_else(|| {
+            ToolError::new(ErrorCode::NotFound, "There's nothing to start: no built program in this pin.")
+                .with_remediation("Pin a working build or open the folder to look.")
+        })
     }
 }
 
@@ -348,7 +385,8 @@ pub fn create(ws: &Workspace, mode: PinMode, name: Option<&str>, godot: Option<&
         return Err(ToolError::invalid("Live pins aren't made any more: one only opened the latest build, as Play does.")
             .with_remediation("Pin it as frozen or light."));
     }
-    let (program, _) = start_of(&ws.app_dir(), godot)?;
+    let (program, args) = start_of(&ws.app_dir(), godot)?;
+    let recorded_program = if args.is_empty() { program.strip_prefix(ws.app_dir()).ok().map(Path::to_path_buf) } else { None };
     let parent = ws.root.join(PINNED);
     std::fs::create_dir_all(&parent).map_err(|e| ToolError::io(parent.display(), e))?;
     let mut id = list(ws).iter().map(|p| p.id).max().unwrap_or(0).saturating_add(1);
@@ -368,12 +406,10 @@ pub fn create(ws: &Workspace, mode: PinMode, name: Option<&str>, godot: Option<&
         (None, Some(r)) => format!("{project} · round {r}"),
         (None, None) => format!("{project} · pin {id}"),
     };
-    let mut pin = Pin { version: PIN_VERSION, id, name, mode, created_ms: now_ms(), round, bytes: 0, shared_bytes: 0 };
+    let mut pin = Pin { version: PIN_VERSION, id, name, mode, created_ms: now_ms(), round, bytes: 0, shared_bytes: 0, program: recorded_program };
     let made = (|| {
         (pin.bytes, pin.shared_bytes) = copy(ws, &program, &pin.app_dir(ws), mode, progress)?;
-        if crate::outputs::launch(&pin.app_dir(ws), godot).is_none() {
-            return Err(ToolError::internal("The copy was made, but there's nothing to start in it."));
-        }
+        pin.launch(ws, godot)?;
         save(ws, &pin)
     })();
     if let Err(e) = made {
@@ -553,6 +589,18 @@ mod tests {
     fn mark_program(_: &Path) {}
 
     #[test]
+    fn recorded_program_paths_cannot_escape_the_pin() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = built(d.path());
+        let mut pin = create(&ws, PinMode::Frozen, None, None, &mut |_, _| true).unwrap();
+        assert_eq!(pin.program, Some(PathBuf::from("target/release").join(exe("snake"))));
+        for relative in [PathBuf::new(), PathBuf::from("../other"), d.path().join("outside")] {
+            pin.program = Some(relative);
+            assert_eq!(pin.launch(&ws, None).unwrap_err().code, ErrorCode::BadInput);
+        }
+    }
+
+    #[test]
     fn a_frozen_pin_copies_the_app_and_its_program_but_not_what_a_build_makes() {
         let d = tempfile::tempdir().unwrap();
         let ws = built(d.path());
@@ -578,6 +626,46 @@ mod tests {
         assert!(!dup.root.join(PINNED).exists() && !dup.app_dir().join(PINNED).exists());
         ws.clone().delete().unwrap();
         assert!(!ws.root.join(PINNED).exists());
+    }
+
+    #[test]
+    fn pins_keep_obj_models_and_leave_out_managed_compiler_intermediates() {
+        const MODEL: &str = "o triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+        for mode in [PinMode::Frozen, PinMode::Light] {
+            let d = tempfile::tempdir().unwrap();
+            let ws = built(d.path());
+            let app = ws.app_dir();
+            for folder in ["assets/obj", "assets/models"] {
+                std::fs::create_dir_all(app.join(folder)).unwrap();
+                std::fs::write(app.join(folder).join("hero.obj"), MODEL).unwrap();
+            }
+            for extension in ["csproj", "fsproj", "vbproj"] {
+                let project = app.join(extension);
+                std::fs::create_dir_all(project.join("obj")).unwrap();
+                std::fs::write(project.join(format!("Game.{extension}")), "<Project />").unwrap();
+                std::fs::write(project.join("obj/intermediate.bin"), [7; 256]).unwrap();
+            }
+            let size = estimate(&ws, None).unwrap();
+            let pin = create(&ws, mode, None, None, &mut |_, _| true).unwrap();
+            let copy = pin.app_dir(&ws);
+            for folder in ["assets/obj", "assets/models"] {
+                assert!(copy.join(folder).join("hero.obj").is_file(), "{mode:?}: {folder} keeps its runtime model");
+                assert_eq!(std::fs::read_to_string(copy.join(folder).join("hero.obj")).unwrap(), MODEL, "{mode:?}: {folder}");
+            }
+            for extension in ["csproj", "fsproj", "vbproj"] {
+                assert!(copy.join(extension).join(format!("Game.{extension}")).is_file(), "the project source stays");
+                assert!(!copy.join(extension).join("obj").exists(), "compiler intermediates stay behind");
+            }
+            assert!(!copy.join("target/release/deps").exists());
+            assert_eq!(pin.bytes + pin.shared_bytes, size.bytes, "the estimate includes both models");
+            if mode == PinMode::Light {
+                assert_eq!(pin.shared_bytes, (2 * MODEL.len()) as u64, "both runtime models can be shared");
+            } else {
+                assert_eq!(pin.shared_bytes, 0);
+            }
+            std::fs::remove_file(app.join("assets/obj/hero.obj")).unwrap();
+            assert_eq!(std::fs::read_to_string(copy.join("assets/obj/hero.obj")).unwrap(), MODEL, "the pin survives removal from the project");
+        }
     }
 
     #[test]
@@ -739,6 +827,10 @@ mod tests {
     fn an_older_or_newer_pin_file_is_read() {
         let old = read_pin(br#"{"id":2,"name":"A","mode":"live","created_ms":5}"#).unwrap();
         assert_eq!((old.version, old.mode, old.bytes), (PIN_VERSION, PinMode::Live, 0));
+        assert_eq!(old.program, None);
+        let frozen = read_pin(br#"{"version":1,"id":3,"name":"Old copy","mode":"frozen","created_ms":5,"program":"formerly-unknown"}"#).unwrap();
+        assert_eq!(frozen.version, PIN_VERSION);
+        assert_eq!(frozen.program, None, "the migration cannot invent the old pin's selected program");
         let newer = read_pin(br#"{"version":9,"id":2,"name":"A","mode":"frozen","created_ms":5,"colour":"red"}"#).unwrap();
         assert_eq!(newer.version, 9, "a newer pin keeps its version");
         assert!(read_pin(b"[]").is_err());

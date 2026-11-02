@@ -29,12 +29,28 @@ use std::path::{Path, PathBuf};
 pub const MANIFEST: &str = "craft.json";
 
 /// Folders a copy of a project leaves out: what a build makes again, which can be gigabytes.
-const REBUILT: &[&str] = &["node_modules", "target", ".godot", "Library", "Temp", "obj", ".venv", "__pycache__", ".next", ".turbo"];
+const REBUILT: &[&str] = &["node_modules", "target", ".godot", "Library", "Temp", ".venv", "__pycache__", ".next", ".turbo"];
+/// An `obj` directory is ambiguous: these neighbouring project files identify managed build output.
+const MANAGED_PROJECTS: &[&str] = &["csproj", "fsproj", "vbproj"];
 /// How deep a copy of a project's folders goes.
 const COPY_DEPTH: usize = 64;
 
 pub(crate) fn rebuilt(p: &Path) -> bool {
-    p.file_name().and_then(|n| n.to_str()).is_some_and(|n| REBUILT.contains(&n)) && p.is_dir()
+    let Some(name) = p.file_name().and_then(|n| n.to_str()) else { return false };
+    if name != "obj" {
+        return REBUILT.contains(&name) && p.is_dir();
+    }
+    if !p.is_dir() {
+        return false;
+    }
+    // Runtime models commonly live in assets/obj. Without evidence that a folder is compiler
+    // output, keep it; an unreadable or unusually large parent must not cause data to be omitted.
+    p.parent().and_then(|parent| std::fs::read_dir(parent).ok()).is_some_and(|entries| {
+        entries.take(4096).flatten().any(|entry| {
+            entry.path().extension().and_then(|e| e.to_str()).is_some_and(|ext| MANAGED_PROJECTS.iter().any(|project| ext.eq_ignore_ascii_case(project)))
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+        })
+    })
 }
 
 /// Copy a folder's files and folders (links are skipped), leaving out what `skip` says.
@@ -1117,6 +1133,23 @@ mod tests {
         assert_eq!(a2.manifest.request, "Clone it");
         std::fs::create_dir(dir.path().join("junk")).unwrap();
         assert_eq!(Workspace::list(dir.path()).len(), 2, "folders without a manifest are skipped");
+    }
+
+    #[test]
+    fn project_copies_keep_runtime_obj_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::create(dir.path(), "Models", "a model viewer", TargetRef::None).unwrap();
+        let app = ws.app_dir();
+        std::fs::create_dir_all(app.join("assets/obj")).unwrap();
+        std::fs::write(app.join("assets/obj/hero.obj"), "v 0 0 0\n").unwrap();
+        std::fs::create_dir_all(app.join("managed/obj")).unwrap();
+        std::fs::write(app.join("managed/Viewer.csproj"), "<Project />").unwrap();
+        std::fs::write(app.join("managed/obj/intermediate.bin"), [7; 256]).unwrap();
+        let copy = ws.duplicate("Models copy").unwrap().app_dir();
+        assert!(copy.join("assets/obj/hero.obj").is_file(), "a project copy keeps its runtime model");
+        assert_eq!(std::fs::read_to_string(copy.join("assets/obj/hero.obj")).unwrap(), "v 0 0 0\n");
+        assert!(copy.join("managed/Viewer.csproj").is_file());
+        assert!(!copy.join("managed/obj").exists());
     }
 
     #[test]
