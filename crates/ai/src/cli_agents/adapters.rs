@@ -75,6 +75,11 @@ pub trait AgentAdapter: Send + Sync {
     fn sign_in_fix(&self) -> Option<String> {
         None
     }
+    /// Whether what a build needs from this computer is there, for an agent that's handed our tool
+    /// server, checked before a build starts. An agent that isn't handed it has nothing to check.
+    fn check_tool_server(&self) -> Result<(), ToolError> {
+        Ok(())
+    }
 }
 
 /// The adapters a run can use.
@@ -179,6 +184,10 @@ impl AgentAdapter for ClaudeCode {
 
     fn answers_questions(&self) -> bool {
         true
+    }
+
+    fn check_tool_server(&self) -> Result<(), ToolError> {
+        cli_can_start(craft_anything_platform::self_cli_path().as_deref())
     }
 
     fn args(&self, cx: &ArgsCx) -> Vec<String> {
@@ -297,6 +306,10 @@ pub struct Codex;
 impl AgentAdapter for Codex {
     fn ids(&self) -> &'static [&'static str] {
         &["codex"]
+    }
+
+    fn check_tool_server(&self) -> Result<(), ToolError> {
+        cli_can_start(craft_anything_platform::self_cli_path().as_deref())
     }
 
     fn args(&self, cx: &ArgsCx) -> Vec<String> {

@@ -899,6 +899,47 @@ mod picking_up_a_build {
         ws
     }
 
+    /// #91: with the helper missing, the build stops before studying or asking the agent, and
+    /// says why.
+    #[test]
+    fn a_missing_helper_stops_the_build_before_any_work() {
+        struct NoHelper;
+        impl crate::cli_agents::AgentAdapter for NoHelper {
+            fn ids(&self) -> &'static [&'static str] {
+                &["stand-in"]
+            }
+            fn args(&self, cx: &crate::cli_agents::ArgsCx) -> Vec<String> {
+                vec![cx.prompt.to_string()]
+            }
+            fn streams_json(&self) -> bool {
+                false
+            }
+            fn check_tool_server(&self) -> Result<(), ToolError> {
+                crate::cli_agents::cli_can_start(None)
+            }
+        }
+        let b = bench();
+        let ws = Workspace::create(&b.projects, "x", "A thing", TargetRef::None).unwrap();
+        let mut adapters = crate::cli_agents::AgentAdapters::built_in();
+        adapters.register(Arc::new(NoHelper));
+        let run =
+            RebuildRun::start(&b.hub, Workspace::open(&ws.root).unwrap(), RunOptions { adapters, backend: Some("Stand-in".into()), ..RunOptions::default() })
+                .unwrap();
+        let began = Instant::now();
+        let finished = loop {
+            assert!(began.elapsed() < Duration::from_secs(30), "the run never finished");
+            match run.rx.recv_timeout(Duration::from_secs(30)) {
+                Ok(RunEvent::Finished { ok, message, .. }) => break (ok, message),
+                Ok(_) => {}
+                Err(e) => panic!("the run went away: {e}"),
+            }
+        };
+        assert!(!finished.0, "{finished:?}");
+        assert!(finished.1.contains("craft-anything-cli"), "{finished:?}");
+        assert_eq!(prompts_given(&b), 0, "the agent was asked anyway");
+        assert!(!studied(&feed::load(&Workspace::open(&ws.root).unwrap())), "it studied first");
+    }
+
     #[test]
     fn try_again_after_a_check_that_could_not_run_only_checks() {
         let b = bench();

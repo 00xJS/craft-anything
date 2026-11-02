@@ -10,7 +10,11 @@ integration does, why it is shaped this way, and what remains to confirm.
   --output-format stream-json --verbose`, with `--resume <session>` to continue a project.
 - The working folder is the project folder. Craft Anything's own tools are offered through
   `--mcp-config` (our MCP server, `craft-anything-cli mcp --project … --inbox …`) with
-  `--strict-mcp-config`.
+  `--strict-mcp-config`. A build checks that `craft-anything-cli` starts before doing anything
+  else, and says so plainly if not. Without the server Claude Code stops at its first approval
+  with `MCP tool mcp__craft-anything__core_action_approve … not found. Available MCP tools: none`,
+  and its MCP log blames an executable called `stdio`: that's Claude Code's wording for a command
+  that wouldn't start, whatever the command was, not something in our config.
 - Our MCP server runs in the build's mode (`--deep` or `--clean-room`); in Deep mode it lists
   every tool (`--all-tools`).
 - Permissions: read-only tools (`Read`, `Glob`, `Grep`) and our MCP tools are pre-allowed in Deep
