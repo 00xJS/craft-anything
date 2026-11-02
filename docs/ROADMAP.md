@@ -718,10 +718,10 @@ What the person asks for comes first, in every kind; the stack table is only the
 - [ ] Make: a game whose request names a technology the stack table doesn't know (Phaser, Bevy…)
       still needs the default engine installed to start, though the builder is told to use what
       was named; ask the person, or let such a game start without an engine
-- [ ] Build check: a page asked for in plain HTML and CSS has nothing to build, but the check
-      only knows Cargo.toml, package.json and engine projects ("No project to build found in
-      app/"), so a builder added a placeholder package.json (`"build": "node -e \"0\""`) to pass;
-      count a static site (an `index.html` in app/) as built
+- [x] Build check: a page asked for in plain HTML and CSS has nothing to build, and the check
+      failed it for having no manifest, so a builder added a placeholder package.json to pass. A
+      static site, as the preview finds it (`site_dir`), now passes as it is unless its page is
+      blank or a game engine's project sits beside it, and says nothing was built (#496)
 - [x] CLI: after the tool name, `--project` is the tool's own option when it has one
       (`rebuild-check --project <folder>`, `project-show --project <folder>`), as `--format` is;
       otherwise, and always before the tool name, it's the global investigation folder
@@ -898,6 +898,10 @@ Gaps found while using the app for real projects.
 - [ ] Show a command's output while it runs: Claude Code reports a tool's result only when it
       ends, so a long `cargo build` is one quiet line until then. Watching the agent's child
       processes from outside could say what's running and for how long
+- [ ] The keep-awake helper once outlived a CLI `rebuild` on Windows by more than 9 minutes and held
+      the caller's output pipe; not reproduced in 8 more runs, where it ended with the CLI. Dropping
+      its guard only raises a flag (`RunningProcess::drop` waits only for `hands_off` programs), so
+      ending on time rests on the Job Object closing, and its time limit is 7 days
 - [ ] Sometimes starting the app shows nothing: find why from `desktop.log` (a GOG Galaxy Vulkan
       overlay layer loads into the app; try DX12 first on Windows if that's it)
 - [x] Try again picks up where a run stopped instead of starting over: a project whose builder
