@@ -802,7 +802,8 @@ fn web_site_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
         let _ = set_viewport(&mut client, *w, 900, &dl);
     }
     cleanup(&mut client, &dl);
-    let (mut blueprint, shots, html_bytes) = r?;
+    let (mut blueprint, shots, html) = r?;
+    let html_bytes = html.0;
     if visitor {
         visitor_view(&mut blueprint);
     } else if let (Value::Object(b), Ok(h)) = (&mut blueprint, site.health.lock()) {
@@ -813,7 +814,7 @@ fn web_site_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let shown = shown_url(&url);
     let n = |k: &str| blueprint.get(k).and_then(Value::as_array).map_or(0, Vec::len);
     let images = blueprint.pointer("/assets/images").and_then(Value::as_array).map_or(0, Vec::len);
-    let readme = readme(&blueprint, &shots, html_bytes, visitor);
+    let readme = readme(&blueprint, &shots, html, visitor);
     write_new_file(&out, &["README.md".into()], readme.as_bytes()).map_err(ToolError::invalid)?;
     let capture_json = serde_json::to_vec_pretty(&blueprint).map_err(|e| ToolError::internal(e.to_string()))?;
     write_new_file(&out, &["capture.json".into()], &capture_json).map_err(ToolError::invalid)?;
@@ -849,6 +850,7 @@ fn web_site_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
         } else {
             Limitation::new("cross_origin_css", "CSS custom properties and breakpoints from cross-origin stylesheets can't be read.")
         })
+        .limitations(html_cut(html))
         .coverage(Coverage::complete(p.widths.len() as u64))
         .location(Location::new("url", shown))
         .location(Location::new("path", out.display().to_string()))
@@ -856,7 +858,18 @@ fn web_site_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     Ok(ToolOutput::evidence(ev))
 }
 
-type Captured = (Value, Vec<Value>, usize);
+/// The blueprint, the screenshots, and the HTML's bytes as (saved, the page's).
+type Captured = (Value, Vec<Value>, (usize, usize));
+
+/// When page.html holds only the first part of the page's HTML (#336).
+fn html_cut((kept, total): (usize, usize)) -> Option<Limitation> {
+    (kept < total).then(|| {
+        Limitation::new(
+            "html_cut",
+            format!("page.html holds the first {kept} of the page's {total} bytes of HTML: it was cut at the {} MiB limit.", MAX_HTML_BYTES >> 20),
+        )
+    })
+}
 
 fn capture_into(ctx: &Ctx<'_>, client: &mut CdpClient, out: &Path, p: &CaptureParams, dl: &Deadline) -> Result<Captured, ToolError> {
     client.call("Page.enable", json!({}), None, dl)?;
@@ -916,12 +929,12 @@ fn capture_into(ctx: &Ctx<'_>, client: &mut CdpClient, out: &Path, p: &CapturePa
     if let Value::Object(b) = &mut blueprint {
         b.insert("layouts".into(), Value::Array(layouts));
     }
-    let mut html_bytes = 0;
+    let mut html_bytes = (0, 0);
     if p.include_html {
         let html = eval(client, "document.documentElement.outerHTML", dl)?;
         let html = html.as_str().unwrap_or_default();
         let kept = truncate_utf8(html, MAX_HTML_BYTES);
-        html_bytes = kept.len();
+        html_bytes = (kept.len(), html.len());
         write_new_file(out, &["page.html".into()], kept.as_bytes()).map_err(ToolError::invalid)?;
     }
     Ok((blueprint, shots, html_bytes))
@@ -984,7 +997,7 @@ fn visitor_view(blueprint: &mut Value) {
 }
 
 /// A short human/agent-readable summary of the capture folder.
-fn readme(b: &Value, shots: &[Value], html_bytes: usize, visitor: bool) -> String {
+fn readme(b: &Value, shots: &[Value], (html_bytes, html_total): (usize, usize), visitor: bool) -> String {
     let s = |p: &str| b.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
     let top = |p: &str, n: usize| {
         b.pointer(p)
@@ -1018,7 +1031,8 @@ fn readme(b: &Value, shots: &[Value], html_bytes: usize, visitor: bool) -> Strin
         }
     }
     if html_bytes > 0 {
-        md.push_str(&format!("- `page.html` — rendered HTML ({html_bytes} bytes)\n"));
+        let cut = if html_bytes < html_total { format!(": the first part of {html_total}, cut at the size limit") } else { String::new() };
+        md.push_str(&format!("- `page.html` — rendered HTML ({html_bytes} bytes{cut})\n"));
     }
     if visitor {
         md.push_str("- `capture.json` — design tokens, the layout at each width (`layouts`), layout outline (positions in CSS px), headings, links, forms, picture sizes and visible text\n\n");
@@ -1197,10 +1211,22 @@ mod tests {
         let b = json!({"url": "https://ex.com/a?secret=1", "title": "Ex", "page": {"w": 1440, "h": 3000},
             "design": {"fonts": [{"value": "Inter", "count": 9}], "font_sizes": [], "text_colors": [], "backgrounds": [], "radii": []},
             "headings": [{"level": 1, "text": "Hello"}, {"level": 2, "text": "World"}]});
-        let md = readme(&b, &[json!({"file": "screenshot-1440.png", "width": 1440, "height": 3000, "cut": false})], 10, false);
+        let md = readme(&b, &[json!({"file": "screenshot-1440.png", "width": 1440, "height": 3000, "cut": false})], (10, 10), false);
         assert!(md.contains("screenshot-1440.png") && md.contains("`Inter`") && md.contains("  - World") && md.contains("page.html"));
         assert!(!md.contains("secret=1"), "query strings are not echoed");
         assert!(md.contains("no width breakpoints"), "{md}");
+        assert!(!md.contains("cut at the size limit") && html_cut((10, 10)).is_none());
+    }
+
+    /// #336: HTML cut at the size limit is said in the evidence and the README.
+    #[test]
+    fn html_cut_at_the_limit_is_said() {
+        let md = readme(&json!({}), &[], (MAX_HTML_BYTES, MAX_HTML_BYTES + 1174), false);
+        assert!(md.contains(&format!("rendered HTML ({MAX_HTML_BYTES} bytes: the first part of {}, cut at the size limit)", MAX_HTML_BYTES + 1174)), "{md}");
+        let l = html_cut((MAX_HTML_BYTES, MAX_HTML_BYTES + 1174)).unwrap();
+        assert_eq!(l.code, "html_cut");
+        assert!(l.message.contains("4 MiB"), "{}", l.message);
+        assert!(html_cut((0, 0)).is_none());
     }
 
     #[test]
@@ -1238,10 +1264,10 @@ mod tests {
         assert_eq!(failed[1]["url"], "https://ex.com/font.woff2");
         assert!(!h.to_string().contains("token") && !h.to_string().contains("sig="), "no query strings");
         assert_eq!(page_health(&[]), json!({"errors": [], "failed_requests": []}));
-        let md = readme(&json!({"health": h, "a11y": {"lang": "en", "unnamed_controls": 2, "images_without_alt": 1}}), &[], 0, false);
+        let md = readme(&json!({"health": h, "a11y": {"lang": "en", "unnamed_controls": 2, "images_without_alt": 1}}), &[], (0, 0), false);
         assert!(md.contains("- script error: TypeError: x is undefined") && md.contains("- failed request (404): https://ex.com/logo.png"), "{md}");
         assert!(md.contains("Language: en. Controls without a name: 2. Pictures without alt text: 1."), "{md}");
-        assert!(readme(&json!({"health": page_health(&[])}), &[], 0, false).contains("loaded without script errors"));
+        assert!(readme(&json!({"health": page_health(&[])}), &[], (0, 0), false).contains("loaded without script errors"));
     }
 
     #[test]
@@ -1254,12 +1280,12 @@ mod tests {
              "blocks": [{"tag": "section", "heading": "Plans", "pad": [96, 32, 96, 32], "gap": 24, "per_row": 3, "column": {"max_w": 1280, "x": 80}, "background": "#12181f"}]},
             {"width": 390, "page_w": 512, "type": {"h1": 40}, "blocks": [{"tag": "header", "pad": [16, 16, 16, 16], "per_row": 1}]}
         ]});
-        let md = readme(&b, &[], 0, false);
+        let md = readme(&b, &[], (0, 0), false);
         assert!(md.contains("switches layout at: min-width 768px") && md.contains("`96px`") && md.contains("`1280px`") && md.contains("Font files: 1"), "{md}");
         assert!(md.contains("### 1440 px (no sideways scroll)") && md.contains("Headings 64/40/24 px, text 16 px"), "{md}");
         assert!(md.contains("- section \"Plans\": padding 96 32 96 32, gap 24, 3 per row, column 1280 px at x 80, background #12181f"), "{md}");
         assert!(md.contains("### 390 px (page 512 px wide, so it scrolls sideways)") && md.contains("- header: padding 16 16 16 16\n"), "{md}");
-        let cross = readme(&json!({"unreadable_stylesheets": 2}), &[], 0, false);
+        let cross = readme(&json!({"unreadable_stylesheets": 2}), &[], (0, 0), false);
         assert!(cross.contains("2 stylesheet(s) from other sites"), "{cross}");
     }
 
@@ -1296,7 +1322,7 @@ mod tests {
             assert!(b.pointer(gone).is_none(), "{gone} isn't something a visitor sees");
         }
         assert_eq!((b["assets"]["images"][0]["w"].as_u64(), b["text"].as_str()), (Some(40), Some("Plans Pricing")));
-        let md = readme(&b, &[], 0, true);
+        let md = readme(&b, &[], (0, 0), true);
         assert!(
             md.contains("Clean room: only what a visitor sees") && !md.contains("Breakpoints") && !md.contains("Page health") && !md.contains("page.html"),
             "{md}"
