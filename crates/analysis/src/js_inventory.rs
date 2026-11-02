@@ -406,14 +406,21 @@ pub fn compare_inventories(l: &Inventory, r: &Inventory, max_rows: usize) -> Val
     let mut changed = Vec::new();
     let mut moved = Vec::new();
     let mut unchanged = 0usize;
-    let r_by_hash: BTreeMap<&str, &str> = rm.values().filter_map(|e| Some((e.sha256.as_deref()?, e.path.as_str()))).collect();
+    // Where a file may have moved: the right's new paths by content, each taken once, so two
+    // copies don't both move to one file (#283).
+    let mut move_to: BTreeMap<&str, std::collections::VecDeque<&str>> = BTreeMap::new();
+    for x in rm.values().filter(|x| !lm.contains_key(x.path.as_str())) {
+        if let Some(h) = x.sha256.as_deref() {
+            move_to.entry(h).or_default().push_back(x.path.as_str());
+        }
+    }
     for (p, e) in &lm {
         match rm.get(p) {
             Some(x) if x.sha256 == e.sha256 => unchanged += 1,
             Some(x) => changed.push(json!({"path": p, "kind": e.kind, "size": [e.size, x.size], "sha256": [e.sha256, x.sha256]})),
-            None => match e.sha256.as_deref().and_then(|h| r_by_hash.get(h)) {
-                Some(to) if !lm.contains_key(to) => moved.push(json!({"from": p, "to": to})),
-                _ => removed.push(json!({"path": p, "kind": e.kind, "size": e.size})),
+            None => match e.sha256.as_deref().and_then(|h| move_to.get_mut(h)).and_then(std::collections::VecDeque::pop_front) {
+                Some(to) => moved.push(json!({"from": p, "to": to})),
+                None => removed.push(json!({"path": p, "kind": e.kind, "size": e.size})),
             },
         }
     }
@@ -472,6 +479,24 @@ mod tests {
         b.add_file("new.js", b"4", 0).unwrap();
         let d = compare_inventories(&a.finish(), &b.finish(), 100);
         assert_eq!(d["counts"], json!({"added": 1, "removed": 0, "changed": 1, "moved": 1, "unchanged": 1}));
+    }
+
+    /// #283: two identical old files both "moved" to one new file, and nothing was removed.
+    #[test]
+    fn each_new_file_is_one_move() {
+        let inv = |files: &[&str]| {
+            let mut i = Inventorier::new("x", "directory", InvLimits::default(), &|| false);
+            for f in files {
+                i.add_file(f, b"SAME", 0).unwrap();
+            }
+            i.finish()
+        };
+        let d = compare_inventories(&inv(&["a/license.txt", "b/license.txt"]), &inv(&["c/license.txt"]), 100);
+        assert_eq!(d["counts"], json!({"added": 0, "removed": 1, "changed": 0, "moved": 1, "unchanged": 0}), "{d}");
+        let d = compare_inventories(&inv(&["a/license.txt", "b/license.txt"]), &inv(&["c/license.txt", "d/license.txt"]), 100);
+        assert_eq!(d["counts"], json!({"added": 0, "removed": 0, "changed": 0, "moved": 2, "unchanged": 0}), "{d}");
+        let to: std::collections::BTreeSet<&str> = d["moved"].as_array().unwrap().iter().filter_map(|m| m["to"].as_str()).collect();
+        assert_eq!(to.len(), 2, "two different destinations: {d}");
     }
 
     #[test]
