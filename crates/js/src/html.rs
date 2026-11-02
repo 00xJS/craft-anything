@@ -114,10 +114,10 @@ pub fn scan_html(src: &str) -> HtmlFacts {
                 let module = get(&attrs, "type").is_some_and(|t| t.eq_ignore_ascii_case("module"));
                 let line = lines.line(u32::try_from(at).unwrap_or(u32::MAX));
                 let src_attr = get(&attrs, "src").map(String::from);
-                let json_like = get(&attrs, "type").is_some_and(|t| t.contains("json") || t.contains("template"));
-                let inline = (src_attr.is_none() && close > end && !json_like && src.get(end..close).is_some_and(|t| !t.trim().is_empty()))
+                let js = javascript_type(get(&attrs, "type"));
+                let inline = (src_attr.is_none() && close > end && js && src.get(end..close).is_some_and(|t| !t.trim().is_empty()))
                     .then(|| (u32::try_from(end).unwrap_or(u32::MAX), u32::try_from(close).unwrap_or(u32::MAX)));
-                if src_attr.is_some() || inline.is_some() {
+                if js && (src_attr.is_some() || inline.is_some()) {
                     out.scripts.push(HtmlScript { src: src_attr, module, inline, line });
                 }
                 pos = close.max(end).max(at + 1);
@@ -155,6 +155,29 @@ pub fn scan_html(src: &str) -> HtmlFacts {
     out
 }
 
+/// Whether a `<script type>` is code the page runs: no type, a JavaScript MIME type or `module`
+/// (and JSX for in-browser Babel, which is code too). Import maps, speculation rules and data
+/// blocks such as JSON or HTML templates aren't JavaScript (#285).
+fn javascript_type(t: Option<&str>) -> bool {
+    let Some(t) = t else { return true };
+    let essence = t.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
+    essence.is_empty()
+        || essence == "module"
+        || matches!(essence.as_str(), "text/babel" | "text/jsx" | "text/jscript" | "text/livescript")
+        || [
+            "text/javascript",
+            "application/javascript",
+            "application/ecmascript",
+            "text/ecmascript",
+            "application/x-javascript",
+            "application/x-ecmascript",
+            "text/x-javascript",
+            "text/x-ecmascript",
+        ]
+        .iter()
+        .any(|m| essence == *m || essence.strip_prefix(m).is_some_and(|v| v.starts_with('1')))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,6 +197,18 @@ mod tests {
         assert_eq!(f.preloads, vec!["/assets/vendor-abc.js"]);
         assert_eq!(f.csp.as_deref(), Some("default-src 'self'"));
         assert_eq!(f.title.as_deref(), Some("Notes"));
+    }
+
+    /// #285: import maps, speculation rules and HTML templates were read as JavaScript.
+    #[test]
+    fn only_javascript_types_are_scripts() {
+        for t in ["importmap", "speculationrules", "text/html", "application/json", "text/x-template"] {
+            let f = scan_html(&format!(r#"<script type="{t}">{{"imports": {{}}}}</script><script type="{t}" src="data.json"></script>"#));
+            assert!(f.scripts.is_empty(), "{t}: {:?}", f.scripts);
+        }
+        for t in ["", "module", "text/javascript", "Application/JavaScript", "text/javascript; charset=utf-8", "text/babel"] {
+            assert_eq!(scan_html(&format!(r#"<script type="{t}">fetch("/real-api");</script>"#)).scripts.len(), 1, "{t}");
+        }
     }
 
     #[test]
