@@ -17,13 +17,14 @@ pub use adapters::{AgentAdapter, AgentAdapters, ArgsCx};
 use crate::config::BackendOptions;
 use crate::model::Stop;
 use crate::{AgentEvent, BackendConfig, Conversation};
-use craft_anything_evidence::ToolError;
+use craft_anything_engine::CancelToken;
+use craft_anything_evidence::{ErrorCode, ToolError};
 use craft_anything_platform::process::Process;
 use craft_anything_platform::sync::Mutex;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, PoisonError};
@@ -89,6 +90,39 @@ impl McpCommand {
         }
         McpCommand { command, args, notes }
     }
+}
+
+/// Whether the `craft-anything-cli` a builder's tool server runs from (None: there isn't one) can
+/// start. Without it Claude Code stops at its first approval with a stack trace (#91). A check
+/// that ran out of time says nothing about the program, so the build goes ahead. Stopping the
+/// build ends the check, as `ErrorCode::Cancelled`.
+pub fn cli_can_start(cli: Option<&Path>, stop: &CancelToken) -> Result<(), ToolError> {
+    const REINSTALL: &str = "Install the latest Craft Anything again: it keeps this helper next to the app. If you built the app yourself, run `cargo build -p craft-anything-cli` too.";
+    let Some(cli) = cli else {
+        return Err(ToolError::new(ErrorCode::EngineMissing, "Craft Anything's helper program (craft-anything-cli) is missing, so the builder can't start.")
+            .with_remediation(REINSTALL));
+    };
+    let failed = |why: String| {
+        ToolError::new(ErrorCode::EngineMissing, format!("Craft Anything's helper program at {} wouldn't start: {why}", cli.display()))
+            .with_remediation(REINSTALL)
+    };
+    let stop = stop.clone();
+    match Process::new(cli.as_os_str()).arg("--version").timeout(Duration::from_secs(30)).stdout_cap(64 * 1024).cancel_when(move || stop.is_cancelled()).run() {
+        Ok(out) if out.success => Ok(()),
+        Ok(out) => Err(failed(out.code.map_or_else(|| "it was stopped by the system".to_string(), |c| format!("it exited with code {c}")))),
+        Err(e) if e.code == ErrorCode::TimedOut => Ok(()),
+        Err(e) if e.code == ErrorCode::Cancelled => Err(e),
+        Err(e) => Err(failed(e.message)),
+    }
+}
+
+/// Whether a local build by `agent` can have our tool server: over ACP every agent is handed it,
+/// else its adapter says.
+pub fn check_builder_tools(adapter: &dyn AgentAdapter, agent: &str, options: &BackendOptions, stop: &CancelToken) -> Result<(), ToolError> {
+    if options.acp == Some(true) && acp::acp_args(agent).is_some() {
+        return cli_can_start(craft_anything_platform::self_cli_path().as_deref(), stop);
+    }
+    adapter.check_tool_server(stop)
 }
 
 fn toml_string(s: &str) -> String {
@@ -1007,6 +1041,66 @@ mod tests {
         let text: String = all.iter().filter_map(|e| if let AgentEvent::TextDelta { text } = e { Some(text.clone()) } else { None }).collect();
         assert!(text.contains("hello there"), "{all:?}");
         assert!(text.contains("Request"), "preamble is passed too");
+    }
+
+    /// #91: a Mac app with no CLI beside it reached Claude Code, which stopped with a stack trace.
+    #[test]
+    fn a_missing_or_broken_helper_is_said_plainly() {
+        let stop = CancelToken::default();
+        let none = cli_can_start(None, &stop).unwrap_err();
+        assert!(none.message.contains("craft-anything-cli") && none.message.contains("missing"), "{none:?}");
+        assert!(none.remediation.as_deref().is_some_and(|r| r.contains("Install the latest")), "{none:?}");
+
+        let dir = tempfile::tempdir().unwrap();
+        let gone = cli_can_start(Some(&dir.path().join("craft-anything-cli")), &stop).unwrap_err();
+        assert!(gone.message.contains("wouldn't start"), "{gone:?}");
+        assert!(gone.remediation.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_is_judged_by_whether_it_runs() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let helper = |name: &str, script: &str| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, script).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let stop = CancelToken::default();
+        assert!(cli_can_start(Some(&helper("good", "#!/bin/sh\necho 1.0\n")), &stop).is_ok());
+        let bad = cli_can_start(Some(&helper("bad", "#!/bin/sh\nexit 3\n")), &stop).unwrap_err();
+        assert!(bad.message.contains("exited with code 3"), "{bad:?}");
+    }
+
+    /// Stopping a build doesn't wait for a helper that hangs, and reads as stopped, not as broken.
+    #[cfg(unix)]
+    #[test]
+    fn stopping_ends_the_check_of_a_hung_helper() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let hung = dir.path().join("hung");
+        std::fs::write(&hung, "#!/bin/sh\nexec sleep 25\n").unwrap();
+        std::fs::set_permissions(&hung, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let stop = CancelToken::default();
+        let stopper = stop.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            stopper.cancel();
+        });
+        let began = std::time::Instant::now();
+        let e = cli_can_start(Some(&hung), &stop).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Cancelled, "{e:?}");
+        assert!(began.elapsed() < Duration::from_secs(10), "it waited for the helper: {:?}", began.elapsed());
+    }
+
+    /// Agents that are never handed the tool server build without the helper.
+    #[test]
+    fn only_agents_handed_the_tool_server_need_the_helper() {
+        for agent in ["gemini-cli", "aider", "no-such-agent"] {
+            assert!(check_builder_tools(adapter_for(agent).as_ref(), agent, &BackendOptions::default(), &CancelToken::default()).is_ok(), "{agent}");
+        }
     }
 
     #[test]

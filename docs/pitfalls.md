@@ -127,6 +127,9 @@ It happened again in a release: the macOS app bundle had only `craft-anything`, 
 a separate zip, so every Claude Code build from the 0.2.0 DMG failed the same way (#91). Every
 package that ships the app ships the CLI beside its executable, and the packaging script runs
 the CLI from the finished package before it's published.
+Its symptom misled people too: Claude Code's MCP log says `Executable not found in $PATH: "stdio"`
+for any command that won't start, so #64 went looking for a bad config. Reproduce with the real
+program before believing what a log's wording suggests.
 
 **A Windows path with forward slashes read as nothing.** rtl_433 decoded a recording in the shell
 but found no messages, and exited 0, when the test passed `C:/…/x.cu8`; it only reads Windows
