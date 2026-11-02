@@ -860,9 +860,40 @@ fn decode_a32(mode: Mode, bytes: &[u8], addr: u64, fmt: bool) -> Option<Insn> {
     let mut writes = Vec::new();
     let mut pops_pc = false;
     let mut reg_ops: Vec<u8> = Vec::new();
+    // A memory operand no C statement says whole (write-back, a subtracted or shifted index): the
+    // lifter shows the instruction as written rather than a wrong expression (#277).
+    let mut exact = true;
+    let size = if matches!(inst.opcode, Opcode::LDR | Opcode::STR) { 4 } else { 0 };
+    let mem = |base: u8, index: Option<u8>, disp: i64| {
+        // A literal load reads from the word-aligned PC.
+        let pc = (base == 15).then(|| (addr.wrapping_add(pc_bias) & !3).wrapping_add(disp as u64));
+        let (base, disp) = if pc.is_some() { (None, 0) } else { (Some(format!("r{base}")), disp) };
+        Op::Mem(MemOp { base, index: index.map(|i| format!("r{i}")), scale: 1, disp, size, addr: pc, seg: None })
+    };
     for o in inst.operands.iter() {
         match *o {
             Operand::Nothing => break,
+            Operand::RegDerefPreindexOffset(r, off, add, false) => {
+                ops.push(mem(r.number(), None, if add { i64::from(off) } else { -i64::from(off) }));
+                if r.number() != 15 {
+                    push_unique(&mut reads, format!("r{}", r.number()));
+                }
+            }
+            Operand::RegDerefPreindexReg(r, m, true, false) if r.number() != 15 => {
+                ops.push(mem(r.number(), Some(m.number()), 0));
+                push_unique(&mut reads, format!("r{}", r.number()));
+                push_unique(&mut reads, format!("r{}", m.number()));
+            }
+            Operand::RegDerefPreindexOffset(r, ..)
+            | Operand::RegDerefPostindexOffset(r, ..)
+            | Operand::RegDerefPreindexReg(r, ..)
+            | Operand::RegDerefPostindexReg(r, ..)
+            | Operand::RegDerefPreindexRegShift(r, ..)
+            | Operand::RegDerefPostindexRegShift(r, ..) => {
+                exact = false;
+                ops.push(mem(r.number(), None, 0));
+                push_unique(&mut reads, format!("r{}", r.number()));
+            }
             Operand::BranchOffset(off) => {
                 let t = (addr.wrapping_add(pc_bias - 8)).wrapping_add((i64::from(off) * 4) as u64);
                 target = Some(t);
@@ -955,6 +986,7 @@ fn decode_a32(mode: Mode, bytes: &[u8], addr: u64, fmt: bool) -> Option<Insn> {
             push_unique(&mut reads, n);
         }
     }
+    let kind = if exact { kind } else { Kind::Other };
     let cond = if matches!(flow, Flow::Cond { .. }) {
         Some(match inst.condition {
             C::EQ => Cond::Eq,
