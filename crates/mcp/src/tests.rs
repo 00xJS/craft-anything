@@ -77,6 +77,25 @@ fn a_large_approval_keeps_its_decision() {
     assert_eq!(decision, json!({"behavior": "allow", "updatedInput": input}));
 }
 
+/// #263: in Clean room, enabling a toolset counted the tools Clean room hides from the list.
+#[test]
+fn enabling_a_toolset_counts_the_tools_listed() {
+    let input = format!(
+        "{}
+",
+        req(1, "tools/call", json!({"name": "enable_toolset", "arguments": {"toolset": "all"}}))
+    );
+    let mut session = craft_anything_engine::testing::session();
+    session.settings.deep_mode = false;
+    let engine = Arc::new(Engine::new(session));
+    let runs = engine.registry().all().iter().filter(|s| craft_anything_engine::clean_room::allows(s.id)).count();
+    let buf = Buf::default();
+    serve(engine, ServerOptions::default(), std::io::Cursor::new(input.into_bytes()), Box::new(buf.clone())).unwrap();
+    let out: Vec<Value> = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let enabled: Value = serde_json::from_str(response(&out, 1)["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(enabled["result"]["visible_tools"], json!(runs), "{enabled}");
+}
+
 fn tool_names(v: &Value) -> Vec<String> {
     v["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect()
 }

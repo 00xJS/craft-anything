@@ -315,12 +315,17 @@ impl Server {
         self.opts.all_tools || self.enabled.lock().unwrap_or_else(PoisonError::into_inner).contains(&set)
     }
 
+    /// Whether a tool is on this connection's list: its toolset is shown and, in Clean room, it's
+    /// one Clean room runs (the rest would only be refused).
+    fn listed(&self, s: &craft_anything_engine::ToolSpec, clean: bool) -> bool {
+        self.visible(s.toolset) && (!clean || craft_anything_engine::clean_room::allows(s.id))
+    }
+
     fn tools_list(&self) -> Value {
         let registry = self.engine.registry();
-        // Clean room lists only the tools it runs; the rest would only be refused.
         let clean = self.engine.session().clean_room();
         let mut tools: Vec<Value> = Vec::new();
-        for s in registry.all().iter().filter(|s| self.visible(s.toolset) && (!clean || craft_anything_engine::clean_room::allows(s.id))) {
+        for s in registry.all().iter().filter(|s| self.listed(s, clean)) {
             tools.push(registry.mcp_descriptor(s));
         }
         if !self.opts.all_tools {
@@ -432,9 +437,11 @@ impl Server {
         if !added.is_empty() {
             self.notify("notifications/tools/list_changed", json!({}));
         }
-        let tools: Vec<&str> = self.engine.registry().all().iter().filter(|s| self.visible(s.toolset)).map(|s| s.id).collect();
+        // Counted as tools/list shows them, so Clean room's refused tools aren't counted (#263).
+        let clean = self.engine.session().clean_room();
+        let visible = self.engine.registry().all().iter().filter(|s| self.listed(s, clean)).count();
         Ok(ToolOutput::Value(
-            json!({"enabled": added, "visible_tools": tools.len(), "note": "The tool list changed; refresh it if your client does not do so automatically."}),
+            json!({"enabled": added, "visible_tools": visible, "note": "The tool list changed; refresh it if your client does not do so automatically."}),
         ))
     }
 
