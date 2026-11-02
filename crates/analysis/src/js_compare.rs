@@ -218,18 +218,37 @@ pub fn compare_versions(l: &AppGraph, r: &AppGraph) -> Value {
         .take(2000)
         .collect();
     let windows = |g: &AppGraph| {
+        // An unassigned constructor has no binding, and local bindings can repeat in different
+        // functions. Keep each occurrence instead of overwriting all but the last one. The order
+        // within a module and binding is stable when comments shift the source line numbers.
+        let mut occurrences = BTreeMap::new();
         g.windows
             .iter()
             .map(|w| {
-                (
-                    format!("{}:{}", w.get("module").and_then(Value::as_str).unwrap_or(""), w.get("binding").and_then(Value::as_str).unwrap_or("")),
-                    w.get("web_preferences").cloned().unwrap_or(Value::Null),
-                )
+                let module = w.get("module").and_then(Value::as_str).unwrap_or("").to_string();
+                let binding = w.get("binding").and_then(Value::as_str).unwrap_or("").to_string();
+                let count = occurrences.entry((module.clone(), binding.clone())).or_insert(0usize);
+                let occurrence = *count;
+                *count = count.saturating_add(1);
+                ((module, binding, occurrence), w.get("web_preferences").cloned().unwrap_or(Value::Null))
             })
             .collect::<BTreeMap<_, _>>()
     };
     let (lw, rw) = (windows(l), windows(r));
-    let window_changes: Vec<Value> = lw.iter().filter_map(|(k, v)| rw.get(k).filter(|w| *w != v).map(|w| json!({"window": k, "from": v, "to": w}))).collect();
+    let window_changes: Vec<Value> = lw
+        .iter()
+        .filter_map(|(key, v)| {
+            rw.get(key).filter(|w| *w != v).map(|w| {
+                let (module, binding, occurrence) = key;
+                let name = if binding.is_empty() || *occurrence > 0 {
+                    format!("{module}:{binding}[{}]", occurrence.saturating_add(1))
+                } else {
+                    format!("{module}:{binding}")
+                };
+                json!({"window": name, "from": v, "to": w})
+            })
+        })
+        .collect();
     json!({
         "left": {"graph_id": l.graph_id, "label": l.label, "version": pkg(l, "version"), "name": pkg(l, "name")},
         "right": {"graph_id": r.graph_id, "label": r.label, "version": pkg(r, "version"), "name": pkg(r, "name")},
@@ -328,6 +347,61 @@ mod tests {
         let same = compare_versions(&a, &a);
         assert_eq!(same["identical_graph"], true);
         assert_eq!(same["modules"]["unchanged"], 4);
+    }
+
+    fn window_graph(bindings: &[&str], preferences: &[bool], prefix: &str) -> AppGraph {
+        let mut source = format!("{prefix}const {{ BrowserWindow }} = require('electron');\n");
+        for (i, (binding, preference)) in bindings.iter().zip(preferences).enumerate() {
+            let assign = if binding.is_empty() { String::new() } else { format!("const {binding} = ") };
+            source.push_str(&format!("function make_{i}() {{ {assign}new BrowserWindow({{ webPreferences: {{ backgroundThrottling: {preference} }} }}); }}\n"));
+        }
+        graph_of(vec![("package.json", r#"{"name":"window-example","main":"main.js"}"#.into()), ("main.js", source)])
+    }
+
+    #[test]
+    fn unassigned_windows_keep_each_preference_change() {
+        let left = window_graph(&["", ""], &[false, false], "");
+        assert_eq!(left.windows.len(), 2);
+        let mut ids = Vec::new();
+        for prefs in [[true, false], [false, true]] {
+            let right = window_graph(&["", ""], &prefs, "");
+            let windows = compare_versions(&left, &right)["windows"].clone();
+            assert_eq!(windows["left"], 2, "{windows}");
+            assert_eq!(windows["right"], 2);
+            let changed = windows["changed"].as_array().unwrap();
+            assert_eq!(changed.len(), 1, "{windows}");
+            assert_eq!(changed[0]["from"]["backgroundThrottling"], false);
+            assert_eq!(changed[0]["to"]["backgroundThrottling"], true);
+            ids.push(changed[0]["window"].clone());
+        }
+        assert_ne!(ids[0], ids[1], "the changed constructions are distinguishable");
+    }
+
+    #[test]
+    fn window_comparisons_keep_named_and_reused_bindings() {
+        for bindings in [["primary", "secondary"], ["panel", "panel"]] {
+            let left = window_graph(&bindings, &[false, true], "");
+            let right = window_graph(&bindings, &[true, true], "");
+            let windows = compare_versions(&left, &right)["windows"].clone();
+            assert_eq!(windows["left"], 2, "{windows}");
+            assert_eq!(windows["right"], 2);
+            assert_eq!(windows["changed"].as_array().unwrap().len(), 1, "{windows}");
+            if bindings[0] == "primary" {
+                assert_eq!(windows["changed"][0]["window"], "main.js:primary", "unique binding identifiers stay stable");
+            }
+        }
+    }
+
+    #[test]
+    fn window_comparisons_do_not_depend_on_source_line_numbers() {
+        let left = window_graph(&["", ""], &[false, true], "");
+        let shifted = window_graph(&["", ""], &[false, true], "// Added explanation\n\n");
+        let same = compare_versions(&left, &shifted)["windows"].clone();
+        assert_eq!(same, json!({"left": 2, "right": 2, "changed": []}));
+        let right = window_graph(&["", "", ""], &[true, true, false], "// Added explanation\n\n");
+        let windows = compare_versions(&left, &right)["windows"].clone();
+        assert_eq!((windows["left"].as_u64(), windows["right"].as_u64()), (Some(2), Some(3)));
+        assert_eq!(windows["changed"].as_array().unwrap().len(), 1, "the first preference change survives shifted lines");
     }
 
     /// #236: an edited inline script had no hash on either side and counted as unchanged.

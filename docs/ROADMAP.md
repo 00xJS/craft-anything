@@ -1093,6 +1093,7 @@ formats anyone can open.
 Owner: open · Status: in progress
 A saved analysis should answer a narrow question without running again, and an app's own code
 should give away more of how it is set up.
+- [x] Preserve every unassigned window when comparing application preferences (#237).
 - [x] `core_evidence_browse` pages keep only the rows that match (`matching`: field → value or list
       of values, `a.b` inside a row, null for a missing field), return only chosen fields (`fields`)
       and list the field names of the matching rows (`field_names`); offsets count matching rows.
