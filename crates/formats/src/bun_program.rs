@@ -283,7 +283,7 @@ impl PackedFormat for BunProgram {
             let kind = format!(
                 "loader={loader} format={} encoding={} side={} sourcemap_bytes={} bytecode_bytes={}",
                 label(&["none", "esm", "cjs"], m.format),
-                label(&["binary", "latin1", "utf8"], m.encoding),
+                label(&["binary", "latin1", "utf16le"], m.encoding),
                 label(&["server", "client"], m.side),
                 m.sourcemap.len,
                 m.bytecode.len,
@@ -345,7 +345,7 @@ mod tests {
         let app = &listing.entries[0];
         assert_eq!(app.path, "root/app.js");
         assert_eq!(BunProgram.read(data, app, 1000).unwrap(), b"console.log('app')");
-        assert_eq!(app.kind.as_deref(), Some("loader=js format=esm encoding=utf8 side=server sourcemap_bytes=9 bytecode_bytes=10"));
+        assert_eq!(app.kind.as_deref(), Some("loader=js format=esm encoding=latin1 side=server sourcemap_bytes=9 bytecode_bytes=10"));
         let logo = &listing.entries[1];
         assert_eq!(logo.path, "root/logo.png");
         assert_eq!(BunProgram.read(data, logo, 1000).unwrap(), b"\x89PNG");

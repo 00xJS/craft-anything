@@ -1124,6 +1124,7 @@ should give away more of how it is set up.
 Owner: open · Status: in progress
 Read what real apps and games ship as (one file carrying the rest), and let a rebuilt website run
 against what its original was recorded answering.
+- [x] Identify Bun UTF-16LE text members (#257). — claimed: Afloat16, branch bugfix/r3.11-bun-text-encoding-20261102
 - [x] One seam for files packed inside a file (`formats::packed`), with `core_packed_files_list`
       and `core_packed_files_unpack`; a new kind is one reader and one table line
 - [x] Readers: Bun and Node.js single-file programs, .NET single-file apps, PyInstaller, Godot PCK.

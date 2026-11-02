@@ -29,6 +29,13 @@ workspace clippy, layers, fmt and the secret scan of all history were clean. Chi
 | CLI | Every tool, `--deep` or `--clean-room` for one run (never saved), `rebuild` (including `--continue-in`, and `--resume` to carry on a stopped build), `mcp --inbox`, `ai`, `setup`, `doctor`, `report` | CLI integration tests |
 | SQLite database files (`db_sqlite_show`) | A rowid alias column (`INTEGER PRIMARY KEY`, including the table-constraint form) shows the rowid; `DESC`, non-`INTEGER` and composite keys keep their stored values | Hand-built fixtures; generated files compared with the official SQLite library |
 
+### Bun stored-text encoding
+
+Packed Bun members with encoding value 2 are labelled `utf16le`, matching their stored UTF-16LE
+bytes. Reading or unpacking preserves those bytes. Synthetic graphs cover UTF-16LE (including a
+surrogate pair), Latin1 and binary members across both supported module-record and offsets-block
+sizes. A freshly compiled Bun program and the CLI/MCP transport were not run for this correction.
+
 ### Linux Unreal setup
 
 Unreal installations registered in `~/.config/Epic/UnrealEngine/Install.ini` are found on Linux.

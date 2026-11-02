@@ -353,7 +353,7 @@ pub struct BunModule<'a> {
 
 /// A JavaScript module as `bun build --compile` stores one.
 pub fn bun_module<'a>(name: &'a str, contents: &'a [u8]) -> BunModule<'a> {
-    BunModule { name, contents, sourcemap: b"", bytecode: b"", encoding: 2, loader: 1, format: 1, side: 0 }
+    BunModule { name, contents, sourcemap: b"", bytecode: b"", encoding: 1, loader: 1, format: 1, side: 0 }
 }
 
 fn bun_put(o: &mut Vec<u8>, b: &[u8]) -> (u32, u32) {
