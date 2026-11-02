@@ -272,13 +272,15 @@ program can't carry its notarization with it, so macOS has to look it up online)
 the terminal isn't checked this way, so use this instead:
 
 ```sh
-ver=<ver>   # the version, for example 0.2.0
+ver=0.2.0   # change this to the version you want
 curl -fLO "https://github.com/storytold/craft-anything/releases/download/v$ver/craft-anything-cli-$ver-macos-universal.zip"
 ditto -x -k "craft-anything-cli-$ver-macos-universal.zip" .
 mkdir -p ~/.local/bin
 mv "craft-anything-cli-$ver-macos-universal/craft-anything-cli" ~/.local/bin/
 ~/.local/bin/craft-anything-cli --version
 ```
+
+To run it as just `craft-anything-cli`, add `~/.local/bin` to your `PATH`.
 
 If you already have the blocked copy, press Done (not Move to Bin), then run
 `xattr -d com.apple.quarantine <path to craft-anything-cli>`, or allow it in System Settings →
