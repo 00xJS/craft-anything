@@ -649,6 +649,8 @@ struct Budget {
     bytes: u64,
     text_searches: usize,
     ran_out: bool,
+    /// Files that couldn't be opened to look inside (#292).
+    unopened: u64,
 }
 
 /// The markers of every runtime that an entry passes, as (row, marker) → paths seen.
@@ -677,14 +679,15 @@ fn scan(w: &Walk, ctx: &Ctx<'_>) -> Result<(Hits, Budget), ToolError> {
                 }
             }
         }
-        if let Some(p) = probe.take() {
+        if let Some(Some(p)) = probe.take() {
             budget.bytes = budget.bytes.saturating_add(p.bytes_read);
         }
     }
     Ok((hits, budget))
 }
 
-fn run_look(look: Look, e: &Seen, probe: &mut Option<Probe>, budget: &mut Budget) -> bool {
+/// `probe` is `None` until the file is opened, then `Some(None)` when that failed, so it's tried once.
+fn run_look(look: Look, e: &Seen, probe: &mut Option<Option<Probe>>, budget: &mut Budget) -> bool {
     if probe.is_none() {
         if budget.probes >= MAX_PROBES || budget.bytes >= MAX_PROBE_BYTES {
             budget.ran_out = true;
@@ -693,9 +696,11 @@ fn run_look(look: Look, e: &Seen, probe: &mut Option<Probe>, budget: &mut Budget
         budget.probes += 1;
         let may_search = e.depth < MAIN_DEPTH && budget.text_searches < MAX_TEXT_SEARCHES;
         budget.text_searches += usize::from(may_search && e.program);
-        *probe = Probe::open(&e.path, may_search && e.program);
+        let opened = Probe::open(&e.path, may_search && e.program);
+        budget.unopened += u64::from(opened.is_none());
+        *probe = Some(opened);
     }
-    probe.as_mut().is_some_and(look)
+    probe.as_mut().and_then(Option::as_mut).is_some_and(look)
 }
 
 // ---- the result ---------------------------------------------------------------------------------
@@ -868,6 +873,12 @@ fn app_folder_explain(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, To
     if w.unreadable > 0 {
         lims.push(Limitation::new("unreadable_entries", format!("{} file(s) or folder(s) couldn't be read.", w.unreadable)));
     }
+    if budget.unopened > 0 {
+        lims.push(Limitation::new(
+            "unopened_files",
+            format!("{} file(s) couldn't be opened to look inside, so what they would show is missing.", budget.unopened),
+        ));
+    }
     if !w.not_walked.is_empty() {
         lims.push(Limitation::new(
             "folders_counted_not_walked",
@@ -922,7 +933,8 @@ fn app_folder_explain(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, To
             "max_depth": max_depth,
         },
     });
-    let coverage = if w.capped || budget.ran_out { partial(examined) } else { Coverage::complete(examined) };
+    let unread = w.unreadable > 0 || budget.unopened > 0;
+    let coverage = if w.capped || budget.ran_out || unread { partial(examined) } else { Coverage::complete(examined) };
     let ev = builder(ctx, "app_folder_explain", Subject { kind: "folder".into(), sha256: None, name: Some(name) }, params_json(&p))
         .result(result)
         .summary(summary)
@@ -1335,5 +1347,25 @@ mod tests {
         write(d.path(), "script.exe", b"#!/bin/sh");
         let v = survey(d.path());
         assert_eq!(ids(&v), ["native"], "only the real Mach-O: a .exe that holds a script isn't native code");
+    }
+
+    /// #292: a program that couldn't be read made "nothing points to a runtime" with complete coverage.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_that_cant_be_opened_is_said_and_leaves_coverage_partial() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "Contents/MacOS/Thing", b"\xcf\xfa\xed\xfe");
+        let program = d.path().join("Contents/MacOS/Thing");
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o111)).unwrap();
+        if std::fs::read(&program).is_ok() {
+            return; // Run as root: nothing is unreadable.
+        }
+        let v = survey(d.path());
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(v["coverage"]["status"], "partial", "{v}");
+        let lim = v["limitations"].as_array().unwrap().iter().find(|l| l["code"] == "unopened_files").cloned();
+        assert!(lim.is_some_and(|l| l["message"].as_str().unwrap().starts_with("1 file")), "{v}");
+        assert_eq!(ids(&survey(d.path())), ["native"], "readable again, it's found");
     }
 }
