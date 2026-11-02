@@ -741,11 +741,14 @@ fn try_wrap_single_handler(s: &mut Structurer, exceptions: &[java_class::Excepti
         _ => return None,
     };
     let handler_idx = first_ge(s, e.handler_pc)?;
-    if !(start_idx < exit_idx && exit_idx <= handler_idx && handler_idx <= rejoin_idx && rejoin_idx <= n) {
+    // The handler must follow the skipping goto directly: nodes in between would be dropped.
+    if !(start_idx < exit_idx && exit_idx + 1 == handler_idx && handler_idx <= rejoin_idx && rejoin_idx <= n) {
         return None;
     }
     let ty = e.catch_type.as_deref().map(java_class::internal_to_dotted).unwrap_or_else(|| "Throwable".to_string());
     let _ = cf;
+    // What runs before the protected region (#232).
+    s.render(0, start_idx, 1, out);
     out.push_str("    try {\n");
     s.render(start_idx, exit_idx, 2, out);
     out.push_str("    } catch (");
@@ -869,6 +872,20 @@ mod tests {
         let guarded = decompile_method(&cf, method(&cf, "guarded"));
         assert!(guarded.body.contains("try {"), "{}", guarded.body);
         assert!(guarded.body.contains("catch (java.lang.RuntimeException e)"), "{}", guarded.body);
+    }
+
+    /// #232: `v0 = 7; try { v1 = 2; } catch (RuntimeException e) {} return v0;` kept the return
+    /// and dropped the assignment before the `try`.
+    #[test]
+    fn code_before_a_try_is_kept() {
+        let hex = "cafebabe00000031000a0100065072655472790700010100106a6176612f6c616e672f4f626a656374070003010004436f64650100016d01000328294901001a6a6176612f6c616e672f52756e74696d65457863657074696f6e070008002100020004000000000001000900060007000100050000001f000100030000000b10073b053ca700044d1aac0001000300050008000900000000";
+        let data: Vec<u8> = (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+        let cf = parse(&data).unwrap();
+        let m = decompile_method(&cf, method(&cf, "m"));
+        let (init, try_at) = (m.body.find("v0 = 7;"), m.body.find("try {"));
+        assert!(init.is_some() && init < try_at, "{}", m.body);
+        assert!(m.body.contains("v1 = 2;") && m.body.contains("return v0;"), "{}", m.body);
+        assert!(decompile_class(&cf).source.contains("v0 = 7;"));
     }
 
     #[test]
