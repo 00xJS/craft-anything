@@ -513,6 +513,10 @@ Owner: maintainers · Status: in progress (built; live runs need keys)
       24k for local models, `LoopConfig::context_tokens`) old tool results are trimmed, then the
       oldest part is replaced by a summary the model writes; the conversation is kept in
       `transcript.json` after every step and a follow-up resumes it
+- [x] Only an OpenAI-compatible server on this computer or its network counts as local (24k
+      context, no cost); a remote one gets the cloud budget and its price (#374)
+- [ ] A per-backend context budget in `[[ai.backends]]` (`LoopConfig::context_tokens` exists), for
+      services whose real window differs from 150k (#374)
 
 ### R2.2 More coding agents
 Owner: open · Status: in progress

@@ -558,6 +558,10 @@ impl AiHub {
             _ => None,
         };
         let base = tunneled_base.as_deref().or(base);
+        // A server on this computer or its network (Ollama, LM Studio, one reached over ssh) costs
+        // nothing and gets the small context budget; a remote OpenAI-compatible service has a
+        // large context and a bill, as any other cloud API (#374).
+        let local = c.kind == BackendKind::OpenaiCompatible && base.is_none_or(detect::on_this_network);
         let model: Box<dyn ChatModel> = match c.kind {
             BackendKind::Anthropic => {
                 let mut a = anthropic::Anthropic::new(base, self.key_for(e)?, &c.model);
@@ -577,13 +581,7 @@ impl AiHub {
             Some(t) => Box::new(Tunneled { inner: model, _tunnel: t }) as Box<dyn ChatModel>,
             None => model,
         };
-        Ok(ModelSlot {
-            name: c.name.clone(),
-            model,
-            local: c.kind == BackendKind::OpenaiCompatible,
-            effort: e.options.effort,
-            max_turns: e.options.max_turns.unwrap_or(agent::DEFAULT_MAX_TURNS),
-        })
+        Ok(ModelSlot { name: c.name.clone(), model, local, effort: e.options.effort, max_turns: e.options.max_turns.unwrap_or(agent::DEFAULT_MAX_TURNS) })
     }
 
     fn project_root(&self) -> Option<PathBuf> {

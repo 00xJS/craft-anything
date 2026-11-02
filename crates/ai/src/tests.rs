@@ -275,6 +275,33 @@ fn a_server_is_added_by_its_address() {
     assert_eq!(h.backends().len(), 2, "only the ones that answered");
 }
 
+/// #374: a remote OpenAI-compatible service was treated as a local model: a 24K-token context
+/// and a cost of nothing. Only a server on this computer or its network is local.
+#[test]
+fn only_an_openai_compatible_server_nearby_is_local() {
+    let (h, _d) = hub();
+    for (name, base, local) in [
+        ("Ollama", "http://127.0.0.1:11434/v1", true),
+        ("LM Studio box", "http://192.168.1.20:1234/v1", true),
+        ("Docker Ollama", "http://ollama:11434/v1", true),
+        ("IPv6 link-local", "http://[fe80::1]:11434/v1", true),
+        ("Z.ai", "https://api.z.ai/api/coding/paas/v4", false),
+        ("Public vLLM", "http://8.8.8.8:8000/v1", false),
+    ] {
+        add(&h, name, BackendKind::OpenaiCompatible, base, None);
+        let slot = h.build_model(&h.entry(name).unwrap()).unwrap();
+        assert_eq!(slot.local, local, "{name} at {base}");
+    }
+    h.add_backend(
+        BackendConfig { name: "Default".into(), kind: BackendKind::OpenaiCompatible, model: String::new(), base_url: None, ssh_host: None, enabled: true },
+        None,
+    )
+    .unwrap();
+    assert!(h.build_model(&h.entry("Default").unwrap()).unwrap().local, "no address means Ollama on this computer");
+    add(&h, "OpenAI", BackendKind::Openai, "http://127.0.0.1:9/v1", Some("sk-test"));
+    assert!(!h.build_model(&h.entry("OpenAI").unwrap()).unwrap().local, "only OpenAI-compatible servers can be local");
+}
+
 fn add(h: &AiHub, name: &str, kind: BackendKind, base: &str, key: Option<&str>) {
     h.add_backend(
         BackendConfig { name: name.into(), kind, model: String::new(), base_url: Some(base.into()), ssh_host: None, enabled: true },
