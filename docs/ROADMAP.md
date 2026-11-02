@@ -843,7 +843,7 @@ Gaps found while using the app for real projects.
 - [x] A consent card's id is a short number, with the call it stands for kept in memory, not the
       call serialised into the id
 - [x] The workbench's list isn't copied every frame (it can hold thousands of rows)
-- [ ] Simple-mode text sizes checked by a test (no literal sizes under 12 pt outside the workbench)
+- [x] Simple-mode text sizes checked by a test (no literal sizes under 12 pt outside the workbench)
 - [x] Typed text no longer blinks in the prompt box; Open folder opens the project's folder
 - [x] Scroll bars show at rest (6 px, the text colour at 3:1 or more on every surface), not
       only on hover
