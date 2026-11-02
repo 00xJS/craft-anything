@@ -212,40 +212,36 @@ impl Project {
     }
 }
 
-/// Write `bytes` to `path` atomically: a sibling temp file, fsync, then rename.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
-    use std::io::Write as _;
-    let dir = path.parent().ok_or_else(|| ToolError::invalid(format!("{} has no parent folder", path.display())))?;
-    std::fs::create_dir_all(dir).map_err(|e| ToolError::io(dir.display(), e))?;
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let tmp = dir.join(format!(".{name}.tmp-{}", std::process::id()));
-    {
-        let mut f = std::fs::File::create(&tmp).map_err(|e| ToolError::io(tmp.display(), e))?;
-        f.write_all(bytes).map_err(|e| ToolError::io(tmp.display(), e))?;
-        f.sync_all().map_err(|e| ToolError::io(tmp.display(), e))?;
-    }
-    // On Windows a file another program has open for a moment (an antivirus scan, the search
-    // indexer) can't be replaced: try again briefly before giving up.
-    let mut tries = 0;
-    loop {
-        match std::fs::rename(&tmp, path) {
-            Ok(()) => return Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && tries < 20 => {
-                tries += 1;
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            Err(e) => {
-                let _ = std::fs::remove_file(&tmp);
-                return Err(ToolError::io(path.display(), e));
-            }
-        }
-    }
-}
+/// Write `bytes` to `path` atomically: a temp file of its own, fsync, then rename (retried on
+/// Windows while another program holds the file for a moment).
+pub use craft_anything_platform::fs::write_atomic;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use craft_anything_evidence::{Environment, EvidenceBuilder, Subject};
+
+    /// #273: threads saving one file at once shared a temp file, so saves failed with "not found"
+    /// and the file could be left half one version, half another.
+    #[test]
+    fn saves_from_several_threads_never_mix() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("craft.json");
+        let versions: Vec<Vec<u8>> = (0..4u8).map(|i| vec![b'a' + i; 4096 * (usize::from(i) + 1)]).collect();
+        std::thread::scope(|s| {
+            for v in &versions {
+                let (p, versions) = (&p, &versions);
+                s.spawn(move || {
+                    for _ in 0..50 {
+                        write_atomic(p, v).unwrap();
+                        let now = std::fs::read(p).unwrap();
+                        assert!(versions.contains(&now), "a mixed file of {} bytes", now.len());
+                    }
+                });
+            }
+        });
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "temp files left behind");
+    }
 
     /// A file another program holds open for a moment (as a virus scan does) is still replaced.
     #[cfg(windows)]

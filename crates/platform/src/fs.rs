@@ -39,12 +39,27 @@ fn write_impl(path: &Path, bytes: &[u8], private: bool) -> Result<(), ToolError>
         f.write_all(bytes).map_err(|e| ToolError::io(tmp.display(), e))?;
         f.sync_all().map_err(|e| ToolError::io(tmp.display(), e))?;
         drop(f);
-        std::fs::rename(&tmp, path).map_err(|e| ToolError::io(path.display(), e))
+        rename_retrying(&tmp, path).map_err(|e| ToolError::io(path.display(), e))
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
     result
+}
+
+/// On Windows a file another program has open for a moment (an antivirus scan, the search
+/// indexer) can't be replaced: try again briefly before giving up.
+fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut tries = 0;
+    loop {
+        match std::fs::rename(from, to) {
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && tries < 20 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            r => return r,
+        }
+    }
 }
 
 #[cfg(unix)]
