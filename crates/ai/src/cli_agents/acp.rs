@@ -152,6 +152,11 @@ impl AcpCore {
     /// A message from the person: sent now, or once the session is ready.
     pub fn prompt(&mut self, text: &str) -> Vec<Out> {
         self.queued.push_back(text.to_string());
+        // A start that failed earlier (an `initialize` error) left nothing under way: start again,
+        // or the message would wait for a session that never comes (#271).
+        if !self.ready && self.pending.is_empty() {
+            return self.start();
+        }
         self.flush()
     }
 
@@ -288,6 +293,8 @@ impl AcpCore {
 
     /// Stop the current message: cancel the prompt and any open permission requests.
     pub fn cancel(&mut self) -> Vec<Out> {
+        // A message still waiting for the session has no prompt to cancel: its turn ends here.
+        let waiting = !self.queued.is_empty() && !self.pending.values().any(|p| *p == Pending::Prompt);
         self.queued.clear();
         let mut out: Vec<Out> = self
             .asks
@@ -296,6 +303,9 @@ impl AcpCore {
             .collect();
         if let Some(sid) = self.session.clone().filter(|_| self.pending.values().any(|p| *p == Pending::Prompt)) {
             out.push(Out::Send(json!({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": sid}}).to_string()));
+        }
+        if waiting {
+            out.extend([self.turn_done(), Out::TurnEnded]);
         }
         out
     }
@@ -692,6 +702,24 @@ mod tests {
         let reply = sent(&c.answer(call_id, true));
         assert_eq!(reply[0], json!({"jsonrpc": "2.0", "id": 7, "result": {"outcome": {"outcome": "selected", "optionId": "yes"}}}));
         assert!(c.answer(call_id, true).is_empty(), "answered once");
+    }
+
+    /// #271: after `initialize` failed, the next message waited for a session forever, and Stop
+    /// didn't end it.
+    #[test]
+    fn a_failed_start_is_tried_again_and_stop_ends_a_waiting_message() {
+        let mut c = core(None);
+        c.start();
+        let failed = c.line(r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"not signed in"}}"#);
+        assert!(failed.contains(&Out::TurnEnded));
+        let again = sent(&c.prompt("Hello"));
+        assert_eq!(again[0]["method"], "initialize", "the next message starts the agent's session again");
+        let failed = c.line(r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"not signed in"}}"#);
+        assert!(failed.contains(&Out::TurnEnded), "a second failure ends that message too");
+        c.prompt("Hello");
+        let stopped = c.cancel();
+        assert!(stopped.contains(&Out::TurnEnded), "Stop ends a message still waiting for the session");
+        assert!(sent(&c.line(r#"{"jsonrpc":"2.0","id":3,"result":{}}"#)).iter().all(|m| m["method"] != "session/prompt"));
     }
 
     #[test]
