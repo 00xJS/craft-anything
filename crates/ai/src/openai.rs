@@ -241,10 +241,15 @@ impl ChatStream {
             self.model = m.to_string();
         }
         if let Some(u) = v.get("usage").filter(|u| u.is_object()) {
-            self.usage.input_tokens = u.get("prompt_tokens").and_then(Value::as_u64).unwrap_or(self.usage.input_tokens);
             self.usage.output_tokens = u.get("completion_tokens").and_then(Value::as_u64).unwrap_or(self.usage.output_tokens);
-            if let Some(c) = u.pointer("/prompt_tokens_details/cached_tokens").and_then(Value::as_u64) {
+            let cached = u.pointer("/prompt_tokens_details/cached_tokens").and_then(Value::as_u64);
+            if let Some(c) = cached {
                 self.usage.cache_read_tokens = c;
+            }
+            // prompt_tokens includes the cached ones; input_tokens is the rest, as Anthropic reports
+            // it, so the context budget and the cost count cached tokens once (#252).
+            if let Some(p) = u.get("prompt_tokens").and_then(Value::as_u64) {
+                self.usage.input_tokens = p.saturating_sub(cached.unwrap_or(0));
             }
         }
         let Some(choice) = v.get("choices").and_then(Value::as_array).and_then(|a| a.first()) else { return Ok(()) };
@@ -435,6 +440,15 @@ mod tests {
         assert_eq!(text, "Let me look");
         assert_eq!(r.stop, StopReason::ToolUse);
         assert_eq!(r.usage.input_tokens, 11);
+        // #252: cached prompt tokens are part of prompt_tokens, and are counted once.
+        let mut st = ChatStream::default();
+        let usage = json!({"choices": [], "usage": {"prompt_tokens": 100_000, "completion_tokens": 10, "prompt_tokens_details": {"cached_tokens": 65_536}}});
+        let end = json!({"choices": [{"delta": {}, "finish_reason": "stop"}]});
+        for data in [end.to_string(), usage.to_string(), "[DONE]".into()] {
+            st.apply(&SseEvent { event: None, data }, &mut |_| {}).unwrap();
+        }
+        let u = st.finish("m").unwrap().usage;
+        assert_eq!((u.input_tokens, u.cache_read_tokens, u.output_tokens), (34_464, 65_536, 10));
         assert_eq!(
             r.message.tool_uses(),
             vec![("c1".into(), "core_session_show".into(), json!({"x": 1})), ("c2".into(), "core_targets_list".into(), json!({}))]
