@@ -1472,9 +1472,7 @@ mod tests {
                 let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len());
             }
         });
-        let mut s = crate::testing::session();
-        s.settings.engines.only_configured = false;
-        let e = crate::Engine::new(s);
+        let e = crate::Engine::new(crate::testing::live_session());
         e.call("web_site_open", json!({"url": url}), crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted)).unwrap();
         e
     }
@@ -1541,19 +1539,8 @@ for (const t of tabs) t.onclick = () => tabs.forEach(o => o.setAttribute('aria-s
     /// `capture.json` of `page`, served from a local port and captured at 1440 px. Live: it needs a
     /// Chromium-based browser.
     fn capture_of(page: &'static str) -> Value {
-        use std::io::{Read, Write};
-        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let url = format!("http://{}/", listener.local_addr().unwrap());
-        std::thread::spawn(move || {
-            for mut s in listener.incoming().flatten() {
-                let mut buf = [0u8; 4096];
-                let _ = s.read(&mut buf);
-                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len());
-            }
-        });
-        let e = crate::Engine::new(crate::testing::live_session());
+        let e = serve_and_open(page);
         let cli = || crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted);
-        e.call("web_site_open", json!({"url": url}), cli()).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("capture");
         e.call("web_site_capture", json!({"output_directory": out.display().to_string(), "widths": [1440]}), cli()).unwrap();
