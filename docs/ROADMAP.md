@@ -160,6 +160,7 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
 - [x] `yaxpeax-arm` 0.5.0 panicked ("register number out of range") on an A32 `STRD`/`LDRD` with
       Rt = 15 (e.g. the word `0xc0c7fef3`), so one such word failed the whole analysis of a 32-bit
       ARM program; the word now decodes as invalid
+- [x] ARM32 value-flow graphs use r0 for word results and ARM scratch registers for calls (#239).
 - [x] Unchecked `o + 4`/`o + 8` on section and program header offsets in `formats/src/dart.rs`
       (`Elf::parse`): a header table near `usize::MAX` panicked in debug builds (in release the
       wrapped reads were thrown away, since the entry's first field was already out of range); an
