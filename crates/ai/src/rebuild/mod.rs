@@ -618,6 +618,12 @@ impl Worker {
         // A coding agent resumes its own session; our loop resumes its kept transcript.
         let resumable = api.as_ref().is_none_or(crate::agent::ApiConversation::resumed);
         let api_loop = api.is_some();
+        // A session another coding agent saved can't be continued by this one (#469).
+        if !api_loop && ws.manifest.agent_session_by.as_deref() != Some(entry.config.model.as_str()) {
+            ws.manifest.agent_session = ws.manifest.agent_session_for(&entry.config.model).map(str::to_string);
+            ws.manifest.agent_session_by = Some(entry.config.model.clone());
+            ws.save()?;
+        }
         // A coding agent on this computer whose session the project keeps a copy of (#451).
         let keeper = (!api_loop && !remote).then(|| opts.adapters.for_agent(&entry.config.model));
         if let Some(a) = &keeper {
@@ -642,7 +648,7 @@ impl Worker {
         let mut prompt = match &opts.message {
             // An agent with a saved session gets the follow-up; one without (an API loop) starts
             // from the brief with the request added.
-            Some(m) if !first && resumable => follow_up(m, kind) + &now(),
+            Some(m) if !first && has_history => follow_up(m, kind) + &now(),
             // Carrying on after a stop: the same, told to finish what it was doing.
             None if carrying_on && !first && has_history => continue_prompt(kind) + &now(),
             _ => {

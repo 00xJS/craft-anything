@@ -378,6 +378,10 @@ pub struct Manifest {
     /// The coding agent's session, so a later request continues the same conversation.
     #[serde(default)]
     pub agent_session: Option<String>,
+    /// The coding agent that saved `agent_session` (`claude-code`, `codex`…); none: saved before
+    /// this was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_by: Option<String>,
     /// Kinds of agent action the person allowed for this workspace ("bash:npm", "web_fetch"…).
     #[serde(default)]
     pub allowed_actions: Vec<String>,
@@ -428,6 +432,7 @@ impl Manifest {
             updated_ms: now,
             checks: Vec::new(),
             agent_session: None,
+            agent_session_by: None,
             allowed_actions: Vec::new(),
             last_reply: String::new(),
             asset_budget_usd: ASSET_BUDGET_USD,
@@ -438,6 +443,12 @@ impl Manifest {
             questions: None,
             awaiting_check: false,
         }
+    }
+
+    /// The saved session, if `agent` (`claude-code`, `codex`…) saved it: another agent can't
+    /// continue it (#469). One saved before the agent was kept counts.
+    pub fn agent_session_for(&self, agent: &str) -> Option<&str> {
+        self.agent_session.as_deref().filter(|_| self.agent_session_by.as_deref().is_none_or(|a| a == agent))
     }
 
     /// Take the fields the person owns from `other` (what's on disk).
@@ -1385,6 +1396,20 @@ mod tests {
         if cfg!(windows) {
             assert!(ws.is_own_record(&ws.root.join("CRAFT.JSON")), "paths on Windows ignore case");
         }
+    }
+
+    /// #469: a saved session is only for the agent that saved it.
+    #[test]
+    fn a_session_is_only_for_the_agent_that_saved_it() {
+        let mut m = Manifest::new("x", "A thing", TargetRef::None);
+        assert_eq!(m.agent_session_for("codex"), None);
+        m.agent_session = Some("s1".into());
+        assert_eq!(m.agent_session_for("codex"), Some("s1"), "one saved before the agent was kept counts");
+        m.agent_session_by = Some("claude-code".into());
+        assert_eq!(m.agent_session_for("claude-code"), Some("s1"));
+        assert_eq!(m.agent_session_for("codex"), None);
+        let text = serde_json::to_string(&m).unwrap();
+        assert_eq!(serde_json::from_str::<Manifest>(&text).unwrap().agent_session_by.as_deref(), Some("claude-code"));
     }
 
     /// A rename survives a stale save, a copy takes the build but not the conversation (nor its
