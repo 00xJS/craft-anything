@@ -1125,6 +1125,8 @@ against what its original was recorded answering.
       of runtimes; checked against about 25 installed Mac apps
 - [x] A stand-in backend from a network recording (`web_standin_build`, `_start`, `_stop`, `_show`),
       GraphQL and tRPC operations in app maps, and `web_walkthrough_check`
+- [x] `js_app_map` keeps a literal GraphQL document that begins with a comment, as it already
+      does without one (#260)
 - [x] `app_builds_line_up` (two real builds of a 276 MB program in 42 s),
       `native_source_folder_write` (resumable), `android_components_list`
 - [x] CLI: `--json -` takes parameters from a pipe; `--format csv` and `tsv` write a result's rows,

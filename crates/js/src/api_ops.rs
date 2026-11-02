@@ -60,7 +60,7 @@ pub fn read_document(text: &str, allow_shorthand: bool) -> Option<Document> {
                 chars.next();
             } else if c == '#' {
                 for (_, c) in chars.by_ref() {
-                    if c == '\n' {
+                    if c == '\n' || c == '\r' {
                         break;
                     }
                 }
@@ -166,7 +166,7 @@ pub fn read_document(text: &str, allow_shorthand: bool) -> Option<Document> {
                 }
                 '#' => {
                     for (_, d) in chars.by_ref() {
-                        if d == '\n' {
+                        if d == '\n' || d == '\r' {
                             break;
                         }
                     }
@@ -216,9 +216,21 @@ fn skip_string(chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>, text:
     None
 }
 
+/// Where a document may start, after the whitespace, commas, byte-order mark and `#` comments
+/// that may come first (the non-run-time part of the trivia [`read_document`] skips).
+fn document_start(text: &str) -> &str {
+    let mut rest = text;
+    loop {
+        let trimmed = rest.trim_start_matches(|c: char| c.is_whitespace() || c == ',' || c == '\u{feff}');
+        let Some(after) = trimmed.strip_prefix('#') else { return trimmed };
+        rest = after.find(['\n', '\r']).and_then(|i| after.get(i + 1..)).unwrap_or("");
+    }
+}
+
 /// Could this text be a whole document? A quick test before the real read, on every string.
+/// A document may begin with a comment, as a generated client often writes one.
 pub fn may_be_document(text: &str) -> bool {
-    let t = text.trim_start();
+    let t = document_start(text);
     (t.starts_with("query") || t.starts_with("mutation") || t.starts_with("subscription") || t.starts_with("fragment")) && t.contains('{')
 }
 
@@ -417,6 +429,21 @@ mod tests {
         let only = read_document(&format!("{h}"), true).unwrap();
         assert!(only.operations.is_empty() && only.open_ended);
         assert!(read_document(&format!("{h}"), false).is_none());
+    }
+
+    #[test]
+    fn a_document_may_begin_with_a_comment() {
+        assert!(may_be_document("# note\nquery Q { a }"));
+        assert!(may_be_document("  # one\n# two\nmutation M { a }"));
+        assert!(may_be_document("# note\r\nquery Q { a }"));
+        assert!(may_be_document("# note\rquery Q { a }"), "a lone CR ends a comment too");
+        assert_eq!(read_document("# note\rquery Q { a }", false).and_then(|d| d.operations.first().and_then(|o| o.name.clone())).as_deref(), Some("Q"));
+        assert!(may_be_document("\u{feff}# c\n, query Q { a }"));
+        assert!(!may_be_document("# note\nconst a = { b: 1 }"));
+        assert!(!may_be_document("# only a comment"));
+        assert!(!may_be_document("# query Q { a }"), "no newline means the whole text is the comment");
+        let doc = read_document("query Q { a # note\r b }", false).expect("a comment in a selection set ends at a lone CR");
+        assert_eq!(doc.operations.first().and_then(|o| o.name.as_deref()), Some("Q"));
     }
 
     #[test]

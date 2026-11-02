@@ -323,6 +323,35 @@ fn graphql_documents_in_plain_strings_and_minified_shapes() {
 }
 
 #[test]
+fn graphql_documents_that_begin_with_a_comment() {
+    // A comment is valid at the start of a GraphQL document, and common in generated clients.
+    let l = ops(r##"const q="# Client document\nquery Feed{items{id}}";"##);
+    assert!(has(&l, "graphql", "query", "Feed"), "{l:?}");
+    let l = ops("const q=`# Client document\nquery Feed{items{id}}`;");
+    assert!(has(&l, "graphql", "query", "Feed"), "{l:?}");
+    // A lone CR ends a comment in GraphQL, as a CRLF does. A string escape keeps the CR; a
+    // template literal would normalize it to LF.
+    let l = ops(r##"const q="# Client document\rquery Feed{items{id}}";"##);
+    assert!(has(&l, "graphql", "query", "Feed"), "{l:?}");
+    // A template with run-time text goes through the other call site.
+    let l = ops("const q=`# Client document\nquery Feed{items{id}} ${x}`;");
+    assert!(has(&l, "graphql", "query", "Feed"), "{l:?}");
+    // The same document in a request body.
+    let l = ops(r##"fetch("/graphql",{method:"POST",body:JSON.stringify({query:"# Client document\nquery Feed{items{id}}",variables:{}})})"##);
+    assert!(has(&l, "graphql", "query", "Feed"), "{l:?}");
+    // A comment doesn't make any other text a document.
+    let l = ops(r##"const s="# note\nconst a = {b:1}";"##);
+    assert!(!l.iter().any(|o| o.0 == "graphql"), "{l:?}");
+}
+
+#[test]
+fn graphql_comment_inside_a_selection_set() {
+    // A comment may sit between fields, and a lone CR ends it as a newline does.
+    let l = ops(r##"const q="query Feed{items # note\r id}";"##);
+    assert!(has(&l, "graphql", "query", "Feed"), "{l:?}");
+}
+
+#[test]
 fn graphql_spreads_and_computed_values_mean_unknown() {
     let l = ops(r#"var d={...base,kind:"OperationDefinition",operation:"query",name:{value:"Hidden"}};"#);
     assert_eq!(unknowns(&l), 1, "{l:?}");
