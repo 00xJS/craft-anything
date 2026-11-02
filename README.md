@@ -262,7 +262,27 @@ Installers and executables are code-signed. The portable zip keeps its settings 
 | Build | File | Notes |
 |---|---|---|
 | App, universal (Apple silicon + Intel) | `craft-anything-<ver>-macos-universal.dmg` | Signed and notarized |
-| Command-line tool, universal | `craft-anything-cli-<ver>-macos-universal.zip` | Signed and notarized |
+| Command-line tool, universal | `craft-anything-cli-<ver>-macos-universal.zip` | Signed and notarized; see below if macOS blocks it |
+
+Versions after 0.2.0 include the command-line tool in the app, so builds don't need the separate
+zip. You only need it to use the command line without the app.
+
+A browser download of the zip can stop with "Apple could not verify craft-anything-cli" (a lone
+program can't carry its notarization with it, so macOS has to look it up online). A download from
+the terminal isn't checked this way, so use this instead:
+
+```sh
+ver=<ver>   # the version, for example 0.2.0
+curl -fLO "https://github.com/storytold/craft-anything/releases/download/v$ver/craft-anything-cli-$ver-macos-universal.zip"
+ditto -x -k "craft-anything-cli-$ver-macos-universal.zip" .
+mkdir -p ~/.local/bin
+mv "craft-anything-cli-$ver-macos-universal/craft-anything-cli" ~/.local/bin/
+~/.local/bin/craft-anything-cli --version
+```
+
+If you already have the blocked copy, press Done (not Move to Bin), then run
+`xattr -d com.apple.quarantine <path to craft-anything-cli>`, or allow it in System Settings →
+Privacy & Security → Open Anyway.
 
 ### Linux
 
