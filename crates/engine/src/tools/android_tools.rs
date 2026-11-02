@@ -29,7 +29,7 @@ pub fn specs() -> Vec<ToolSpec> {
         spec(
             "android_package_show",
             "Android app package",
-            "Read an APK with built-in parsers: the manifest (package, versions, SDK levels, permissions, components with exported state and intent filters, application flags) decoded from binary XML, signing certificates (v1 PKCS#7 files and the v2/v3 signing block; signatures are not verified), DEX files and native libraries per ABI.",
+            "Read an APK with built-in parsers: the manifest (package, versions, SDK levels, permissions, components with exported state and intent filters, application flags) decoded from binary XML, signing certificates (v1 PKCS#7 files and the v2/v3 signing block; signatures and content digests are verified, but not whether the certificate is one you trust), DEX files and native libraries per ABI.",
             "See what an Android app is called, what it asks permission for, its screens and services, and who signed it.",
             Android,
             e,
