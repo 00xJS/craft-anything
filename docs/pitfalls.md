@@ -143,6 +143,11 @@ external tool a live test that checks it really produced output, not just that i
 It happened again with Explorer: project folders are kept as `D:/Projects/…\name`, and "Open
 folder" opened Documents. Paths for the system's programs go through `platform::native_path`.
 
+**A message on the command line.** Claude Code was handed the whole task as `-p <message>`; a
+34,641-character brief passed Windows' 32,767-character command-line limit, so the build never
+started ("The filename or extension is too long", os error 206, #402). Give a program anything
+that can grow (messages, briefs, lists of files) on stdin or in a file, never in argv.
+
 **Console windows popping up over the app.** Only the detached launcher hid the console; the
 supervised runner didn't, so Ghidra's `.bat` and PowerShell each opened a console window during a
 real Deep-mode run (the CLI never shows it: it already has a console). Every child started from

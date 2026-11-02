@@ -66,6 +66,11 @@ pub trait AgentAdapter: Send + Sync {
     fn answers_questions(&self) -> bool {
         false
     }
+    /// The message goes in on stdin, not in argv: a long one passes Windows' command-line limit
+    /// ("The filename or extension is too long", os error 206, #402).
+    fn prompt_on_stdin(&self) -> bool {
+        false
+    }
     /// The process for a local run of `program` (an adapter may clean its environment).
     fn process(&self, program: &str) -> Process {
         Process::new(program)
@@ -169,7 +174,6 @@ const CHANGING_TOOLS: &[&str] =
 fn question_args(mut a: Vec<String>, cx: &ArgsCx) -> Vec<String> {
     a.extend([
         "-p".into(),
-        cx.prompt.to_string(),
         "--output-format".into(),
         "stream-json".into(),
         "--verbose".into(),
@@ -201,6 +205,10 @@ impl AgentAdapter for ClaudeCode {
         true
     }
 
+    fn prompt_on_stdin(&self) -> bool {
+        true
+    }
+
     fn check_tool_server(&self, stop: &CancelToken) -> Result<(), ToolError> {
         cli_can_start(craft_anything_platform::self_cli_path().as_deref(), stop)
     }
@@ -211,15 +219,7 @@ impl AgentAdapter for ClaudeCode {
             return question_args(a, cx);
         }
         let mcp_json = json!({"mcpServers": {MCP_NAME: {"command": cx.mcp.command, "args": cx.mcp.args}}}).to_string();
-        a.extend([
-            "-p".into(),
-            cx.prompt.to_string(),
-            "--output-format".into(),
-            "stream-json".into(),
-            "--verbose".into(),
-            "--append-system-prompt".into(),
-            cx.preamble.to_string(),
-        ]);
+        a.extend(["-p".into(), "--output-format".into(), "stream-json".into(), "--verbose".into(), "--append-system-prompt".into(), cx.preamble.to_string()]);
         // Opus 5.5 everywhere unless config.toml names another model on purpose; the effort
         // goes in through the environment (see `run_cli`).
         a.extend(["--model".into(), cx.options.cli_model.clone().unwrap_or_else(|| crate::anthropic::DEFAULT_MODEL.into())]);
