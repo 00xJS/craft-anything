@@ -436,6 +436,12 @@ pub const SQUASHFS_README: &[u8] = b"This is the squashfs readme.\n";
 /// A small, walkable SquashFS 4.0 image with uncompressed metadata and data blocks (the reader
 /// also handles gzip/xz/zstd): root holds `readme` and `etc/` (with `etc/motd`).
 pub fn squashfs_image() -> Vec<u8> {
+    squashfs_image_with_extended_directories(false, false)
+}
+
+/// The same tree with independently selectable basic or extended root and nested directory inodes.
+/// The nested directory's listing starts at a nonzero offset, distinct from its parent inode number.
+pub fn squashfs_image_with_extended_directories(extended_root: bool, extended_nested: bool) -> Vec<u8> {
     fn u16(v: &mut Vec<u8>, x: u16) {
         v.extend_from_slice(&x.to_le_bytes());
     }
@@ -449,7 +455,7 @@ pub fn squashfs_image() -> Vec<u8> {
     let motd_start = 96 + r as u32;
     let inode_table = 96 + r as u64 + motd.len() as u64;
 
-    // Inode metadata block (decompressed). Order: readme(0), motd(36), etc(72), root(104).
+    // Inode metadata block (decompressed). Order: readme(0), motd(36), etc(72), then root.
     let mut inodes = Vec::new();
     // readme: basic file (type 2)
     u16(&mut inodes, 2);
@@ -475,30 +481,32 @@ pub fn squashfs_image() -> Vec<u8> {
     u32(&mut inodes, 0);
     u32(&mut inodes, motd.len() as u32);
     u32(&mut inodes, (motd.len() as u32) | 0x0100_0000);
-    // etc: basic directory (type 1)
-    u16(&mut inodes, 1);
-    u16(&mut inodes, 0x41ed);
-    u16(&mut inodes, 0);
-    u16(&mut inodes, 0);
-    u32(&mut inodes, 0);
-    u32(&mut inodes, 2);
-    u32(&mut inodes, 0); // start_block (dir table block location)
-    u32(&mut inodes, 2); // nlink
-    u16(&mut inodes, 27); // file_size (listing + 3)
-    u16(&mut inodes, 37); // offset into dir block
-    u32(&mut inodes, 1); // parent inode
-    // root: basic directory
-    u16(&mut inodes, 1);
-    u16(&mut inodes, 0x41ed);
-    u16(&mut inodes, 0);
-    u16(&mut inodes, 0);
-    u32(&mut inodes, 0);
-    u32(&mut inodes, 1);
-    u32(&mut inodes, 0);
-    u32(&mut inodes, 3);
-    u16(&mut inodes, 40);
-    u16(&mut inodes, 0);
-    u32(&mut inodes, 1);
+    fn directory(out: &mut Vec<u8>, extended: bool, number: u32, links: u32, size: u16, offset: u16) {
+        u16(out, if extended { 8 } else { 1 });
+        u16(out, 0x41ed);
+        u16(out, 0);
+        u16(out, 0);
+        u32(out, 0); // mtime
+        u32(out, number);
+        if extended {
+            u32(out, links);
+            u32(out, u32::from(size));
+            u32(out, 0); // start_block
+            u32(out, 1); // parent inode
+            u16(out, 0); // no directory indexes
+            u16(out, offset);
+            u32(out, u32::MAX); // no xattrs
+        } else {
+            u32(out, 0); // start_block
+            u32(out, links);
+            u16(out, size);
+            u16(out, offset);
+            u32(out, 1); // parent inode
+        }
+    }
+    directory(&mut inodes, extended_nested, 2, 2, 27, 37);
+    let root_ref = inodes.len() as u64;
+    directory(&mut inodes, extended_root, 1, 3, 40, 0);
 
     // Directory metadata block (decompressed): root listing @0, etc listing @37.
     let mut dirs = Vec::new();
@@ -543,7 +551,7 @@ pub fn squashfs_image() -> Vec<u8> {
     u16(&mut v, 1); // id count
     u16(&mut v, 4); // version major
     u16(&mut v, 0); // version minor
-    v.extend_from_slice(&104u64.to_le_bytes()); // root inode ref (block 0, offset 104)
+    v.extend_from_slice(&root_ref.to_le_bytes()); // root inode ref (block 0)
     v.extend_from_slice(&bytes_used.to_le_bytes());
     v.extend_from_slice(&id_table.to_le_bytes());
     v.extend_from_slice(&u64::MAX.to_le_bytes()); // xattr

@@ -142,7 +142,7 @@ fn walk(data: &[u8], sb: &Sb, inodes: &Meta, dirs: &Meta, inode_ref: u64, parent
     // Directory inode (basic=1, extended=8).
     let (start_block, size, offset) = match itype {
         1 => (r.u32_le(pos + 16), r.u16_le(pos + 24).map(u32::from), r.u16_le(pos + 26)),
-        8 => (r.u32_le(pos + 24), r.u32_le(pos + 20), r.u16_le(pos + 28)),
+        8 => (r.u32_le(pos + 24), r.u32_le(pos + 20), r.u16_le(pos + 34)),
         _ => return,
     };
     let (Some(start_block), Some(size), Some(offset)) = (start_block, size, offset) else { return };

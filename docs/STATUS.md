@@ -60,6 +60,13 @@ checked with Rizin 0.9.1 on Windows) and radio decoding with rtl_433 (`radio_rec
 shares with `=h& 9090` (`native_cutter_sessions_list`, `native_cutter_command_run`; tested
 against a stand-in server, not yet a real Cutter). Every tool is listed in `docs/tools.md`.
 
+### SquashFS extended directories
+
+The filesystem reader recovers the same files and bytes from basic and extended directory inodes.
+Synthetic images cover an extended root, a nested extended directory with a nonzero listing offset,
+and both together; the results are compared with the existing basic-directory fixture. Compressed
+metadata, directory indexes and a real firmware extraction were not newly checked for this fix.
+
 ## Known limits
 
 - Locks: every mutex but the browser viewer's goes through `platform::sync`. A deadlock on one thread or across
