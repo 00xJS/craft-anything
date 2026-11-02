@@ -84,7 +84,7 @@ pub fn ask(
     };
     let (mut conv, mut from): (Box<dyn Conversation>, AnsweredFrom) = match entry.config.kind {
         BackendKind::AgentCli => {
-            let session = ws.manifest.agent_session.clone();
+            let session = ws.manifest.agent_session_for(&entry.config.model).map(str::to_string);
             if let Some(id) = session.as_deref() {
                 bring_back_session(ws, &entry, id);
             }

@@ -968,6 +968,31 @@ mod picking_up_a_build {
         assert!(!told.contains("Their request"), "not the first-build brief again: {told}");
     }
 
+    /// #469: after the builder changed, the session the old one saved isn't handed to the new
+    /// one, which starts from the brief; the same agent still carries on.
+    #[test]
+    fn another_agents_session_is_not_continued() {
+        let b = bench();
+        let mut ws = worked_on(&b);
+        ws.manifest.agent_session_by = Some("claude-code".into());
+        ws.save().unwrap();
+        let (ok, feed) = try_it(&b, &ws);
+        assert!(ok, "{feed:?}");
+        let told = std::fs::read_to_string(&b.prompts).unwrap();
+        assert!(told.contains("Their request") && !told.contains("Pick up where you left off"), "{told}");
+        let m = Workspace::open(&ws.root).unwrap().manifest;
+        assert_eq!((m.agent_session, m.agent_session_by.as_deref()), (None, Some("stand-in")));
+
+        let b = bench();
+        let mut ws = worked_on(&b);
+        ws.manifest.agent_session_by = Some("stand-in".into());
+        ws.save().unwrap();
+        let (ok, feed) = try_it(&b, &ws);
+        assert!(ok, "{feed:?}");
+        assert!(std::fs::read_to_string(&b.prompts).unwrap().contains("Pick up where you left off"));
+        assert_eq!(Workspace::open(&ws.root).unwrap().manifest.agent_session.as_deref(), Some("session-1"));
+    }
+
     #[test]
     fn a_new_project_still_starts_from_the_top() {
         let b = bench();
