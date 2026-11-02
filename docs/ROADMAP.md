@@ -496,6 +496,7 @@ Owner: open · Status: done (branch `feature/r1.9-versioned-files`)
 
 ### R2.1 Building with API-key backends
 Owner: maintainers · Status: in progress (built; live runs need keys)
+- [x] Include successful context-summary calls in message usage, build cost and the model-turn journal (#272).
 - [x] File and command tools for our own agent (`Build` toolset): `build_files_list`,
       `build_file_read`, `build_file_write`, `build_file_edit`, `build_command_run`, in the session's
       workspace, through `platform::process` and the same approval policy as Claude Code builds

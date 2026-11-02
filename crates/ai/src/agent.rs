@@ -328,7 +328,13 @@ impl AgentLoop {
             turns += 1;
             let tools = self.tool_defs();
             let system = self.system.clone().unwrap_or_default();
-            self.fit_context(&system);
+            if let Some((usage, cost)) = self.fit_context(&system) {
+                msg_usage.add(usage);
+                msg_cost = match (msg_cost, cost) {
+                    (Some(a), Some(b)) => Some(a + b),
+                    _ => None,
+                };
+            }
             let Some(result) = self.one_turn(&system, &tools, effort) else { break };
             self.last_input = result.usage.input_tokens + result.usage.cache_read_tokens + result.usage.cache_write_tokens;
             let (slot_name, local, model_id) = match self.chain.get(self.current) {
@@ -427,13 +433,14 @@ impl AgentLoop {
     }
 
     /// Make room when the conversation has outgrown its budget: trim old tool results first; when
-    /// that isn't enough, replace the oldest part with a summary the model writes.
-    fn fit_context(&mut self, system: &str) {
+    /// that isn't enough, replace the oldest part with a summary the model writes. Return the
+    /// successful summary call's usage so the message and build account for it too.
+    fn fit_context(&mut self, system: &str) -> Option<(Usage, Option<f64>)> {
         let budget = self.context_budget();
         let estimate = context::estimate_tokens(&self.history).max(1);
         let size = if self.last_input > 0 { self.last_input } else { estimate };
         if size <= budget {
-            return;
+            return None;
         }
         // Real tokens per estimated token, to judge the trimmed size before the next turn.
         let scale = size as f64 / estimate as f64;
@@ -442,19 +449,31 @@ impl AgentLoop {
         self.last_input = 0;
         self.host.journal("context", json!({"action": "trim", "blocks": trimmed, "tokens_before": size, "tokens_after": after, "budget": budget}));
         if trimmed > 0 && after <= budget * 3 / 4 {
-            return;
+            return None;
         }
-        let Some(cut) = context::cut_point(&self.history) else { return };
+        let cut = context::cut_point(&self.history)?;
         self.emit(AgentEvent::Status { text: "Making room: summarising the earlier work…".into() });
         let messages = context::with_summary_request(&self.history[..cut]);
         let req = TurnRequest { system, messages: &messages, tools: &[], effort: Effort::Low, max_tokens: crate::anthropic::MAX_TOKENS };
         let stop = self.stop.clone();
         let summary = self.chain.get_mut(self.current).map(|slot| slot.model.turn(&req, &mut |_| {}, &stop));
+        let mut accounted = None;
         let text = match summary {
             Some(Ok(r)) => {
                 let local = self.chain.get(self.current).is_some_and(|s| s.local);
+                let backend = self.chain.get(self.current).map(|s| s.name.as_str()).unwrap_or_default();
                 let cost = price::cost(&r.model, &r.usage, &self.cfg.prices, local);
                 self.meter.add(r.usage, cost);
+                accounted = Some((r.usage, cost));
+                self.host.journal(
+                    "model_turn",
+                    json!({
+                        "backend": backend, "model": r.model, "input_tokens": r.usage.input_tokens,
+                        "output_tokens": r.usage.output_tokens, "cache_read_tokens": r.usage.cache_read_tokens,
+                        "cache_write_tokens": r.usage.cache_write_tokens, "cost_usd": cost, "stop_reason": r.stop.as_str(),
+                        "effort": Effort::Low.as_str(), "purpose": "context_summary",
+                    }),
+                );
                 r.message.text()
             }
             Some(Err(e)) => {
@@ -472,6 +491,7 @@ impl AgentLoop {
         self.history = context::summarised(&self.history, cut, &text);
         self.host.journal("context", json!({"action": "summary", "messages_before": before, "messages_after": self.history.len()}));
         self.save_transcript();
+        accounted
     }
 
     /// One model call, falling back along the chain when a backend fails before producing output.
@@ -828,7 +848,7 @@ pub(crate) mod tests {
     /// A host whose `danger` tool needs consent.
     struct FakeHost {
         calls: Mutex<Vec<(String, bool)>>,
-        journal: Mutex<Vec<String>>,
+        journal: Mutex<Vec<(String, Value)>>,
     }
 
     impl ToolHost for FakeHost {
@@ -856,8 +876,8 @@ pub(crate) mod tests {
             }
             Ok(ToolOutput::Value(json!({"ran": id})))
         }
-        fn journal(&self, kind: &str, _e: Value) {
-            self.journal.lock().unwrap().push(kind.to_string());
+        fn journal(&self, kind: &str, entry: Value) {
+            self.journal.lock().unwrap().push((kind.to_string(), entry));
         }
         fn investigation(&self) -> String {
             "{}".into()
@@ -936,7 +956,9 @@ pub(crate) mod tests {
         assert!(calls.contains(&("danger".into(), true)));
         assert!(events.iter().any(|e| matches!(e, AgentEvent::TextDelta { text } if text == "done")));
         let j = host.journal.lock().unwrap().clone();
-        assert!(j.contains(&"user_message".into()) && j.contains(&"model_turn".into()) && j.contains(&"consent".into()));
+        for kind in ["user_message", "model_turn", "consent"] {
+            assert!(j.iter().any(|(k, _)| k == kind));
+        }
         assert!(matches!(events.last(), Some(AgentEvent::TurnDone { input_tokens: 50, .. })));
         // cost known for the priced model id
         assert!(matches!(events.last(), Some(AgentEvent::TurnDone { cost_usd: Some(_), .. })));
@@ -949,18 +971,23 @@ pub(crate) mod tests {
         let host = Arc::new(FakeHost { calls: Mutex::default(), journal: Mutex::default() });
         let seen = Arc::new(Mutex::new(Vec::new()));
         let look = |id: &str| turn(vec![Block::ToolUse { id: id.into(), name: "look".into(), input: json!({}) }], StopReason::ToolUse);
+        let mut summary = turn(vec![Block::Text { text: "Made index.html; the menu is left.".into() }], StopReason::EndTurn).unwrap();
+        summary.usage = Usage { input_tokens: 30, output_tokens: 4, cache_read_tokens: 7, cache_write_tokens: 3 };
         let script = Scripted {
-            turns: VecDeque::from([
-                look("a"),
-                look("b"),
-                turn(vec![Block::Text { text: "Made index.html; the menu is left.".into() }], StopReason::EndTurn),
-                turn(vec![Block::Text { text: "done".into() }], StopReason::EndTurn),
-            ]),
+            turns: VecDeque::from([look("a"), look("b"), Ok(summary), turn(vec![Block::Text { text: "done".into() }], StopReason::EndTurn)]),
             seen: seen.clone(),
         };
         let slot = ModelSlot { name: "Fake".into(), model: Box::new(script), local: false, effort: None, max_turns: 10 };
-        // Each turn reports 10 input tokens, over this budget, so room is made before the third.
-        let cfg = || LoopConfig { transcript: Some(path.clone()), context_tokens: 5, ..LoopConfig::default() };
+        // Ordinary turns report 10 input tokens, over this budget, so room is made before the third.
+        let cfg = || LoopConfig {
+            transcript: Some(path.clone()),
+            context_tokens: 5,
+            prices: BTreeMap::from([(
+                "claude-opus-5-5".into(),
+                crate::config::Price { input_per_mtok: 1.0, output_per_mtok: 2.0, cache_read_per_mtok: Some(0.25), cache_write_per_mtok: Some(0.5) },
+            )]),
+            ..LoopConfig::default()
+        };
         let mut c = ApiConversation::start(host.clone(), vec![slot], cfg()).unwrap();
         assert!(!c.resumed());
         c.send("Build it");
@@ -973,7 +1000,23 @@ pub(crate) mod tests {
             assert!(seen[3][0].text().contains("Made index.html"), "the summary replaced the oldest part");
             assert!(seen[3].len() < seen[1].len() + 2);
         }
-        assert!(host.journal.lock().unwrap().contains(&"context".into()));
+        assert!(
+            matches!(events.last(), Some(AgentEvent::TurnDone { input_tokens: 60, output_tokens: 19, cost_usd: Some(cost), .. }) if (cost - 0.00010125).abs() < 1e-12),
+            "{events:?}"
+        );
+        {
+            let journal = host.journal.lock().unwrap();
+            assert!(journal.iter().any(|(kind, _)| kind == "context"));
+            let turns: Vec<_> = journal.iter().filter(|(kind, _)| kind == "model_turn").map(|(_, entry)| entry).collect();
+            assert_eq!(turns.len(), 4, "all model calls, including the summary, are journaled");
+            let summary = turns.iter().find(|entry| entry["purpose"] == "context_summary").unwrap();
+            assert_eq!(summary["input_tokens"], 30);
+            assert_eq!(summary["output_tokens"], 4);
+            assert_eq!(summary["cache_read_tokens"], 7);
+            assert_eq!(summary["cache_write_tokens"], 3);
+            assert_eq!(summary["effort"], "low");
+            assert!((turns.iter().map(|entry| entry["cost_usd"].as_f64().unwrap()).sum::<f64>() - 0.00010125).abs() < 1e-12);
+        }
         // A new conversation with the same file continues it.
         let seen2 = Arc::new(Mutex::new(Vec::new()));
         let script = Scripted { turns: VecDeque::from([turn(vec![Block::Text { text: "blue now".into() }], StopReason::EndTurn)]), seen: seen2.clone() };
@@ -985,6 +1028,42 @@ pub(crate) mod tests {
         let seen2 = seen2.lock().unwrap();
         assert!(seen2[0][0].text().contains("Made index.html") && seen2[0].last().unwrap().text().contains("Make it blue"));
         assert!(crate::context::load(&path).unwrap().last().unwrap().text().contains("blue now"), "kept after every message");
+    }
+
+    #[test]
+    fn summary_accounting_keeps_unknown_prices_and_failed_calls_distinct() {
+        for (local, failed) in [(false, false), (true, false), (false, true)] {
+            let host = Arc::new(FakeHost { calls: Mutex::default(), journal: Mutex::default() });
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let look = |id: &str| turn(vec![Block::ToolUse { id: id.into(), name: "look".into(), input: json!({}) }], StopReason::ToolUse);
+            let summary = if failed {
+                Err(ToolError::internal("summary unavailable"))
+            } else {
+                let mut result = turn(vec![Block::Text { text: String::new() }], StopReason::EndTurn).unwrap();
+                result.model = "unpriced-fixture-model".into();
+                Ok(result)
+            };
+            let script = Scripted {
+                turns: VecDeque::from([look("a"), look("b"), summary, turn(vec![Block::Text { text: "done".into() }], StopReason::EndTurn)]),
+                seen: seen.clone(),
+            };
+            let slot = ModelSlot { name: "Fake".into(), model: Box::new(script), local, effort: None, max_turns: 10 };
+            let mut c = ApiConversation::start(host.clone(), vec![slot], LoopConfig { context_tokens: 5, ..LoopConfig::default() }).unwrap();
+            c.send("Build it");
+            let events = drain_until_done(&mut c, |_, _| {});
+            assert_eq!(seen.lock().unwrap().len(), 4, "the summary was attempted");
+            let Some(AgentEvent::TurnDone { input_tokens, output_tokens, cost_usd, .. }) = events.last() else { panic!("{events:?}") };
+            assert_eq!((*input_tokens, *output_tokens), if failed { (30, 15) } else { (40, 20) });
+            if local {
+                assert_eq!(*cost_usd, Some(0.0));
+            } else if failed {
+                assert!(cost_usd.is_some(), "a failed call supplies no usage or unknown price");
+            } else {
+                assert_eq!(*cost_usd, None, "the successful summary's unknown price makes the total unknown");
+            }
+            let journal = host.journal.lock().unwrap();
+            assert_eq!(journal.iter().filter(|(kind, _)| kind == "model_turn").count(), if failed { 3 } else { 4 });
+        }
     }
 
     #[test]
