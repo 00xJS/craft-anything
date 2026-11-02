@@ -288,6 +288,15 @@ impl AiHub {
         }
     }
 
+    /// The configuration to change and save back. An [ai] section that can't be read is an error
+    /// here, never the empty default, so a change can't save over it (#261).
+    fn config_to_change(&self) -> Result<AiConfig, ToolError> {
+        match self.engine.try_session() {
+            Some(s) => AiConfig::from_table(&s.settings.ai),
+            None => AiConfig::from_table(&Settings::load_from(&self.settings_path()).ai),
+        }
+    }
+
     /// Save the AI configuration into the settings file, then the session: a save that fails
     /// changes nothing, so the app never shows a backend or role that isn't saved.
     pub fn save_config(&self, cfg: &AiConfig) -> Result<(), ToolError> {
@@ -326,7 +335,7 @@ impl AiHub {
     /// Choose the backend for `role`; `None` goes back to its default (the builder: an agent app,
     /// else any AI backend; the extractor: none).
     pub fn set_role(&self, role: Role, name: Option<&str>) -> Result<(), ToolError> {
-        let mut cfg = self.config();
+        let mut cfg = self.config_to_change()?;
         let role = config::role_key(role).to_string();
         match name {
             Some(n) if cfg.get(n).is_none() => {
@@ -392,10 +401,10 @@ impl AiHub {
         if entry.config.name.trim().is_empty() {
             return Err(ToolError::invalid("A backend needs a name."));
         }
+        let mut cfg = self.config_to_change()?;
         if let Some(k) = key.filter(|k| !k.trim().is_empty()) {
             self.keys.set(&entry.config.name, k.trim())?;
         }
-        let mut cfg = self.config();
         cfg.upsert(entry);
         self.save_config(&cfg)
     }
@@ -403,7 +412,7 @@ impl AiHub {
     /// Turn a backend on or off; it keeps its settings and key. Returns false when there was no
     /// such backend.
     pub fn set_enabled(&self, name: &str, on: bool) -> Result<bool, ToolError> {
-        let mut cfg = self.config();
+        let mut cfg = self.config_to_change()?;
         let Some(b) = cfg.backends.iter_mut().find(|b| b.config.name == name) else { return Ok(false) };
         b.config.enabled = on;
         self.save_config(&cfg)?;
@@ -413,7 +422,7 @@ impl AiHub {
     /// The program an agent app runs (`None` or empty: found by its usual name, on PATH and in the
     /// usual install folders). Returns false when there was no such backend.
     pub fn set_command(&self, name: &str, command: Option<&str>) -> Result<bool, ToolError> {
-        let mut cfg = self.config();
+        let mut cfg = self.config_to_change()?;
         let Some(b) = cfg.backends.iter_mut().find(|b| b.config.name == name) else { return Ok(false) };
         b.options.command = command.map(str::trim).filter(|c| !c.is_empty()).map(str::to_string);
         self.save_config(&cfg)?;
@@ -432,7 +441,7 @@ impl AiHub {
         if model.is_empty() {
             return Err(ToolError::invalid("Name a model."));
         }
-        let mut cfg = self.config();
+        let mut cfg = self.config_to_change()?;
         let Some(b) = cfg.backends.iter_mut().find(|b| b.config.name == name) else { return Ok(false) };
         match b.config.kind {
             BackendKind::AgentCli => b.options.cli_model = Some(model.to_string()),
@@ -455,7 +464,7 @@ impl AiHub {
 
     /// Remove a backend and its stored key. Returns false when there was no such backend.
     pub fn remove_backend(&self, name: &str) -> Result<bool, ToolError> {
-        let mut cfg = self.config();
+        let mut cfg = self.config_to_change()?;
         let removed = cfg.remove(name);
         if removed {
             self.save_config(&cfg)?;

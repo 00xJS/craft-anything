@@ -138,6 +138,36 @@ fn a_failed_save_changes_nothing() {
     assert!(h.backends().is_empty(), "the app shows only what was saved");
 }
 
+/// #261: one bad price made the whole [ai] section read as empty, and adding a backend saved
+/// that over the backends, roles and prices.
+#[test]
+fn ai_settings_that_cant_be_read_are_never_saved_over() {
+    let (h, d) = hub();
+    add(&h, "Claude Code", BackendKind::AgentCli, "http://127.0.0.1:9", None);
+    add(&h, "Kimi K3 (OpenRouter)", BackendKind::Openrouter, "http://127.0.0.1:9", None);
+    h.set_role(Role::Builder, Some("Kimi K3 (OpenRouter)")).unwrap();
+    let file = d.path().join("config.toml");
+    let mut bad = h.engine.session().settings.clone();
+    let price: toml::Table = toml::from_str(
+        "[m]
+input_per_mtok = 1.0
+",
+    )
+    .unwrap();
+    bad.ai.insert("prices".into(), toml::Value::Table(price));
+    bad.save_to(&file).unwrap();
+    h.engine.session().settings = bad;
+    let before = std::fs::read(&file).unwrap();
+    let cfg = BackendConfig { name: "Other".into(), kind: BackendKind::Openrouter, model: "m".into(), base_url: None, ssh_host: None, enabled: true };
+    let e = h.add_backend(cfg, Some("sk-test".into())).unwrap_err();
+    assert_eq!(e.code, ErrorCode::BadSettings, "{e:?}");
+    assert!(h.set_role(Role::Builder, None).is_err());
+    assert!(h.set_enabled("Claude Code", false).is_err());
+    assert!(h.remove_backend("Claude Code").is_err());
+    assert_eq!(std::fs::read(&file).unwrap(), before, "the settings file was changed");
+    assert!(h.keys.get("Other").is_none(), "a refused add stored its key");
+}
+
 #[test]
 fn the_person_chooses_who_builds() {
     let (h, _d) = hub();
