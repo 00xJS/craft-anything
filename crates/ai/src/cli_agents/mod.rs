@@ -244,6 +244,9 @@ pub struct StreamParser {
     pub output_tokens: u64,
     pub cost_usd: Option<f64>,
     pub saw_result: bool,
+    /// The run was asked to continue a saved session the agent doesn't have (it lives on another
+    /// computer, or under another folder), so it did nothing.
+    pub session_missing: bool,
 }
 
 fn short_tool(name: &str) -> String {
@@ -276,8 +279,18 @@ fn summary_of(s: &str) -> String {
 }
 
 impl StreamParser {
+    /// A parser for one run, reading lines the way `adapter` says.
     pub fn new(adapter: Arc<dyn AgentAdapter>) -> Self {
-        StreamParser { adapter, session_id: None, tool_names: HashMap::new(), input_tokens: 0, output_tokens: 0, cost_usd: None, saw_result: false }
+        StreamParser {
+            adapter,
+            session_id: None,
+            tool_names: HashMap::new(),
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: None,
+            saw_result: false,
+            session_missing: false,
+        }
     }
 
     /// Events for one output line.
@@ -422,13 +435,17 @@ pub struct CliConversation {
     stop: Stop,
     session: Arc<Mutex<Option<String>>>,
     verified: Arc<Mutex<Option<bool>>>,
+    /// The last run's saved session wasn't there (see [`Conversation::session_lost`]).
+    lost: Arc<AtomicBool>,
 }
 
 impl CliConversation {
+    /// A conversation run as `spec` says; with `spec.resume`, its first message continues that
+    /// saved session.
     pub fn new(spec: CliSpec) -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
         let session = Arc::new(Mutex::new(spec.resume.clone()));
-        CliConversation { spec, tx, rx, busy: Arc::default(), stop: Stop::default(), session, verified: Arc::default() }
+        CliConversation { spec, tx, rx, busy: Arc::default(), stop: Stop::default(), session, verified: Arc::default(), lost: Arc::default() }
     }
 
     /// The agent's session id once a run has reported it (to continue later).
@@ -466,7 +483,34 @@ fn remote_command(program: &str, args: Vec<String>, env: &[(&'static str, String
     cmd
 }
 
-fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, session: &Mutex<Option<String>>, verified: &Mutex<Option<bool>>) {
+/// The run's shared state: the session it continues and reports, whether the agent's flags were
+/// checked, and whether the session it was to continue was missing.
+struct RunState {
+    session: Arc<Mutex<Option<String>>>,
+    verified: Arc<Mutex<Option<bool>>>,
+    lost: Arc<AtomicBool>,
+}
+
+/// End a turn: take the next message first, then say the turn is done (`send(done)`), since
+/// whoever reads `TurnDone` may send the next message at once. The other order refuses it ("Still
+/// working") with no `TurnDone`, and the caller waits forever.
+fn end_turn(busy: &AtomicBool, done: AgentEvent, send: impl FnOnce(AgentEvent)) {
+    busy.store(false, Ordering::SeqCst);
+    send(done);
+}
+
+/// The `TurnDone` that ends a turn of `backend` with no usage to report.
+fn nothing_done(backend: &str) -> AgentEvent {
+    AgentEvent::TurnDone { backend: backend.to_string(), input_tokens: 0, output_tokens: 0, cost_usd: None, cost_is_estimate: false }
+}
+
+/// One message as one run of the agent's program (here or over SSH), its events sent on `tx`
+/// as they come. Returns the `TurnDone` that ends the turn, whatever happened, for the caller to
+/// send once the conversation can take the next message. The session it reports is kept for the
+/// next message; one it was asked to continue but doesn't have is forgotten and flagged in
+/// `state.lost` before the error that says so is sent.
+fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, state: &RunState) -> AgentEvent {
+    let RunState { session, verified, lost } = state;
     let name = spec.config.name.clone();
     let agent = spec.config.model.clone();
     let program = spec.options.command.clone().unwrap_or_else(|| program_for(&agent));
@@ -501,7 +545,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
             remediation: Some("Ask with Claude Code, or with an AI that has an API key.".into()),
             log: None,
         });
-        return;
+        return nothing_done(&name);
     }
     let access = match (&spec.builder, spec.deep, spec.question) {
         (_, true, true) => Access::Question,
@@ -525,7 +569,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
     let _ =
         tx.send(AgentEvent::Status { text: format!("Asking {}{}…", display_for(&agent), remote.as_ref().map(|h| format!(" on {h}")).unwrap_or_default()) });
     let parser = Arc::new(Mutex::new(StreamParser::new(adapter.clone())));
-    let (p2, tx2, tx_err) = (parser.clone(), tx.clone(), tx.clone());
+    let (p2, tx2, tx_err, lost2) = (parser.clone(), tx.clone(), tx.clone(), lost.clone());
     let stop2 = stop.clone();
     let mut proc = (if remote.is_none() { adapter.process(&prog) } else { Process::new(&prog) })
         .args(&argv)
@@ -538,7 +582,13 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
         .stdout_cap(4 * 1024 * 1024)
         .cancel_when(move || stop2.is_stopped())
         .on_stdout_line(move |l| {
-            for e in p2.lock().unwrap_or_else(PoisonError::into_inner).line(l) {
+            let mut p = p2.lock().unwrap_or_else(PoisonError::into_inner);
+            let events = p.line(l);
+            // Said before the error that follows it, so whoever reads the error can tell.
+            if p.session_missing {
+                lost2.store(true, Ordering::SeqCst);
+            }
+            for e in events {
                 let _ = tx2.send(e);
             }
         })
@@ -556,10 +606,15 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
     }
     let result = proc.run();
     let p = parser.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(id) = &p.session_id {
+    if p.session_missing {
+        // The id it reported is the one it couldn't find: the next message starts a new session.
+        *session.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    } else if let Some(id) = &p.session_id {
         *session.lock().unwrap_or_else(PoisonError::into_inner) = Some(id.clone());
     }
     match result {
+        // It said why already, and there's nothing more in its output to keep.
+        Ok(_) if p.session_missing => {}
         Ok(out) if !out.success && !p.saw_result => {
             let _ = tx.send(shown.exit_event(&agent, &out));
         }
@@ -577,13 +632,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
             let _ = tx.send(shown.error_event(&agent, e));
         }
     }
-    let _ = tx.send(AgentEvent::TurnDone {
-        backend: name,
-        input_tokens: p.input_tokens,
-        output_tokens: p.output_tokens,
-        cost_usd: p.cost_usd,
-        cost_is_estimate: true,
-    });
+    AgentEvent::TurnDone { backend: name, input_tokens: p.input_tokens, output_tokens: p.output_tokens, cost_usd: p.cost_usd, cost_is_estimate: true }
 }
 
 /// What's needed to explain a failed CLI run: the command with the person's message left out, and
@@ -707,6 +756,15 @@ impl Conversation for CliConversation {
         CliConversation::session_id(self)
     }
 
+    /// Set by the last run (see `run_cli`) and cleared when the next message is sent.
+    fn session_lost(&self) -> bool {
+        self.lost.load(Ordering::SeqCst)
+    }
+
+    /// Runs the message on a thread of its own; a message while one is running is refused with an
+    /// error event. Every turn ends with `TurnDone`, a runner that panics or can't start included,
+    /// and the conversation takes the next message before that's sent: whoever reads it may send
+    /// the next message at once (a session that wasn't there is followed by a fresh start).
     fn send(&mut self, text: &str) {
         if self.busy.swap(true, Ordering::SeqCst) {
             let _ = self.tx.send(AgentEvent::Error {
@@ -717,26 +775,24 @@ impl Conversation for CliConversation {
             return;
         }
         self.stop.reset();
-        let (spec, tx, stop, busy, session, verified) =
-            (self.spec.clone(), self.tx.clone(), self.stop.clone(), self.busy.clone(), self.session.clone(), self.verified.clone());
+        self.lost.store(false, Ordering::SeqCst);
+        let (spec, tx, stop, busy) = (self.spec.clone(), self.tx.clone(), self.stop.clone(), self.busy.clone());
+        let state = RunState { session: self.session.clone(), verified: self.verified.clone(), lost: self.lost.clone() };
         let text = text.to_string();
         let spawned = std::thread::Builder::new().name("ai-cli".into()).spawn(move || {
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_cli(&spec, &text, &tx, &stop, &session, &verified)));
-            if r.is_err() {
+            let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_cli(&spec, &text, &tx, &stop, &state))).unwrap_or_else(|_| {
                 let _ = tx.send(AgentEvent::Error { message: "The agent runner hit a bug and stopped safely.".into(), remediation: None, log: None });
-                let _ = tx.send(AgentEvent::TurnDone {
-                    backend: spec.config.name.clone(),
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    cost_usd: None,
-                    cost_is_estimate: false,
-                });
-            }
-            busy.store(false, Ordering::SeqCst);
+                nothing_done(&spec.config.name)
+            });
+            end_turn(&busy, done, |e| {
+                let _ = tx.send(e);
+            });
         });
         if spawned.is_err() {
-            self.busy.store(false, Ordering::SeqCst);
             let _ = self.tx.send(AgentEvent::Error { message: "Couldn't start a worker thread.".into(), remediation: None, log: None });
+            end_turn(&self.busy, nothing_done(&self.spec.config.name), |e| {
+                let _ = self.tx.send(e);
+            });
         }
     }
 
@@ -1031,6 +1087,98 @@ mod tests {
         assert_eq!((p.input_tokens, p.output_tokens, p.cost_usd), (10, 7, Some(0.12)));
     }
 
+    /// #446: a project copied from another computer names a session this one doesn't have. The
+    /// result line is Claude Code 2.1's own.
+    #[test]
+    fn a_session_that_is_not_on_this_computer_is_told_apart() {
+        let missing = json!({"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"session_id":"39b5b312-5678-1234-961c-32112666ffab","total_cost_usd":0,"errors":["No conversation found with session ID: 39b5b312-5678-1234-961c-32112666ffab"]});
+        let mut p = StreamParser::new(adapter_for("claude-code"));
+        let events = p.line(&missing.to_string());
+        assert!(p.session_missing);
+        let [AgentEvent::Error { message, remediation: Some(fix), .. }] = events.as_slice() else { panic!("{events:?}") };
+        assert!(message.contains("isn't on this computer") && fix.contains("Ask again"), "{message} / {fix}");
+        // Any other failure is still that failure.
+        let other = json!({"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":3,"errors":["Something else"]});
+        let mut p = StreamParser::new(adapter_for("claude-code"));
+        let events = p.line(&other.to_string());
+        assert!(!p.session_missing);
+        assert!(matches!(events.as_slice(), [AgentEvent::Error { message, .. }] if message.contains("error_during_execution")), "{events:?}");
+    }
+
+    /// #451: Claude Code's session is found wherever it ran, and only by a real id.
+    #[test]
+    fn a_claude_code_session_is_found_by_its_id_alone() {
+        let config = tempfile::tempdir().unwrap();
+        let folder = config.path().join("projects").join("-Users-someone-Documents-Craft-Anything-notes");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("0e4a6b1c-1111-4222-8333-944455556666.jsonl"), "{}\n").unwrap();
+        std::fs::write(config.path().join("projects").join("stray.jsonl"), "{}\n").unwrap();
+        let found = adapters::claude_session_file(config.path(), "0e4a6b1c-1111-4222-8333-944455556666");
+        assert_eq!(found, Some(folder.join("0e4a6b1c-1111-4222-8333-944455556666.jsonl")));
+        assert_eq!(adapters::claude_session_file(config.path(), "1b70e5c4-0000-0000-0000-000000000000"), None);
+        for bad in ["", "../stray", "a/b", &"a".repeat(65)] {
+            assert_eq!(adapters::claude_session_file(config.path(), bad), None, "{bad:?}");
+        }
+        assert_eq!(adapters::claude_session_file(&config.path().join("nowhere"), "0e4a6b1c-1111-4222-8333-944455556666"), None);
+    }
+
+    /// #451: a session kept in the project is put back where Claude Code finds it, once, and
+    /// only as the session it was.
+    #[test]
+    fn a_kept_claude_code_session_is_put_back_on_another_computer() {
+        let config = tempfile::tempdir().unwrap();
+        let id = "0e4a6b1c-1111-4222-8333-944455556666";
+        let saved = format!("{{\"type\":\"user\",\"sessionId\":\"{id}\",\"message\":{{\"content\":\"Make a notes app.\"}}}}\n");
+        let cwd = Path::new("/home/someone/Craft Anything/notes.app");
+        assert!(adapters::claude_restore(config.path(), id, saved.as_bytes(), cwd).unwrap());
+        let put = config.path().join("projects").join("-home-someone-Craft-Anything-notes-app").join(format!("{id}.jsonl"));
+        assert_eq!(std::fs::read_to_string(&put).unwrap(), saved);
+        assert_eq!(adapters::claude_session_file(config.path(), id), Some(put.clone()), "Claude Code finds it by its id");
+        // There already: left as it is (it may have moved on since the copy was kept).
+        std::fs::write(&put, "newer").unwrap();
+        assert!(!adapters::claude_restore(config.path(), id, saved.as_bytes(), cwd).unwrap());
+        assert_eq!(std::fs::read_to_string(&put).unwrap(), "newer");
+        // A copy of another session, or an id that isn't one, puts nothing back.
+        let other = "1b70e5c4-0000-0000-0000-000000000000";
+        assert!(adapters::claude_restore(config.path(), other, saved.as_bytes(), cwd).unwrap_err().message.contains("another session"));
+        assert!(adapters::claude_restore(config.path(), "../../x", saved.as_bytes(), cwd).is_err());
+        assert_eq!(adapters::claude_session_file(config.path(), other), None);
+        assert!(!adapter_for("codex").restore_session(id, saved.as_bytes(), cwd).unwrap());
+    }
+
+    /// #451: a kept session read back as a handoff: what was asked and answered, nothing else.
+    /// The line shapes are Claude Code 2.1's.
+    #[test]
+    fn a_kept_claude_code_session_reads_back_as_its_requests_and_replies() {
+        let lines = [
+            json!({"type":"queue-operation","operation":"enqueue","content":"queued copy"}),
+            json!({"type":"user","isSidechain":false,"message":{"role":"user","content":"Make a notes app."}}),
+            json!({"type":"assistant","isSidechain":false,"message":{"content":[{"type":"thinking","thinking":"secret plan"}]}}),
+            json!({"type":"assistant","isSidechain":false,"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}),
+            json!({"type":"user","isSidechain":false,"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"app/"}]}}),
+            json!({"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"side task"}]}}),
+            json!({"type":"assistant","isSidechain":false,"message":{"content":[{"type":"text","text":"Built a notes app with a sidebar."}]}}),
+            json!({"type":"assistant","isSidechain":false,"message":{"content":[{"type":"text","text":"No response requested."}]}}),
+            json!({"type":"user","isSidechain":false,"message":{"content":"The person asks: \"make it blue\""}}),
+            json!({"type":"assistant","isSidechain":false,"message":{"content":[{"type":"text","text":"Made it blue."}]}}),
+        ];
+        let saved = lines.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\nnot json\n";
+        let all = adapters::claude_handoff(&saved, 10_000).unwrap();
+        assert_eq!(
+            all,
+            "Craft Anything asked you: Make a notes app.\n\nYou answered: Built a notes app with a sidebar.\n\nCraft Anything asked you: The person asks: \"make it blue\"\n\nYou answered: Made it blue."
+        );
+        // Short of room, the newest is kept.
+        let short = adapters::claude_handoff(&saved, 80).unwrap();
+        assert!(short.ends_with("You answered: Made it blue.") && !short.contains("notes app"), "{short}");
+        // A first brief runs long: it's cut short.
+        let long = json!({"type":"user","message":{"content":"x".repeat(10_000)}}).to_string();
+        assert!(adapters::claude_handoff(&long, 10_000).unwrap().chars().count() < 1600);
+        assert_eq!(adapters::claude_handoff("", 10_000), None);
+        assert_eq!(adapters::claude_handoff("\u{0}garbage", 10_000), None);
+        assert!(adapter_for("claude-code").handoff(&saved, 10_000).is_some() && adapter_for("codex").handoff(&saved, 10_000).is_none());
+    }
+
     #[test]
     fn parses_codex_and_gemini_streams() {
         let mut p = StreamParser::new(adapter_for("codex"));
@@ -1108,6 +1256,55 @@ mod tests {
         }
         let text: String = all.iter().filter_map(|e| if let AgentEvent::TextDelta { text } = e { Some(text.clone()) } else { None }).collect();
         assert_eq!(text, "read 40000 bytes", "{all:?}");
+    }
+
+    /// Whoever reads `TurnDone` may send the next message at once (a session that wasn't there is
+    /// followed by a fresh start), so the conversation takes it before the turn is said to be
+    /// done. The race this prevents lasts nanoseconds, too short to catch from outside, so the
+    /// order is checked where it's made.
+    #[test]
+    fn a_turn_is_said_to_be_done_only_once_the_next_message_can_be_taken() {
+        let busy = AtomicBool::new(true);
+        let mut sent = None;
+        end_turn(&busy, nothing_done("Claude"), |e| {
+            assert!(!busy.load(Ordering::SeqCst), "TurnDone sent while still busy");
+            sent = Some(e);
+        });
+        assert!(matches!(sent, Some(AgentEvent::TurnDone { .. })));
+    }
+
+    /// Message after message, each turn ends with `TurnDone`, with nothing refused as "still
+    /// working" when the next is sent the moment the last is done.
+    #[cfg(unix)]
+    #[test]
+    fn the_next_message_is_taken_as_soon_as_a_turn_is_done() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("claude");
+        let reply = r#"{"type":"result","subtype":"success","is_error":false,"num_turns":1,"session_id":"s1"}"#;
+        std::fs::write(&program, format!("#!/bin/sh\ncat >/dev/null\necho '{reply}'\n")).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let config =
+            BackendConfig { name: "Claude".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
+        let options = BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
+        let mut c = CliConversation::new(CliSpec::new(config, options, false, None));
+        for round in 0..25 {
+            c.send("go");
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            let mut events = Vec::new();
+            loop {
+                let got = c.poll();
+                let done = got.iter().any(|e| matches!(e, AgentEvent::TurnDone { .. }));
+                events.extend(got);
+                if done {
+                    assert!(!c.is_busy(), "round {round}: the turn was said to be done while still busy");
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline, "round {round}: no TurnDone: {events:?}");
+                std::hint::spin_loop();
+            }
+            assert!(!events.iter().any(|e| matches!(e, AgentEvent::Error { .. })), "round {round}: {events:?}");
+        }
     }
 
     /// #91: a Mac app with no CLI beside it reached Claude Code, which stopped with a stack trace.

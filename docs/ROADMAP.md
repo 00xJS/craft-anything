@@ -528,6 +528,18 @@ Owner: maintainers · Status: in progress (built; live runs need keys)
       context, no cost); a remote one gets the cloud budget and its price (#374)
 - [ ] A per-backend context budget in `[[ai.backends]]` (`LoopConfig::context_tokens` exists), for
       services whose real window differs from 150k (#374)
+- [x] A project moved to another computer (or folder) keeps building with Claude Code: when the saved
+      `agent_session` isn't there (`Conversation::session_lost`), a fresh session starts from the brief,
+      the builder's last summary and what's in `app/` instead of failing; questions about the build put
+      the kept session back first, else are answered from the files and forget the missing one (#452)
+- [x] The coding agent's conversation travels with the project folder (#451): after every turn the
+      project keeps a copy of Claude Code's session (`agent-session.jsonl`, `AgentAdapter::session_file`);
+      on a computer without it, the copy is put back where Claude Code finds it (`restore_session`) so
+      the same session carries on, and if that fails the new session is handed the kept requests and
+      replies (`handoff`, up to 16k characters)
+- [ ] A live run of a project copied between two real computers with Claude Code (#451, #452); done on
+      one Mac with a second `CLAUDE_CONFIG_DIR` standing in for the other computer (STATUS.md)
+- [ ] Session copies for other agents that keep sessions (ACP agents' `session/load`) (#451)
 
 ### R2.2 More coding agents
 Owner: open · Status: in progress
