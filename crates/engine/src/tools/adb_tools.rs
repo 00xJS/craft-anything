@@ -771,6 +771,12 @@ fn adb_log_read(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolErro
     done(e)
 }
 
+/// Whether `dumpsys package <name>` describes `package`: it has that package's `Package [name]`
+/// block. Android answers a missing one with "Unable to find package: <name>", which names it too (#235).
+fn package_found(text: &str, package: &str) -> bool {
+    text.contains(&format!("Package [{package}]"))
+}
+
 fn adb_app_show(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {
     let p: PackageParams = parse_params(params)?;
     let serial = serial_of(&p.serial)?;
@@ -778,7 +784,7 @@ fn adb_app_show(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolErro
     let adb = adb_for(ctx)?;
     ensure_online(&adb, serial)?;
     let text = shell_text(&adb, serial, &format!("dumpsys package {package}"), "dumpsys package")?;
-    if !text.contains(package) && !text.contains("Package [") {
+    if !package_found(&text, package) {
         return Err(ToolError::new(ErrorCode::NotFound, format!("Package {package} is not installed on {serial}."))
             .with_remediation("List installed packages with adb_apps_list."));
     }
@@ -1445,6 +1451,14 @@ mod tests {
         }
         let err = call_err(&e, "adb_app_install", json!({"serial": "emulator-5554", "apk_path": "/tmp/x.apk"}));
         assert!(matches!(err.code, ErrorCode::ConsentRequired | ErrorCode::NotFound | ErrorCode::EngineMissing));
+    }
+
+    /// #235: Android's reply for a missing package names it, and was read as the package.
+    #[test]
+    fn a_missing_package_is_not_found() {
+        assert!(!package_found("Unable to find package: com.example.missing\n", "com.example.missing"));
+        assert!(!package_found("Packages:\n  Package [com.example.other] (1a2b):\n", "com.example"));
+        assert!(package_found("Packages:\n  Package [com.example.app] (1a2b3c):\n    versionName=1.0\n", "com.example.app"));
     }
 
     #[test]
