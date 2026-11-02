@@ -601,12 +601,11 @@ fn decode_utf16_xml(data: &[u8], big_endian: bool) -> Result<String, FormatError
     let r = Reader::new(data);
     let mut units = Vec::with_capacity(data.len() / 2);
     let mut off = 0;
-    while let Some(unit) = (if big_endian { r.u16_be(off) } else { r.u16_le(off) }) {
+    while let Some(unit) = if big_endian { r.u16_be(off) } else { r.u16_le(off) } {
         units.push(unit);
         off += 2;
     }
-    String::from_utf16(&units)
-        .map_err(|_| FormatError::Malformed("invalid UTF-16 in XML plist".into()))
+    String::from_utf16(&units).map_err(|_| FormatError::Malformed("invalid UTF-16 in XML plist".into()))
 }
 
 /// Parse an XML property list.
@@ -707,9 +706,9 @@ mod tests {
         let xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Message</key><string>hello</string></dict></plist>";
         let units: Vec<u16> = xml.encode_utf16().collect();
         let mut le = vec![0xFF, 0xFE];
-        le.extend(units.iter().flat_map(u16::to_le_bytes));
+        le.extend(units.iter().copied().flat_map(u16::to_le_bytes));
         let mut be = vec![0xFE, 0xFF];
-        be.extend(units.iter().flat_map(u16::to_be_bytes));
+        be.extend(units.iter().copied().flat_map(u16::to_be_bytes));
         for data in [&le[..], &be[..]] {
             let v = parse(data).unwrap_or_else(|e| panic!("UTF-16 XML plist should parse: {e}"));
             assert_eq!(v.get("Message").and_then(Value::as_str), Some("hello"));
