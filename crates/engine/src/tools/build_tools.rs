@@ -258,15 +258,23 @@ fn build_file_read(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolE
     let start = p.offset.unwrap_or(0).min(lines.len());
     let mut out = String::new();
     let mut n = 0usize;
+    let mut cut = false;
     for line in lines.iter().skip(start) {
-        if p.limit.is_some_and(|l| n >= l) || out.len() + line.len() > MAX_READ {
+        if p.limit.is_some_and(|l| n >= l) || (n > 0 && out.len() + line.len() > MAX_READ) {
             break;
         }
-        out.push_str(line);
+        // A line longer than a page comes cut to one, so reading always moves on (#280).
+        let part = line.get(..line.floor_char_boundary(MAX_READ)).unwrap_or(line);
+        cut |= part.len() < line.len();
+        out.push_str(part);
         out.push('\n');
         n += 1;
     }
-    Ok(ToolOutput::Value(json!({"path": p.path, "offset": start, "lines": n, "total_lines": lines.len(), "more": start + n < lines.len(), "text": out})))
+    let mut v = json!({"path": p.path, "offset": start, "lines": n, "total_lines": lines.len(), "more": start + n < lines.len(), "text": out});
+    if cut {
+        v["note"] = json!(format!("Line {} is longer than {} KiB, so only its start is shown.", start + 1, MAX_READ / 1024));
+    }
+    Ok(ToolOutput::Value(v))
 }
 
 fn write_checked(ctx: &mut Ctx<'_>, path: &Path, content: &str) -> Result<(), ToolError> {
@@ -383,6 +391,20 @@ mod tests {
         assert!(call(&e, "build_file_edit", json!({"path": "app/src/main.rs", "old_text": "nope", "new_text": "x"})).is_err());
         assert!(call(&e, "build_file_read", json!({"path": "../../etc/passwd"})).is_err());
         assert!(call(&e, "build_file_write", json!({"path": "../outside.txt", "content": "x"})).is_err());
+    }
+
+    /// #280: a line longer than a page left reading stuck at it, with nothing shown.
+    #[test]
+    fn a_line_longer_than_a_page_is_shown_cut() {
+        let (_d, _ws, e) = building();
+        let long = "x".repeat(MAX_READ + 44_000);
+        call(&e, "build_file_write", json!({"path": "app/min.js", "content": format!("{long}\nend\n")})).unwrap();
+        let first = call(&e, "build_file_read", json!({"path": "app/min.js"})).unwrap();
+        assert_eq!((first["lines"].as_u64(), first["more"].as_bool()), (Some(1), Some(true)));
+        assert_eq!(first["text"].as_str().map(str::len), Some(MAX_READ + 1));
+        assert!(first["note"].as_str().is_some_and(|n| n.contains("Line 1")), "{first}");
+        let next = call(&e, "build_file_read", json!({"path": "app/min.js", "offset": 1})).unwrap();
+        assert_eq!((next["text"].as_str(), next["more"].as_bool(), next.get("note")), (Some("end\n"), Some(false), None));
     }
 
     /// #24: a model that writes `/app/…` builds the app, and one that leaves out `app/` is told.
