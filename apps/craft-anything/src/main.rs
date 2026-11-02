@@ -48,6 +48,10 @@ fn main() -> eframe::Result {
     let mut options = eframe::NativeOptions { viewport, ..Default::default() };
     #[cfg(windows)]
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        // Starting GL loads the system's OpenGL driver before any adapter is picked, and some
+        // Intel drivers crash in it (ig9icd64.dll, #196), so the window never opens. DX12 (with
+        // WARP) and Vulkan always cover Windows; `WGPU_BACKEND=gl` still asks for GL.
+        setup.instance_descriptor.backends = windows_backends(eframe::wgpu::Backends::from_env());
         setup.native_adapter_selector = Some(Arc::new(pick_adapter));
     }
     let run = eframe::run_native(
@@ -102,6 +106,13 @@ fn pick_adapter(adapters: &[eframe::wgpu::Adapter], surface: Option<&eframe::wgp
     }
 }
 
+/// Windows: the graphics backends to start. `WGPU_BACKEND` decides when set; otherwise every
+/// primary backend and not GL (#196).
+#[cfg(windows)]
+fn windows_backends(from_env: Option<eframe::wgpu::Backends>) -> eframe::wgpu::Backends {
+    from_env.unwrap_or(eframe::wgpu::Backends::PRIMARY)
+}
+
 /// Lower is better: GL last, then the fastest kind of device first (wgpu's own high-performance
 /// preference).
 #[cfg(windows)]
@@ -130,6 +141,15 @@ mod tests {
         assert_eq!(best(&[(B::Gl, T::IntegratedGpu), (B::Dx12, T::Cpu)]), Some(1));
         assert_eq!(best(&[(B::Dx12, T::IntegratedGpu), (B::Vulkan, T::DiscreteGpu), (B::Dx12, T::Cpu)]), Some(1), "fastest GPU first");
         assert_eq!(best(&[(B::Gl, T::Other)]), Some(0), "GL when it's all there is");
+    }
+
+    /// #196: an Intel OpenGL driver crashed the app as wgpu started GL, before any window.
+    #[test]
+    fn gl_is_only_started_when_asked_for() {
+        use eframe::wgpu::Backends;
+        let started = windows_backends(None);
+        assert!(!started.contains(Backends::GL) && started.contains(Backends::DX12) && started.contains(Backends::VULKAN));
+        assert_eq!(windows_backends(Some(Backends::GL)), Backends::GL, "WGPU_BACKEND=gl still works");
     }
 }
 
