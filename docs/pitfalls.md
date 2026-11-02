@@ -141,6 +141,11 @@ real Deep-mode run (the CLI never shows it: it already has a console). Every chi
 the windowed app gets `CREATE_NO_WINDOW`; check the desktop app, not only the CLI, after adding a
 program.
 
+**A graphics backend that crashed before it was chosen.** We ranked GL last when picking an
+adapter, but eframe starts every backend first, and starting GL loaded an old Intel OpenGL driver
+that crashed the app before any window or error box (#196). Ranking can't protect you from a
+backend that's started at all: start only the backends the app may use.
+
 **A Mac app that couldn't find Claude Code, and offered a GitHub key instead.** An app opened from
 the Dock gets the system's short `PATH`, not the shell's, so `claude` in `~/.local/bin` wasn't
 found; "Built by" then fell back to "Claude Code on github.com-work", an `~/.ssh/config` alias
