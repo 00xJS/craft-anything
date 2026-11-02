@@ -509,7 +509,7 @@ Owner: maintainers · Status: in progress (built; live runs need keys)
 ### R2.2 More coding agents
 Owner: open · Status: in progress
 - [x] `AcpConversation`: chat with agents that speak ACP (`cli_agents::acp`; agents and their ACP
-      arguments in `ACP_AGENTS`: Gemini CLI, Qwen Code, opencode, goose). Opt-in per backend
+      arguments in `ACP_AGENTS`: Gemini CLI, Qwen Code, opencode, goose, Hermes). Opt-in per backend
       (`acp = true` in its options); one agent process per chat, permission requests become
       consent questions, sessions continue with `session/load`
 - [x] Builder runs over ACP: with `acp = true`, rebuild runs use `AcpConversation`; the agent's
@@ -517,6 +517,14 @@ Owner: open · Status: in progress
       allowed, refused, or asked through the project's inbox; Auto mode honoured)
 - [ ] Gemini CLI, opencode, goose via ACP or native adapters; each verified live, then turn ACP on
       by default for the ones that pass
+- [ ] **decision** One approval behaviour across agents, and whether we want an auto-approve mode
+      apart from Clean room and Deep (Auto mode only governs what's asked through us). Today it
+      differs by agent: Claude Code asks our approval tool; OpenCode's builder runs with `--auto`;
+      Hermes's `-z` turns its approvals off on every run, chats included. Clean room's approval
+      rule doesn't reach an agent that never asks us
+- [ ] Say on each adapter, as typed data, what it can be held to (asks us, its own sandbox, nothing),
+      and have runs act on that, once the decision above is made
+- [ ] Check live what Hermes over ACP asks about: whether its file reads reach our approval policy
 
 ### R2.3 Website coverage and a better visual metric
 Owner: open · Status: done
