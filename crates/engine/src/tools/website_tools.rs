@@ -11,7 +11,7 @@ use super::artifact_tools::{create_absent_dir, write_new_file};
 use super::browser_tools::{browser_env, cleanup, deadline};
 use super::native_common::spec;
 use super::web_common::{self, Browser, LaunchOptions};
-use crate::tool::{Ctx, Effects, Requires, ToolOutput, ToolSpec, Toolset, parse_params, schema_of};
+use crate::tool::{Caller, Ctx, Effects, Requires, ToolOutput, ToolSpec, Toolset, parse_params, schema_of};
 use craft_anything_engines::cdp::{self, CdpClient, CdpEvent, Deadline, Endpoint, PAGE_MAX_MESSAGE};
 use craft_anything_evidence::{Authority, Confidence, Coverage, ErrorCode, EvidenceBuilder, Limitation, Location, Subject, ToolError, sha256_hex};
 use craft_anything_platform::sync::Mutex;
@@ -226,6 +226,20 @@ fn live_site(ctx: &mut Ctx<'_>, dl: &Deadline) -> Option<Arc<SiteBrowser>> {
     }
     ctx.session.ext.remove::<SiteBrowser>();
     None
+}
+
+/// The site `web_site_open` opened in this session. Each CLI command is a session of its own, and
+/// its browser closes when the command ends, so from the CLI the steps belong in one session (#153).
+fn open_site(ctx: &mut Ctx<'_>, dl: &Deadline) -> Result<Arc<SiteBrowser>, ToolError> {
+    live_site(ctx, dl).ok_or_else(|| {
+        let fix = match ctx.caller {
+            Caller::Cli => {
+                "Each CLI command starts its own browser and closes it when it ends, so a site opened by an earlier command isn't open here. Run web_site_open and the tools that use the page in one session: an MCP client (`craft-anything-cli mcp`), the app, or `craft-anything-cli rebuild`."
+            }
+            _ => "Open one first with web_site_open.",
+        };
+        ToolError::new(ErrorCode::NotFound, "no website is open").with_remediation(fix)
+    })
 }
 
 fn page_client(site: &SiteBrowser, dl: &Deadline) -> Result<CdpClient, ToolError> {
@@ -455,8 +469,7 @@ fn web_page_states_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutpu
         return Err(ToolError::invalid("width must be 320..=3840"));
     }
     let dl = deadline(ctx, p.timeout_secs.max(30))?;
-    let site =
-        live_site(ctx, &dl).ok_or_else(|| ToolError::new(ErrorCode::NotFound, "no website is open").with_remediation("Open one first with web_site_open."))?;
+    let site = open_site(ctx, &dl)?;
     let out = create_absent_dir(&p.output_directory)?;
     let mut client = page_client(&site, &dl)?;
     let r = (|| -> Result<(String, Vec<Value>, usize), ToolError> {
@@ -763,8 +776,7 @@ fn web_site_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Tool
     let visitor = ctx.session.clean_room();
     p.include_html &= !visitor;
     let dl = deadline(ctx, p.timeout_secs.max(30))?;
-    let site =
-        live_site(ctx, &dl).ok_or_else(|| ToolError::new(ErrorCode::NotFound, "no website is open").with_remediation("Open one first with web_site_open."))?;
+    let site = open_site(ctx, &dl)?;
     let mut client = page_client(&site, &dl)?;
     // A site that didn't open leaves the browser on its own error page (or a blank one), which
     // would be captured as if it were the site (#158).
@@ -1299,6 +1311,27 @@ mod tests {
         );
         let err = r.err().map(|e| e.message).unwrap_or_default();
         assert!(err.contains("no website is open") || err.contains("Chromium") || err.contains("chromium"), "{err}");
+    }
+
+    /// #153: from the CLI, a site opened by an earlier command is gone, and the error says why and
+    /// where the steps run together. A stand-in browser path gets past the engine check on any
+    /// machine; nothing is started.
+    #[test]
+    fn a_cli_capture_without_a_site_says_each_command_starts_fresh() {
+        let fix = |caller| {
+            let mut s = crate::testing::session();
+            s.settings.engines.tools.chromium = Some(std::env::current_exe().unwrap());
+            let dir = tempfile::tempdir().unwrap();
+            let out = dir.path().join("capture");
+            let err = crate::Engine::new(s)
+                .call("web_site_capture", json!({"output_directory": out.display().to_string()}), crate::CallOptions::new(caller))
+                .unwrap_err();
+            assert!(err.message.contains("no website is open"), "{err:?}");
+            assert!(!out.exists());
+            err.remediation.unwrap_or_default()
+        };
+        assert!(fix(crate::Caller::Cli).contains("Each CLI command starts its own browser") && fix(crate::Caller::Cli).contains("craft-anything-cli mcp"));
+        assert_eq!(fix(crate::Caller::Mcp), "Open one first with web_site_open.");
     }
 
     /// A browser that exits as soon as it starts is reported at once, not after the whole wait,
