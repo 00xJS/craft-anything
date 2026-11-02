@@ -1343,4 +1343,29 @@ mod tests {
         assert!(au.contains("r0 = sub_1014();") && au.contains("r1 = r0 + 1;") && au.contains("return r0;"), "{au}");
         assert!(al.contains("r0 = 7;") && al.contains("return r0;") && !al.contains("rax"), "{al}");
     }
+
+    /// #277: ARM32 loads and stores came out as `r0 = 0;` and `0 = r0;`.
+    #[test]
+    fn arm32_loads_and_stores_keep_their_addresses() {
+        use craft_anything_formats::Arch;
+        let lift_words = |ws: &[u32]| {
+            let bytes: Vec<u8> = ws.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let image = Image::raw(Arc::from(bytes), Arch::Arm, 0x1000);
+            let program = Program::analyze(&image, &Limits::default(), &NoControl).unwrap();
+            let f = program.functions.get(&0x1000).unwrap();
+            lift(&image, &program, f, &|_| None)
+        };
+        // ldr r0, [r1, #4]; str r0, [r2]; bx lr
+        let p = lift_words(&[0xe591_0004, 0xe582_0000, 0xe12f_ff1e]);
+        assert!(p.text.contains("r0 = *(uint32_t*)(r1 + 4);") && p.text.contains("*(uint32_t*)(r2) = r0;"), "{}", p.text);
+        assert_eq!(p.asm_fallbacks, 0);
+        // ldr r0, [r1, #-8]
+        let p = lift_words(&[0xe511_0008, 0xe12f_ff1e]);
+        assert!(p.text.contains("r0 = *(uint32_t*)(r1 - 8);"), "{}", p.text);
+        // ldr r0, [r1], #4 also moves r1, which no statement here says: it's shown as written.
+        let p = lift_words(&[0xe491_0004, 0xe12f_ff1e]);
+        assert!(p.text.contains("__asm(") && !p.text.contains("r0 = 0;") && p.asm_fallbacks == 1, "{}", p.text);
+        let i = crate::decode::decode(Mode::A32, &0xe591_0004u32.to_le_bytes(), 0x1000, false).unwrap();
+        assert!(i.reads.contains(&"r1".to_string()) && i.writes == ["r0"], "{i:?}");
+    }
 }
