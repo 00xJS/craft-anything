@@ -98,7 +98,10 @@ pub(super) fn build_check(app: &Path, place: &str, stack: &str, editor: Option<&
 /// rather than the engine's. What was built decides, since the person may have asked for
 /// something other than the engine picked at the start.
 fn engine_for(stack: &str, app: &Path) -> Option<game::Builder> {
-    let own_project = app.join("Cargo.toml").is_file() || app.join("package.json").is_file() || static_site(app);
+    if static_site(app) {
+        return None;
+    }
+    let own_project = app.join("Cargo.toml").is_file() || app.join("package.json").is_file();
     game::Builder::from_stack(stack).filter(|b| !own_project || engine_project(*b, app))
 }
 
@@ -180,6 +183,7 @@ mod tests {
         // A site's own assets folder doesn't make it a Unity project.
         std::fs::create_dir(app.join("Assets")).unwrap();
         assert_eq!(check("Plain HTML and CSS", None), passed);
+        assert_eq!(check("Unity", Some(unity)), passed);
 
         // A real engine project doesn't pass for the page beside it, with or without the editor,
         // and whichever engine the stack named.
