@@ -167,6 +167,7 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
       entry that starts past the end of the file is now skipped
 - [x] `cargo xtask layers` also scans `apps/`
 - [x] Engines in `KNOWN` without a `ToolPaths` override (tshark, objdump, rizin, java)
+- [x] Class-usage search includes the component class of multidimensional object arrays (#325).
 - [x] Missing `database` icon for SQLite in the UI (`kind_icon`)
 - [x] Deduplicate the five private `fn spec(` helpers in the tool modules
 - [x] rustfmt drift on main (11 files)
