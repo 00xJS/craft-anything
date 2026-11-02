@@ -398,8 +398,10 @@ fn d_state_width() -> u32 {
     1440
 }
 
-/// Marks the visible toggles (`data-craft-state="<n>"`) and lists them. `__MAX__` is replaced.
+/// Marks the visible toggles (`data-craft-state="<n>"`) and lists them, after dropping the marks
+/// an earlier call left (they'd name a control hidden at this width, #339). `__MAX__` is replaced.
 const FIND_STATES_JS: &str = r#"(() => {
+  for (const old of document.querySelectorAll('[data-craft-state]')) old.removeAttribute('data-craft-state');
   const cap = (s, n) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
   const shown = el => { const r = el.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return false; const s = getComputedStyle(el); return s.visibility !== 'hidden' && s.display !== 'none'; };
   const sel = '[aria-expanded="false"], [aria-haspopup]:not([aria-haspopup="false"]), [role="tab"][aria-selected="false"], details:not([open]) > summary';
@@ -1412,6 +1414,54 @@ mod tests {
         assert_eq!(err.code, ErrorCode::NotFound, "{}", err.message);
         assert!(err.message.contains("didn't open"), "{}", err.message);
         assert!(!out.exists(), "no folder is made for a capture that can't happen");
+    }
+
+    /// #339: states captured at a phone width after a desktop width open the phone's own button,
+    /// not the desktop one the earlier capture marked. Live: it needs a Chromium-based browser
+    /// (`--ignored`).
+    #[test]
+    #[ignore]
+    fn states_at_a_second_width_open_that_widths_controls() {
+        use std::io::{Read, Write};
+        let page = r#"<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>
+body{margin:0} .d{display:none} @media (min-width:800px){.d{display:block} .p{display:none}}
+.panel{display:none;position:fixed;top:0;left:0;width:100%;height:200px}
+</style></head><body style="padding-top:300px">
+<button class="d" aria-expanded="false" data-panel="dp">Desktop options</button>
+<button class="p" aria-expanded="false" data-panel="pp">Phone options</button>
+<div id="dp" class="panel" style="background:#0000ff"></div><div id="pp" class="panel" style="background:#ff0000"></div>
+<script>for (const b of document.querySelectorAll('button')) b.onclick = () => {
+  const open = b.getAttribute('aria-expanded') !== 'true';
+  b.setAttribute('aria-expanded', String(open));
+  document.getElementById(b.dataset.panel).style.display = open ? 'block' : 'none';
+};</script></body></html>"#;
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut s in listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len());
+            }
+        });
+        let mut s = crate::testing::session();
+        s.settings.engines.only_configured = false;
+        let e = crate::Engine::new(s);
+        let cli = || crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted);
+        e.call("web_site_open", json!({"url": url}), cli()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let top_colour = |out: &Path| {
+            let rows: Value = serde_json::from_str(&std::fs::read_to_string(out.join("states.json")).unwrap()).unwrap();
+            let shot = web_common::decode_png(&std::fs::read(out.join("state-1.png")).unwrap()).unwrap();
+            let at = shot.rgba.get(((10 * shot.width + 10) * 4) as usize..((10 * shot.width + 10) * 4 + 3) as usize).unwrap().to_vec();
+            (rows["states"][0]["label"].as_str().unwrap().to_string(), at)
+        };
+        for (width, label, colour) in [(1440, "Desktop options", [0, 0, 255]), (390, "Phone options", [255, 0, 0])] {
+            let out = dir.path().join(format!("states-{width}"));
+            e.call("web_page_states_capture", json!({"output_directory": out.display().to_string(), "width": width, "max_states": 1}), cli()).unwrap();
+            assert_eq!(top_colour(&out), (label.to_string(), colour.to_vec()), "at {width} px");
+        }
+        let _ = e.call("web_site_close", json!({}), cli());
     }
 
     /// `capture.json` of `page`, served from a local port and captured at 1440 px. Live: it needs a
