@@ -393,7 +393,9 @@ impl Server {
         };
         let resp = ok_response(id.clone(), body);
         let size = serde_json::to_string(&resp).map(|s| s.len()).unwrap_or(usize::MAX);
-        if size > self.budget() {
+        // An approval answer is a protocol message, not result data: an error in its place loses
+        // the decision (#253). It echoes the input the client sent, so its size is the client's.
+        if size > self.budget() && !self.raw_value(name) {
             // Prefer a summary-first collapse (the full record is retained) over a bare error.
             if let Some(summary) = self.oversize_summary(&resp) {
                 let sresp = ok_response(id.clone(), summary);
