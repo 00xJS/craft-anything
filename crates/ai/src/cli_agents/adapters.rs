@@ -39,6 +39,12 @@ pub trait AgentAdapter: Send + Sync {
     fn required_flags(&self) -> (&'static [&'static str], &'static [&'static str]) {
         (&[], &[])
     }
+    /// `program <prompt>` answers and exits, so the plain adapter is a fallback. When it opens an
+    /// interactive session instead, a failed flag check keeps this adapter, and the run says what
+    /// went wrong (#199).
+    fn plain_fallback(&self) -> bool {
+        true
+    }
     /// The CLI writes one JSON event per line (else its output is the answer text).
     fn streams_json(&self) -> bool {
         true
@@ -317,6 +323,11 @@ impl AgentAdapter for Codex {
 
     fn required_flags(&self) -> (&'static [&'static str], &'static [&'static str]) {
         (&["exec", "--help"], &["--json"])
+    }
+
+    /// Plain `codex <prompt>` is the interactive TUI: "stdin is not a terminal".
+    fn plain_fallback(&self) -> bool {
+        false
     }
 
     fn parse(&self, p: &mut StreamParser, v: &Value) -> Vec<AgentEvent> {

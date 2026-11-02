@@ -5,7 +5,8 @@
 //! How each CLI is driven lives in [`adapters`] ([`AgentAdapter`], registered in
 //! [`AgentAdapters`]). Flags: Claude Code's were checked against `claude --help`. For the others,
 //! the flags we rely on are checked at run time against `<cli> --help`; when they're missing we
-//! fall back to the plain adapter (prompt as an argument, stdout streamed as text) and say so.
+//! fall back to the plain adapter (prompt as an argument, stdout streamed as text) and say so,
+//! unless the CLI's plain form is interactive (Codex), which keeps its adapter.
 
 pub mod acp;
 pub mod adapters;
@@ -415,11 +416,13 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
                 *v.get_or_insert_with(|| verify_flags(&program, help, needed))
             }
         };
-        if !ok {
+        if !ok && adapter.plain_fallback() {
             let _ = tx.send(AgentEvent::Status {
                 text: format!("{program}'s help doesn't list {} here, so it runs with the plain adapter (prompt in, text out).", needed.join(" / ")),
             });
             adapter = Arc::new(adapters::Plain);
+        } else if !ok {
+            let _ = tx.send(AgentEvent::Status { text: format!("Couldn't confirm that {program} has {}; trying it anyway.", needed.join(" / ")) });
         }
     }
     let preamble = spec.preamble.clone().unwrap_or_else(|| crate::prompt::cli_preamble(spec.beginner));
@@ -1030,6 +1033,25 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(all.iter().any(|e| matches!(e, AgentEvent::Error { message, .. } if message.contains("isn't installed"))), "{all:?}");
+    }
+
+    /// #199: plain `codex <prompt>` is its interactive TUI ("stdin is not a terminal"), so a
+    /// failed check of `codex exec --help` keeps Codex's own adapter.
+    #[test]
+    fn codex_is_never_run_plain() {
+        assert!(!adapter_for("codex").plain_fallback() && adapters::Plain.plain_fallback());
+        let options = BackendOptions { command: Some("no-such-codex-xyz".into()), ..Default::default() };
+        let config = BackendConfig { name: "Codex".into(), kind: BackendKind::AgentCli, model: "codex".into(), base_url: None, ssh_host: None, enabled: true };
+        let mut c = CliConversation::new(CliSpec::new(config, options, false, None));
+        c.send("What does this program do?");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut all = Vec::new();
+        while std::time::Instant::now() < deadline && !all.iter().any(|e| matches!(e, AgentEvent::TurnDone { .. })) {
+            all.extend(c.poll());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let said = |w: &str| all.iter().any(|e| matches!(e, AgentEvent::Status { text } if text.contains(w)));
+        assert!(said("trying it anyway") && !said("plain adapter"), "{all:?}");
     }
 
     /// A fork's own agent: JSON lines of `{"say": …}`, registered under its id.
