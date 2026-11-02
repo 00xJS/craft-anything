@@ -229,6 +229,10 @@ going), merge what's on disk before saving instead of overwriting it.
 The same happened in `craft.json`: a run saved from the copy it started with and undid a budget
 the person raised meanwhile (and any "always allow" answer). Fields the person owns change only
 through `Workspace::set_person`; `save` keeps them as they are on disk.
+And again inside one process: the engine had its own `write_atomic` whose temp file was named
+by process only, so two threads saving `craft.json` wrote the same temp file and one rename found
+it gone (#273). There is one atomic writer, `craft_anything_platform::fs::write_atomic`; don't
+write another.
 
 **Keywords that only some code paths honour.** "…in Rust" picked Rust for apps but not for games, so
 a headless game rebuild stopped at once for want of Unity. It was found only by a live run. Run the
