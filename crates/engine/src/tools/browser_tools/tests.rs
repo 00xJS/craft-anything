@@ -177,6 +177,13 @@ fn serve_ws(stream: &mut TcpStream) {
                 {"url": "https://user:pw@app.test/assets/main.js", "type": "Script", "mimeType": "application/javascript"}
             ]}}),
             "Page.captureScreenshot" => json!({"data": tiny_png_b64()}),
+            "Profiler.takePreciseCoverage" => {
+                let scripts: Vec<Value> = ["a", "b", "c"]
+                    .iter()
+                    .map(|n| json!({"scriptId": n, "url": format!("https://app.test/{n}.js"), "functions": [{"isBlockCoverage": false, "ranges": [{"count": 1}]}]}))
+                    .collect();
+                json!({"result": scripts})
+            }
             "Debugger.getScriptSource" => json!({"scriptSource": bundle}),
             "Network.getResponseBody" => json!({"body": "{\"id\":1,\"secret\":\"x\"}", "base64Encoded": false}),
             // One accessible element: a button named "Sign in".
@@ -912,5 +919,28 @@ fn the_recorder_refuses_a_bad_script_before_it_needs_a_browser() {
         json!({"cdp_endpoint": "http://127.0.0.1:9", "actions": [{"kind": "wait", "ms": 1}], "environment": {"width": 0}}),
     ] {
         assert_eq!(walkthrough(&e, bad).unwrap_err().code, ErrorCode::BadInput);
+    }
+}
+
+/// #331: `limit: 0` showed one script but recorded none examined; a page shows at least one, and
+/// what it examined is what it shows.
+#[test]
+fn coverage_records_the_scripts_it_shows() {
+    let (url, _) = fake_cdp();
+    let e = Engine::new(crate::testing::session());
+    let run = |offset: u64, limit: u64| {
+        e.call(
+            "web_coverage_measure",
+            json!({"cdp_endpoint": url, "watch_ms": 1, "offset": offset, "limit": limit}),
+            CallOptions::new(Caller::Mcp).with_consent(crate::Consent::Granted),
+        )
+        .map(|o| o.to_json())
+        .unwrap()
+    };
+    for (offset, limit, shown) in [(0, 0, 1), (0, 1, 1), (1, 1, 1), (2, 5, 1), (0, 500, 3)] {
+        let v = run(offset, limit);
+        assert_eq!(v["result"]["scripts_total"], 3, "{v}");
+        assert_eq!(v["result"]["scripts"].as_array().map(Vec::len), Some(shown), "{offset}/{limit}");
+        assert_eq!(v["coverage"]["examined"], shown, "{offset}/{limit}");
     }
 }

@@ -133,9 +133,11 @@ fn d_limit() -> usize {
 
 fn web_coverage_measure(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {
     let p: ExecutionParams = parse_params(params)?;
+    // A page shows at least one script (#331).
+    let limit = p.limit.max(1);
     let dl = deadline(ctx, p.timeout_secs)?;
     let (browser, mut client, page_url) = connect(ctx, p.cdp_endpoint.as_deref(), p.launch, p.headless, p.no_sandbox, p.target_id.as_deref(), &dl)?;
-    let result = run_coverage(&mut client, &page_url, p.watch_ms, p.offset, p.limit, ctx, &dl);
+    let result = run_coverage(&mut client, &page_url, p.watch_ms, p.offset, limit, ctx, &dl);
     browser_tools::cleanup(&mut client, &dl);
     let (result, total, covered) = result?;
     let summary = format!("Coverage on {page_url}: {covered} of {total} script(s) executed code during the window.");
@@ -144,7 +146,7 @@ fn web_coverage_measure(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, 
         Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) },
         browser_tools::browser_env(ctx.session.clean_room(), &browser),
     )
-    .params(json!({"endpoint": browser.endpoint.origin, "watch_ms": p.watch_ms, "offset": p.offset, "limit": p.limit}))
+    .params(json!({"endpoint": browser.endpoint.origin, "watch_ms": p.watch_ms, "offset": p.offset, "limit": limit}))
     .result(result)
     .summary(summary)
     .confidence(Confidence::Observed)
@@ -159,7 +161,7 @@ fn web_coverage_measure(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, 
     ))
     .coverage(Coverage {
         status: CoverageStatus::Partial,
-        examined: Some(total.min(p.offset.saturating_add(p.limit)) as u64),
+        examined: Some(total.saturating_sub(p.offset).min(limit) as u64),
         total: Some(total as u64),
         next_offset: None,
     })
@@ -222,7 +224,7 @@ fn run_coverage(
     }
     scripts.sort_by(|a, b| a["url"].as_str().unwrap_or("").cmp(b["url"].as_str().unwrap_or("")));
     let total = scripts.len();
-    let page: Vec<Value> = scripts.into_iter().skip(offset).take(limit.max(1)).collect();
+    let page: Vec<Value> = scripts.into_iter().skip(offset).take(limit).collect();
     Ok((json!({"origin": page_url, "scripts": page, "scripts_total": total, "scripts_with_execution": covered}), total, covered))
 }
 
@@ -336,6 +338,7 @@ fn d_window() -> u64 {
 
 fn web_modules_trace(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolError> {
     let p: ModuleImportsParams = parse_params(params)?;
+    let limit = p.limit.max(1);
     let dl = deadline(ctx, p.timeout_secs)?;
     let (browser, mut client, page_url) = connect(ctx, p.cdp_endpoint.as_deref(), p.launch, p.headless, p.no_sandbox, p.target_id.as_deref(), &dl)?;
     let flags = CaptureFlags { script_sources: true, ..CaptureFlags::default() };
@@ -374,17 +377,17 @@ fn web_modules_trace(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, Too
     edges.sort_by(|a, b| (a["from"].as_str(), a["to"].as_str()).cmp(&(b["from"].as_str(), b["to"].as_str())));
     let total_nodes = nodes.len();
     let total_edges = edges.len();
-    let node_page: Vec<Value> = nodes.into_iter().skip(p.offset).take(p.limit.max(1)).collect();
+    let node_page: Vec<Value> = nodes.into_iter().skip(p.offset).take(limit).collect();
     let summary = format!("Module graph of {page_url}: {total_nodes} script(s), {total_edges} import edge(s), {} unresolved.", unresolved.len());
     let ev = EvidenceBuilder::new("web_modules_trace", Subject { kind: "website".into(), sha256: None, name: Some(page_url.clone()) }, browser_tools::browser_env(ctx.session.clean_room(), &browser))
-        .params(json!({"endpoint": browser.endpoint.origin, "offset": p.offset, "limit": p.limit}))
+        .params(json!({"endpoint": browser.endpoint.origin, "offset": p.offset, "limit": limit}))
         .result(json!({"origin": page_url, "nodes": node_page, "nodes_total": total_nodes, "edges": edges, "unresolved": unresolved}))
         .summary(summary)
         .confidence(Confidence::Derived)
         .authority(Authority::EarlierRecord)
         .limitation(Limitation::new("static_resolution", "Imports are read statically from the live sources; relative specifiers are resolved by URL, bare specifiers need the page's import map, and computed imports are reported as non-literal."))
         .limitation(Limitation::new("live_subset", "Only scripts the page had loaded during the window are included."))
-        .coverage(if p.offset == 0 && p.limit >= total_nodes { Coverage::complete(total_nodes as u64) } else { Coverage::page(p.limit.min(total_nodes.saturating_sub(p.offset)) as u64, total_nodes as u64, p.offset as u64) })
+        .coverage(if p.offset == 0 && limit >= total_nodes { Coverage::complete(total_nodes as u64) } else { Coverage::page(limit.min(total_nodes.saturating_sub(p.offset)) as u64, total_nodes as u64, p.offset as u64) })
         .location(Location::new("url", page_url))
         .build()?;
     Ok(ToolOutput::evidence(ev))
