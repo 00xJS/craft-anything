@@ -59,6 +59,23 @@ fn first_run_walks_through_four_screens() {
     h.get_by_label("Just look inside");
 }
 
+/// #231: at the smallest window the app allows, Purpose's Continue was below the window with
+/// nothing to scroll; it scrolls into view above the footer and works.
+#[test]
+fn first_run_continue_is_reachable_at_the_smallest_window() {
+    let (w, hgt) = (760.0, 520.0);
+    let mut h = harness_sized(egui::vec2(w, hgt), || demo::app(demo::engine(Mode::Beginner, false)));
+    h.state_mut().state.first_run = FirstRunStep::Purpose;
+    h.run_steps(3);
+    h.get_by_label("Continue").scroll_to_me();
+    h.run_steps(3);
+    let r = h.get_by_label("Continue").rect();
+    assert!(r.top() >= 0.0 && r.bottom() <= hgt - 48.0, "Continue at {r:?} isn't in view above the footer");
+    h.get_by_label("Continue").click();
+    h.run_steps(3);
+    assert_eq!(h.state().state.first_run, FirstRunStep::Done);
+}
+
 #[test]
 fn simple_title_bar_keeps_only_the_essentials() {
     let mut h = harness(|| demo::app(demo::engine(Mode::Beginner, true)));
