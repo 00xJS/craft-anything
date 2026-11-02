@@ -720,8 +720,8 @@ What the person asks for comes first, in every kind; the stack table is only the
       was named; ask the person, or let such a game start without an engine
 - [x] Build check: a page asked for in plain HTML and CSS has nothing to build, and the check
       failed it for having no manifest, so a builder added a placeholder package.json to pass. A
-      static site, as the preview finds it (`site_dir`), now passes as it is, and says nothing was
-      built (#496)
+      static site, as the preview finds it (`site_dir`), now passes as it is unless its page is
+      blank or a game engine's project sits beside it, and says nothing was built (#496)
 - [x] CLI: after the tool name, `--project` is the tool's own option when it has one
       (`rebuild-check --project <folder>`, `project-show --project <folder>`), as `--format` is;
       otherwise, and always before the tool name, it's the global investigation folder
