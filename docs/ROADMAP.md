@@ -166,6 +166,7 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
       wrapped reads were thrown away, since the entry's first field was already out of range); an
       entry that starts past the end of the file is now skipped
 - [x] `cargo xtask layers` also scans `apps/`
+- [x] WebAssembly interface comparisons resolve exported tag parameter types (#309).
 - [x] Engines in `KNOWN` without a `ToolPaths` override (tshark, objdump, rizin, java)
 - [x] Class-usage search includes the component class of multidimensional object arrays (#325).
 - [x] Missing `database` icon for SQLite in the UI (`kind_icon`)
