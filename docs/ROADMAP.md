@@ -1156,6 +1156,11 @@ Launch checklist (source-only first; signed installers can follow):
       `hdiutil create`, with the app inside the mounted image checked by `codesign --strict`; the
       FreeBSD workflow runs on main and packaging PRs (when public) with a package-contents check
 - [ ] Build the new DMG on a Mac (release dry run) and look at the window once
+- [ ] macOS CLI zip blocked by Gatekeeper when downloaded in a browser (#94), though Apple has its
+      notarization tickets: find why the online lookup fails for people (it passes on our Mac, which
+      may be exempt), on a machine that shows it
+- [ ] **decision** A standalone macOS CLI that can carry its ticket, such as a stapled `.pkg`; that
+      needs a Developer ID Installer certificate in the release secrets
 - [x] The first release: v0.1.0 built from `release`, signed (Apple Developer ID and notarization,
       Azure Trusted Signing) and published on 2026-10-31
 - [ ] Move the release workflows off actions that target Node.js 20 (`actions/checkout@v4`,
