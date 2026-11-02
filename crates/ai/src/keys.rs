@@ -75,6 +75,23 @@ impl KeyStore {
         std::fs::read_to_string(&self.file).ok().and_then(|t| toml::from_str(&t).ok()).unwrap_or_default()
     }
 
+    /// The file's keys before changing them: none when it doesn't exist, an error when it can't be
+    /// read, so a save never replaces a file it couldn't read and drops the other keys (#262).
+    fn read_file_to_change(&self) -> Result<toml::Table, ToolError> {
+        let unreadable = |why: String| {
+            ToolError::new(ErrorCode::FileError, format!("Couldn't read the key file {}: {why}", self.file.display()))
+                .with_remediation("Fix or move that file (it was left untouched), then save the key again.")
+        };
+        match std::fs::read(&self.file) {
+            Ok(b) => {
+                let text = String::from_utf8(b).map_err(|_| unreadable("it isn't valid UTF-8".into()))?;
+                toml::from_str(&text).map_err(|e| unreadable(e.to_string()))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(toml::Table::new()),
+            Err(e) => Err(unreadable(e.to_string())),
+        }
+    }
+
     fn write_file(&self, t: &toml::Table) -> Result<(), ToolError> {
         let body = toml::to_string(t).map_err(|e| ToolError::internal(e.to_string()))?;
         craft_anything_platform::write_atomic_private(&self.file, format!("{FILE_HEADER}{body}").as_bytes())
@@ -101,14 +118,15 @@ impl KeyStore {
             return Err(ToolError::invalid("The key is empty."));
         }
         if self.use_keychain && keychain::set(backend, key) {
-            // Don't leave a stale copy in the fallback file.
-            let mut t = self.read_file();
-            if t.remove(backend).is_some() {
+            // Don't leave a stale copy in the fallback file (the keychain's copy is read first).
+            if let Ok(mut t) = self.read_file_to_change()
+                && t.remove(backend).is_some()
+            {
                 self.write_file(&t)?;
             }
             return Ok("keychain");
         }
-        let mut t = self.read_file();
+        let mut t = self.read_file_to_change()?;
         t.insert(backend.to_string(), toml::Value::String(key.to_string()));
         self.write_file(&t).map_err(|e| ToolError::new(ErrorCode::NoPermission, format!("Couldn't save the key: {}", e.message)))?;
         Ok("file")
@@ -118,7 +136,7 @@ impl KeyStore {
         if self.use_keychain {
             keychain::delete(backend);
         }
-        let mut t = self.read_file();
+        let mut t = self.read_file_to_change()?;
         if t.remove(backend).is_some() {
             self.write_file(&t)?;
         }
@@ -206,6 +224,27 @@ mod tests {
         s.delete(&asset_key_name("other")).unwrap();
         assert_eq!(asset_keys(&s, &providers).get("other"), None);
         assert_eq!(fal_key(&s).as_deref(), Some("f-1"));
+    }
+
+    /// #262: a key file that can't be read is left as it is, with every other key in it.
+    #[test]
+    fn an_unreadable_key_file_is_never_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("ai-keys.toml");
+        let s = KeyStore::file_only(file.clone());
+        let valid = b"FakeBackend = \"sk-test-backend\"\n\"assets:fal\" = \"sk-test-old\"\n".to_vec();
+        let broken_toml = b"FakeBackend = \"sk-test-backend\"\n\"assets:fal\" = \"sk-test-old\n".to_vec();
+        let broken_utf8 = [valid.clone(), b"\xff".to_vec()].concat();
+        for bad in [broken_toml, broken_utf8] {
+            std::fs::write(&file, &bad).unwrap();
+            let e = s.set(FAL_KEY, "sk-test-new").unwrap_err();
+            assert!(e.message.contains("Couldn't read the key file"), "{e:?}");
+            assert!(s.delete("FakeBackend").is_err());
+            assert_eq!(std::fs::read(&file).unwrap(), bad, "the file was changed");
+        }
+        std::fs::write(&file, &valid).unwrap();
+        assert_eq!(s.set(FAL_KEY, "sk-test-new").unwrap(), "file");
+        assert_eq!((s.get("FakeBackend").as_deref(), s.get(FAL_KEY).as_deref()), (Some("sk-test-backend"), Some("sk-test-new")));
     }
 
     #[test]
