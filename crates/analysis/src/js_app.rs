@@ -353,6 +353,8 @@ struct Analysed {
     html: Option<HtmlFacts>,
     /// For inline HTML scripts: the page they came from.
     host: Option<String>,
+    /// For inline HTML scripts: the hash of their code (they have no file of their own, #236).
+    code_sha256: Option<String>,
 }
 
 /// Build the application graph.
@@ -404,7 +406,7 @@ pub fn analyze_application(input: &AppInput, opts: &AppOptions, cancelled: &dyn 
         if is_script(&f.path) {
             let text = String::from_utf8_lossy(&f.bytes);
             let a = js::analyze(&f.path, &text, &opts.limits);
-            analysed.push(Analysed { path: f.path.clone(), facts: a.facts, bundle: a.bundle, html: None, host: None });
+            analysed.push(Analysed { path: f.path.clone(), facts: a.facts, bundle: a.bundle, html: None, host: None, code_sha256: None });
         } else if is_html(&f.path) {
             let text = String::from_utf8_lossy(&f.bytes);
             let h = scan_html(&text);
@@ -413,10 +415,18 @@ pub fn analyze_application(input: &AppInput, opts: &AppOptions, cancelled: &dyn 
                     let code = craft_anything_js::util::slice(&text, a, z);
                     let name = format!("{}#inline-{n}", f.path);
                     let an = js::analyze(&name, code, &opts.limits);
-                    analysed.push(Analysed { path: name, facts: an.facts, bundle: an.bundle, html: None, host: Some(f.path.clone()) });
+                    let code_sha256 = Some(sha256_hex(code.as_bytes()));
+                    analysed.push(Analysed { path: name, facts: an.facts, bundle: an.bundle, html: None, host: Some(f.path.clone()), code_sha256 });
                 }
             }
-            analysed.push(Analysed { path: f.path.clone(), facts: ModuleFacts::default(), bundle: js::BundleInfo::default(), html: Some(h), host: None });
+            analysed.push(Analysed {
+                path: f.path.clone(),
+                facts: ModuleFacts::default(),
+                bundle: js::BundleInfo::default(),
+                html: Some(h),
+                host: None,
+                code_sha256: None,
+            });
         }
     }
 
@@ -819,7 +829,7 @@ pub fn analyze_application(input: &AppInput, opts: &AppOptions, cancelled: &dyn 
         }
         // Module summary.
         let bytes_len = input.files.iter().find(|x| x.path == a.path).map_or(f.bytes as u64, |x| x.bytes.len() as u64);
-        let sha = input.files.iter().find(|x| x.path == a.path).map_or_else(String::new, |x| sha256_hex(&x.bytes));
+        let sha = input.files.iter().find(|x| x.path == a.path).map(|x| sha256_hex(&x.bytes)).or_else(|| a.code_sha256.clone()).unwrap_or_default();
         g.modules.push(ModuleSummary {
             path: a.path.clone(),
             role,
