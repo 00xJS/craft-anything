@@ -46,6 +46,16 @@ fn without_build_hash(path: &str) -> Option<String> {
     None
 }
 
+/// Same content: by hash, or, for a module saved without one (an inline script in a map from
+/// before #236), by its structure, size and strings.
+fn same_content(a: &ModuleSummary, b: &ModuleSummary) -> bool {
+    if a.sha256.is_empty() || b.sha256.is_empty() {
+        a.fingerprint == b.fingerprint && a.bytes == b.bytes && a.strings == b.strings
+    } else {
+        a.sha256 == b.sha256
+    }
+}
+
 /// Match modules: same path and content → unchanged; same path → changed; same content
 /// elsewhere → moved; the same name apart from a bundler's build hash (one on each side) →
 /// changed, with the old name; same structure (fingerprint) elsewhere → renamed. Each right
@@ -72,7 +82,7 @@ fn match_modules<'a>(l: &'a [ModuleSummary], r: &'a [ModuleSummary]) -> Value {
         if let Some(i) = r.iter().position(|x| x.path == m.path) {
             used.insert(i);
             match r.get(i) {
-                Some(x) if x.sha256 == m.sha256 => unchanged += 1,
+                Some(x) if same_content(x, m) => unchanged += 1,
                 Some(x) => changed.push(json!({
                     "path": m.path,
                     "same_structure": x.fingerprint.is_some() && x.fingerprint == m.fingerprint,
@@ -318,6 +328,28 @@ mod tests {
         let same = compare_versions(&a, &a);
         assert_eq!(same["identical_graph"], true);
         assert_eq!(same["modules"]["unchanged"], 4);
+    }
+
+    /// #236: an edited inline script had no hash on either side and counted as unchanged.
+    #[test]
+    fn an_edited_inline_script_is_changed() {
+        let page = |says: &str| graph_of(vec![("index.html", format!("<html><script>console.log(\"{says}\");</script></html>"))]);
+        let (a, b) = (page("A"), page("B"));
+        assert!(a.modules.iter().all(|m| !m.sha256.is_empty()), "{:?}", a.modules);
+        let d = compare_versions(&a, &b);
+        let changed: Vec<&str> = d["modules"]["changed"].as_array().unwrap().iter().filter_map(|c| c["path"].as_str()).collect();
+        assert_eq!(changed, ["index.html#inline-0", "index.html"], "{d}");
+        assert_eq!(compare_versions(&a, &a)["modules"]["unchanged"], 2);
+        // Maps saved before inline scripts had a hash.
+        let unhashed = |g: &AppGraph| {
+            g.modules
+                .iter()
+                .cloned()
+                .map(|m| ModuleSummary { sha256: if m.path.contains("#inline-") { String::new() } else { m.sha256 }, ..m })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(match_modules(&unhashed(&a), &unhashed(&a))["unchanged"], 2);
+        assert_eq!(match_modules(&unhashed(&a), &unhashed(&b))["changed"].as_array().unwrap().len(), 2);
     }
 
     #[test]
