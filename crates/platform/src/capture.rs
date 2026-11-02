@@ -917,15 +917,19 @@ mod unix {
                 if spec.finalization > Duration::ZERO {
                     send_group(pid, Signal::SIGTERM);
                     finalized_with = Some("SIGTERM".into());
+                    // Wait for the whole group, not just the leader: a helper can outlive it (#230).
+                    // Reaping the leader as we go keeps a zombie from counting as alive.
                     let deadline = Instant::now() + spec.finalization;
                     while Instant::now() < deadline {
-                        if matches!(child.try_wait(), Ok(Some(_))) {
+                        let _ = child.try_wait();
+                        if !group_alive(pid) {
                             break;
                         }
                         std::thread::sleep(Duration::from_millis(10));
                     }
                 }
-                if !matches!(child.try_wait(), Ok(Some(_))) {
+                let _ = child.try_wait();
+                if group_alive(pid) {
                     send_group(pid, Signal::SIGKILL);
                     finalized_with = Some("SIGKILL".into());
                 }
@@ -1081,6 +1085,11 @@ mod unix {
         }
     }
 
+    /// Whether any process of the group led by `pid` is left (signal 0 probes without delivering).
+    fn group_alive(pid: i32) -> bool {
+        killpg(Pid::from_raw(pid), None).is_ok()
+    }
+
     /// Poll the process group until it is empty or the settle deadline passes.
     fn settle(leader: Option<u32>, settle: Duration) -> Settlement {
         let pid = match leader.and_then(|p| i32::try_from(p).ok()) {
@@ -1089,9 +1098,7 @@ mod unix {
         };
         let deadline = Instant::now() + settle;
         loop {
-            // Signal 0 probes existence of the group without delivering a signal.
-            let alive = killpg(Pid::from_raw(pid), None).is_ok();
-            if !alive {
+            if !group_alive(pid) {
                 return Settlement { status: "settled".into() };
             }
             if Instant::now() >= deadline {
@@ -1167,6 +1174,36 @@ mod tests {
         assert!(t.elapsed() < Duration::from_secs(5));
         assert_eq!(cap.exit.reason, "timeout");
         assert_eq!(cap.cleanup.process_group, "verified");
+    }
+
+    /// #230: with a grace period, the leader exits on SIGTERM; a helper that ignores it used to
+    /// be left running because only the leader was waited for.
+    #[test]
+    fn graceful_timeout_kills_a_helper_that_outlives_the_leader() {
+        if !sh_available() {
+            return;
+        }
+        let script = "/bin/sh -c 'trap \"\" TERM HUP; exec /bin/sleep 12' & exec /bin/sleep 12";
+        let spec = Spec {
+            executable: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            cwd: None,
+            env: Vec::new(),
+            terminal: Terminal::default(),
+            events: Vec::new(),
+            timeout: Duration::from_millis(500),
+            idle_timeout: Duration::from_secs(30),
+            settle: Duration::from_millis(500),
+            finalization: Duration::from_millis(500),
+            observation_paths: Vec::new(),
+            limits: Limits::default(),
+            sandbox: SandboxRequest::Off,
+        };
+        let cap = capture(spec, no_cancel()).unwrap();
+        assert_eq!(cap.exit.reason, "timeout");
+        assert_eq!(cap.settlement.status, "settled");
+        assert_eq!(cap.cleanup.process_group, "verified");
+        assert_eq!(cap.exit.finalized_with.as_deref(), Some("SIGKILL"), "the helper needed SIGKILL");
     }
 
     #[test]
