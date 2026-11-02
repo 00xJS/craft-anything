@@ -13,15 +13,19 @@ pub fn show(app: &mut CraftApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let full = ui.max_rect();
     let width = 640.0_f32.min(full.width() - 48.0);
-    ui.add_space(((full.height() - 560.0) / 2.0).clamp(24.0, 120.0));
-    ui.vertical_centered(|ui| {
-        ui.set_max_width(width);
-        match app.state.first_run {
-            FirstRunStep::Welcome => welcome(app, ui),
-            FirstRunStep::Brain => brain(app, ui, width),
-            FirstRunStep::Purpose => purpose(app, ui, width),
-            FirstRunStep::Done => done(app, ui),
-        }
+    // A step taller than the window scrolls above the footer, so Continue stays reachable (#231).
+    egui::ScrollArea::vertical().max_height(full.height() - 52.0).show(ui, |ui| {
+        ui.add_space(((full.height() - 560.0) / 2.0).clamp(24.0, 120.0));
+        ui.vertical_centered(|ui| {
+            ui.set_max_width(width);
+            match app.state.first_run {
+                FirstRunStep::Welcome => welcome(app, ui),
+                FirstRunStep::Brain => brain(app, ui, width),
+                FirstRunStep::Purpose => purpose(app, ui, width),
+                FirstRunStep::Done => done(app, ui),
+            }
+        });
+        ui.add_space(12.0);
     });
     // Where you are, the ArtCraft way: "02 / 04  AI", plus a progress hairline.
     let step = app.state.first_run.index();
