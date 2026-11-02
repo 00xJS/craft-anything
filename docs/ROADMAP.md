@@ -170,6 +170,7 @@ Owner: open · Status: done (branch chore/r0.5-cleanups)
 - [x] Class-usage search includes the component class of multidimensional object arrays (#325).
 - [x] Missing `database` icon for SQLite in the UI (`kind_icon`)
 - [x] Deduplicate the five private `fn spec(` helpers in the tool modules
+- [x] Keep dependencies between recognised esbuild wrappers after identifier minification (#270).
 - [x] rustfmt drift on main (11 files)
 - [x] Checked arithmetic on file offsets in `fsread/extfs.rs`: an inode offset near `usize::MAX`
       overflows `o + 128` (two sites), found by a lint scan of `crates/formats` (#42)

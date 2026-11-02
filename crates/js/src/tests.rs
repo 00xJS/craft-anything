@@ -131,6 +131,59 @@ fn esbuild_bundle_is_split() {
 }
 
 #[test]
+fn minified_esbuild_wrappers_keep_dependencies() {
+    let minified = fx::ESBUILD_BUNDLE.replace("require_util", "a").replace("require_main", "b");
+    let a = run("out.js", &minified);
+    assert_eq!(a.facts.parse_errors, 0);
+    assert_eq!(a.bundle.modules.len(), 2);
+    let main = a.bundle.modules.iter().find(|m| m.id == "src/main.js").unwrap();
+    assert_eq!(main.format, "esbuild-cjs");
+    assert_eq!(main.deps, ["src/util.js"]);
+
+    // Resolve after visiting the whole file: an initializer may be declared later.
+    let source = r#"
+var m = h({"src/main.js"(exports, module) { u(); i(); }});
+var u = h({"src/util.js"(exports, module) { module.exports = 7; }});
+var i = h({"src/setup.js"() { globalThis.ready = true; }});
+"#;
+    let a = run("out.js", source);
+    assert_eq!(a.facts.parse_errors, 0);
+    assert_eq!(a.bundle.modules.len(), 3);
+    assert_eq!(a.bundle.modules.iter().find(|m| m.id == "src/main.js").unwrap().deps, ["src/util.js", "src/setup.js"]);
+    assert_eq!(a.bundle.modules.iter().find(|m| m.id == "src/setup.js").unwrap().format, "esbuild-esm");
+}
+
+#[test]
+fn esbuild_wrapper_dependencies_follow_bindings() {
+    let source = r#"
+var a = h({"src/outer.js"(exports, module) { module.exports = 1; }});
+var b = h({"src/main.js"(exports, module) { a(); }});
+function anotherBundle() {
+    var a = h({"src/inner.js"(exports, module) { module.exports = 2; }});
+    var b = h({"src/other.js"(exports, module) { a(); }});
+}
+var s = h({"src/shadow.js"(exports, module) { function local(a) { a(); } }});
+"#;
+    let a = run("out.js", source);
+    assert_eq!(a.facts.parse_errors, 0);
+    let deps = |id| &a.bundle.modules.iter().find(|m| m.id == id).unwrap().deps;
+    assert_eq!(deps("src/main.js"), &["src/outer.js"]);
+    assert_eq!(deps("src/other.js"), &["src/inner.js"]);
+    assert!(deps("src/shadow.js").is_empty(), "a local parameter is not a wrapper call");
+}
+
+#[test]
+fn esbuild_dependencies_ignore_unrecognised_and_repeated_calls() {
+    let source = r#"
+var a = h({"src/util.js"(exports, module) { module.exports = 1; }});
+var b = h({"src/main.js"(exports, module) { a(); a(); unknown(); require_external(); a(1); }});
+"#;
+    let a = run("out.js", source);
+    assert_eq!(a.facts.parse_errors, 0);
+    assert_eq!(a.bundle.modules.iter().find(|m| m.id == "src/main.js").unwrap().deps, ["src/util.js"]);
+}
+
+#[test]
 fn fingerprints_ignore_names() {
     let a = run("a.js", "function f(a, b) { return a + b * 2; }").facts.fingerprint;
     let b = run("b.js", "function g(x, y) { return x + y * 2; }").facts.fingerprint;

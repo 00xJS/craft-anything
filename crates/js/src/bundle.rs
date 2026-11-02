@@ -3,25 +3,28 @@
 //! esbuild (`__commonJS` / `__esm` wrappers, minified or not) and browserify. Scope-hoisted
 //! bundles (Rollup, Vite production chunks) have no module boundaries left to recover.
 
+use crate::facts::Key;
 use crate::fingerprint::Fingerprint;
 use crate::model::{BundleInfo, BundleModule};
 use crate::util::{LineIndex, sha256_hex, slice};
 use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
+use oxc_semantic::Scoping;
 use oxc_syntax::scope::ScopeFlags;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub const MAX_MODULES: usize = 50_000;
 
 pub(crate) struct BundleVisitor<'s> {
     src: &'s str,
     lines: &'s LineIndex,
+    scoping: Option<&'s Scoping>,
     webpack_hint: bool,
     pub info: BundleInfo,
-    /// esbuild wrapper variable → module id, for dependency resolution.
-    esbuild_vars: HashMap<String, String>,
-    /// Raw esbuild deps (wrapper variable names) per module index.
-    esbuild_raw: Vec<(usize, Vec<String>)>,
+    /// esbuild wrapper binding → module id, for dependency resolution.
+    esbuild_vars: HashMap<Key, String>,
+    /// Raw esbuild deps (callee bindings) per module index.
+    esbuild_raw: Vec<(usize, Vec<Key>)>,
 }
 
 /// A function-ish table value.
@@ -76,8 +79,10 @@ impl Func<'_, '_> {
 /// Collects calls to the module's `require` parameter and esbuild wrapper calls.
 struct DepVisitor<'n> {
     require_name: Option<&'n str>,
+    scoping: Option<&'n Scoping>,
     deps: Vec<String>,
-    esbuild: Vec<String>,
+    esbuild: Vec<Key>,
+    esbuild_seen: HashSet<Key>,
 }
 
 impl<'a> Visit<'a> for DepVisitor<'_> {
@@ -96,8 +101,18 @@ impl<'a> Visit<'a> for DepVisitor<'_> {
                 {
                     self.deps.push(d);
                 }
-            } else if (n.starts_with("require_") || n.starts_with("init_")) && it.arguments.is_empty() && self.esbuild.len() < 4096 {
-                self.esbuild.push(n.to_string());
+            } else if it.arguments.is_empty() && self.esbuild.len() < 4096 {
+                // Minifiers rename the wrapper. Resolve by binding, not by its spelling, so a
+                // short name also works without confusing a local parameter with the wrapper.
+                let key = match self.scoping {
+                    Some(sc) => id.reference_id.get().and_then(|rid| sc.get_reference(rid).symbol_id()).map(Key::Sym),
+                    None => Some(Key::Name(n.to_string())),
+                };
+                if let Some(key) = key
+                    && self.esbuild_seen.insert(key.clone())
+                {
+                    self.esbuild.push(key);
+                }
             }
         }
         walk::walk_call_expression(self, it);
@@ -105,8 +120,8 @@ impl<'a> Visit<'a> for DepVisitor<'_> {
 }
 
 impl<'s> BundleVisitor<'s> {
-    pub fn new(src: &'s str, lines: &'s LineIndex, webpack_hint: bool) -> Self {
-        BundleVisitor { src, lines, webpack_hint, info: BundleInfo::default(), esbuild_vars: HashMap::new(), esbuild_raw: Vec::new() }
+    pub fn new(src: &'s str, lines: &'s LineIndex, webpack_hint: bool, scoping: Option<&'s Scoping>) -> Self {
+        BundleVisitor { src, lines, scoping, webpack_hint, info: BundleInfo::default(), esbuild_vars: HashMap::new(), esbuild_raw: Vec::new() }
     }
 
     /// Resolve esbuild wrapper calls to module ids once every wrapper is known.
@@ -136,7 +151,8 @@ impl<'s> BundleVisitor<'s> {
             "browserify" => params.first().cloned(),
             _ => None,
         };
-        let mut dv = DepVisitor { require_name: require_name.as_deref(), deps: Vec::new(), esbuild: Vec::new() };
+        let mut dv =
+            DepVisitor { require_name: require_name.as_deref(), scoping: self.scoping, deps: Vec::new(), esbuild: Vec::new(), esbuild_seen: HashSet::new() };
         let mut fp = Fingerprint::new();
         match f {
             Func::Function(func) => {
@@ -301,8 +317,12 @@ impl<'a> Visit<'a> for BundleVisitor<'_> {
         if let Some(Expression::CallExpression(call)) = it.init.as_ref().map(|e| e.get_inner_expression())
             && let Some((key, f, kind)) = Self::esbuild_wrapper(call)
         {
-            if let Some(var) = it.id.get_identifier_name() {
-                self.esbuild_vars.insert(var.to_string(), key.clone());
+            if let BindingPattern::BindingIdentifier(var) = &it.id {
+                let binding = match (self.scoping, var.symbol_id.get()) {
+                    (Some(_), Some(symbol)) => Key::Sym(symbol),
+                    _ => Key::Name(var.name.to_string()),
+                };
+                self.esbuild_vars.insert(binding, key.clone());
             }
             self.add(key, kind, &[], &f);
             return;
