@@ -428,6 +428,19 @@ const STATE_JS: &str = r#"(() => {
 
 const CLICK_STATE_JS: &str = r#"(() => { const el = document.querySelector('[data-craft-state="__I__"]'); if (!el) return false; el.scrollIntoView({block: 'center'}); el.click(); return true; })()"#;
 
+/// Before tab `__I__` is clicked: mark the tab its list has selected now, to select it again after (#335).
+const REMEMBER_TAB_JS: &str = r#"(() => {
+  const el = document.querySelector('[data-craft-state="__I__"]');
+  if (!el || el.getAttribute('role') !== 'tab') return false;
+  const list = el.closest('[role="tablist"]') || el.parentElement;
+  const was = list && Array.from(list.querySelectorAll('[role="tab"][aria-selected="true"]')).find(t => t !== el);
+  if (!was) return false;
+  was.setAttribute('data-craft-tab-was', '__I__');
+  return true;
+})()"#;
+
+const RESELECT_TAB_JS: &str = r#"(() => { const el = document.querySelector('[data-craft-tab-was="__I__"]'); if (!el) return false; el.removeAttribute('data-craft-tab-was'); el.click(); return true; })()"#;
+
 fn press_escape(client: &mut CdpClient, dl: &Deadline) {
     for kind in ["keyDown", "keyUp"] {
         let _ = client.call("Input.dispatchKeyEvent", json!({"type": kind, "key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27}), None, dl);
@@ -489,6 +502,7 @@ fn web_page_states_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutpu
             let i = c.get("index").and_then(Value::as_u64).unwrap_or(n as u64).to_string();
             ctx.report(Some(n as f32 / found.len().max(1) as f32), format!("Opening {}…", c.get("label").and_then(Value::as_str).unwrap_or("a control")));
             let before = eval(&mut client, &STATE_JS.replace("__I__", &i), &dl)?;
+            let _ = eval(&mut client, &REMEMBER_TAB_JS.replace("__I__", &i), &dl);
             if eval(&mut client, &CLICK_STATE_JS.replace("__I__", &i), &dl)? != true {
                 continue;
             }
@@ -514,6 +528,8 @@ fn web_page_states_capture(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutpu
                 let _ = eval(&mut client, &FIND_STATES_JS.replace("__MAX__", &p.max_states.to_string()), &dl);
             } else if after["expanded"] == "true" || after["open"] == true {
                 let _ = eval(&mut client, &CLICK_STATE_JS.replace("__I__", &i), &dl);
+            } else if changed.contains(&"tab selected") {
+                let _ = eval(&mut client, &RESELECT_TAB_JS.replace("__I__", &i), &dl);
             }
             settle(&mut client, 300)?;
             states.push(row);
@@ -1191,6 +1207,7 @@ mod tests {
         assert!(state_change(&before, &before).is_empty());
         // The page scripts carry their placeholders.
         assert!(FIND_STATES_JS.contains("__MAX__") && STATE_JS.contains("__I__") && CLICK_STATE_JS.contains("__I__"));
+        assert!(REMEMBER_TAB_JS.contains("__I__") && RESELECT_TAB_JS.contains("__I__"));
     }
 
     #[test]
@@ -1442,25 +1459,10 @@ mod tests {
         assert!(!out.exists(), "no folder is made for a capture that can't happen");
     }
 
-    /// #339: states captured at a phone width after a desktop width open the phone's own button,
-    /// not the desktop one the earlier capture marked. Live: it needs a Chromium-based browser
-    /// (`--ignored`).
-    #[test]
-    #[ignore]
-    fn states_at_a_second_width_open_that_widths_controls() {
+    /// An engine with `page` open in a real browser, served from a local port. Live: it needs a
+    /// Chromium-based browser, so it looks for one the way the app does.
+    fn serve_and_open(page: &'static str) -> crate::Engine {
         use std::io::{Read, Write};
-        let page = r#"<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>
-body{margin:0} .d{display:none} @media (min-width:800px){.d{display:block} .p{display:none}}
-.panel{display:none;position:fixed;top:0;left:0;width:100%;height:200px}
-</style></head><body style="padding-top:300px">
-<button class="d" aria-expanded="false" data-panel="dp">Desktop options</button>
-<button class="p" aria-expanded="false" data-panel="pp">Phone options</button>
-<div id="dp" class="panel" style="background:#0000ff"></div><div id="pp" class="panel" style="background:#ff0000"></div>
-<script>for (const b of document.querySelectorAll('button')) b.onclick = () => {
-  const open = b.getAttribute('aria-expanded') !== 'true';
-  b.setAttribute('aria-expanded', String(open));
-  document.getElementById(b.dataset.panel).style.display = open ? 'block' : 'none';
-};</script></body></html>"#;
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
         std::thread::spawn(move || {
@@ -1473,8 +1475,30 @@ body{margin:0} .d{display:none} @media (min-width:800px){.d{display:block} .p{di
         let mut s = crate::testing::session();
         s.settings.engines.only_configured = false;
         let e = crate::Engine::new(s);
+        e.call("web_site_open", json!({"url": url}), crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted)).unwrap();
+        e
+    }
+
+    /// #339: states captured at a phone width after a desktop width open the phone's own button,
+    /// not the desktop one the earlier capture marked. Live (`--ignored`).
+    #[test]
+    #[ignore]
+    fn states_at_a_second_width_open_that_widths_controls() {
+        let e = serve_and_open(
+            r#"<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>
+body{margin:0} .d{display:none} @media (min-width:800px){.d{display:block} .p{display:none}}
+.panel{display:none;position:fixed;top:0;left:0;width:100%;height:200px}
+</style></head><body style="padding-top:300px">
+<button class="d" aria-expanded="false" data-panel="dp">Desktop options</button>
+<button class="p" aria-expanded="false" data-panel="pp">Phone options</button>
+<div id="dp" class="panel" style="background:#0000ff"></div><div id="pp" class="panel" style="background:#ff0000"></div>
+<script>for (const b of document.querySelectorAll('button')) b.onclick = () => {
+  const open = b.getAttribute('aria-expanded') !== 'true';
+  b.setAttribute('aria-expanded', String(open));
+  document.getElementById(b.dataset.panel).style.display = open ? 'block' : 'none';
+};</script></body></html>"#,
+        );
         let cli = || crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted);
-        e.call("web_site_open", json!({"url": url}), cli()).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let top_colour = |out: &Path| {
             let rows: Value = serde_json::from_str(&std::fs::read_to_string(out.join("states.json")).unwrap()).unwrap();
@@ -1486,6 +1510,30 @@ body{margin:0} .d{display:none} @media (min-width:800px){.d{display:block} .p{di
             let out = dir.path().join(format!("states-{width}"));
             e.call("web_page_states_capture", json!({"output_directory": out.display().to_string(), "width": width, "max_states": 1}), cli()).unwrap();
             assert_eq!(top_colour(&out), (label.to_string(), colour.to_vec()), "at {width} px");
+        }
+        let _ = e.call("web_site_close", json!({}), cli());
+    }
+
+    /// #335: after photographing another tab, the tab that was selected is selected again, so the
+    /// next capture finds the page as it was. Live (`--ignored`).
+    #[test]
+    #[ignore]
+    fn the_tab_that_was_selected_is_selected_again() {
+        let e = serve_and_open(
+            r#"<!doctype html><html><body><div role="tablist">
+<button role="tab" aria-selected="true">One</button><button role="tab" aria-selected="false">Two</button></div>
+<script>const tabs = document.querySelectorAll('[role="tab"]');
+for (const t of tabs) t.onclick = () => tabs.forEach(o => o.setAttribute('aria-selected', String(o === t)));</script></body></html>"#,
+        );
+        let cli = || crate::CallOptions::new(crate::Caller::Cli).with_consent(crate::Consent::Granted);
+        let dir = tempfile::tempdir().unwrap();
+        // Each capture opens the unselected tab: Two both times when One is selected again.
+        for n in 1..=2 {
+            let out = dir.path().join(format!("states-{n}"));
+            e.call("web_page_states_capture", json!({"output_directory": out.display().to_string(), "max_states": 1}), cli()).unwrap();
+            let rows: Value = serde_json::from_str(&std::fs::read_to_string(out.join("states.json")).unwrap()).unwrap();
+            assert_eq!(rows["states"][0]["label"], "Two", "capture {n}: {rows}");
+            assert_eq!(rows["states"][0]["changed"], json!(["tab selected"]), "capture {n}: {rows}");
         }
         let _ = e.call("web_site_close", json!({}), cli());
     }
