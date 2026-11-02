@@ -555,6 +555,9 @@ Owner: open · Status: in progress
       manifest) skip the approval policy; `maki acp` takes no tool flags to stop it (0.7.0). Start
       it in `app/` (paths in the prompt relative to that), or ask Maki for a way to make those
       writes ask; part of the approval decision above
+- [ ] Codex, Gemini CLI, OpenCode, Hermes, Maki and the plain adapter still take the message in
+      argv, so a long one can pass Windows' command-line limit as Claude Code's did (#402); hand
+      each its message on stdin or in a file where its CLI reads one
 
 ### R2.3 Website coverage and a better visual metric
 Owner: open · Status: done

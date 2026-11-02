@@ -551,6 +551,9 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, ses
     if let Some(p) = spec.project.as_ref().filter(|_| remote.is_none()) {
         proc = proc.cwd(p);
     }
+    if adapter.prompt_on_stdin() {
+        proc = proc.stdin_bytes(text);
+    }
     let result = proc.run();
     let p = parser.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(id) = &p.session_id {
@@ -789,7 +792,8 @@ mod tests {
     fn claude_args() {
         let a = build_args(adapter_for("claude-code").as_ref(), &BackendOptions::default(), "-what?", "PRE", &mcp(), Some("sess-1"), Access::Analyse);
         assert_eq!(a[0], "-p");
-        assert_eq!(a[1], " -what?");
+        // #402: the message goes in on stdin, so a long one can't pass Windows' command-line limit.
+        assert!(adapter_for("claude-code").prompt_on_stdin() && !a.iter().any(|x| x.contains("what?")), "{a:?}");
         let pos = |f: &str| a.iter().position(|x| x == f).unwrap();
         assert_eq!(a[pos("--output-format") + 1], "stream-json");
         assert!(a.contains(&"--verbose".to_string()));
@@ -801,7 +805,7 @@ mod tests {
         assert_eq!(b[b.iter().position(|x| x == "--model").unwrap() + 1], "opus");
         let cfg: Value = serde_json::from_str(&a[pos("--mcp-config") + 1]).unwrap();
         assert_eq!(cfg["mcpServers"]["craft-anything"]["args"][0], "mcp");
-        // variadic flags come last so the prompt is never swallowed
+        // variadic flags come last: nothing after them is read as one of their values
         assert!(pos("--mcp-config") > pos("--resume"));
     }
 
@@ -1078,6 +1082,32 @@ mod tests {
         let text: String = all.iter().filter_map(|e| if let AgentEvent::TextDelta { text } = e { Some(text.clone()) } else { None }).collect();
         assert!(text.contains("hello there"), "{all:?}");
         assert!(text.contains("Request"), "preamble is passed too");
+    }
+
+    /// #402: a 34,641-character message in argv passed Windows' command-line limit (os error 206);
+    /// Claude Code reads it from stdin instead.
+    #[cfg(unix)]
+    #[test]
+    fn claude_code_reads_a_long_message_on_stdin() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("claude");
+        let reply = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"read %s bytes"}]}}\n"#;
+        std::fs::write(&program, format!("#!/bin/sh\nn=$(wc -c)\nprintf '{reply}' $n\n")).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let config =
+            BackendConfig { name: "Claude".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
+        let options = BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
+        let mut c = CliConversation::new(CliSpec::new(config, options, false, None));
+        c.send(&"a".repeat(40_000));
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut all = Vec::new();
+        while std::time::Instant::now() < deadline && !all.iter().any(|e| matches!(e, AgentEvent::TurnDone { .. })) {
+            all.extend(c.poll());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let text: String = all.iter().filter_map(|e| if let AgentEvent::TextDelta { text } = e { Some(text.clone()) } else { None }).collect();
+        assert_eq!(text, "read 40000 bytes", "{all:?}");
     }
 
     /// #91: a Mac app with no CLI beside it reached Claude Code, which stopped with a stack trace.
