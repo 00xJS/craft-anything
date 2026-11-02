@@ -815,6 +815,15 @@ impl CraftApp {
             ("project_play", Err(e)) => self.toast(format!("{} {}", tr("Couldn't start it."), e.for_people()), true),
             ("project_assets_budget" | "project_assets_allow", Ok(_)) => self.assets_changed(),
             ("rebuild_question_ask", r) => self.question_done(r),
+            ("project_build_finish", Ok(v)) => {
+                if let Some(ws) = self.workspace.as_mut().filter(|w| v["project"].as_str().is_some_and(|p| w.root == std::path::Path::new(p))) {
+                    let _ = ws.reload();
+                    // What the tool added to the saved conversation.
+                    let text = craft_anything_engine::tools::project_tools::CALLED_DONE.to_string();
+                    self.state.feed.push(craft_anything_engine::feed::FeedItem::Step { step: craft_anything_engine::workspace::Step::Done, text });
+                }
+                self.toast(tr("Called done. A new message carries on from here."), false);
+            }
             ("project_questions_set", Ok(v)) => {
                 // What was saved (the person's other changes on disk come along).
                 if let Some(ws) = self.workspace.as_mut().filter(|w| v["project"].as_str().is_some_and(|p| w.root == std::path::Path::new(p))) {

@@ -1623,6 +1623,13 @@ fn a_build_that_stopped_part_way_offers_to_continue() {
     h.run_steps(3);
     // In the feed, and on the project's status pill.
     assert!(h.query_all_by_label("Paused").count() >= 1);
+    // #210: "enough now". It's kept as it is and stops offering to carry on.
+    h.get_by_label("It's done").click();
+    assert!(wait(&mut h, |app| app.workspace.as_ref().is_some_and(|w| w.manifest.status == Status::Ready)), "called done");
+    h.run_steps(3);
+    assert_eq!(Workspace::open(&paused.root).unwrap().manifest.status, Status::Ready);
+    assert!(h.query_by_label("Continue").is_none(), "nothing left to carry on");
+    h.get_by_label(craft_anything_engine::tools::project_tools::CALLED_DONE);
     h.state_mut().open_workspace(cut.clone());
     h.run_steps(3);
     h.get_by_label("Beta, Interrupted");

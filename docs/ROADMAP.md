@@ -812,6 +812,8 @@ Gaps found while using the app for real projects.
 - [ ] "Make this change" on an answer that suggests one (sends it as a normal message)
 - [ ] A program started from the CLI (`project_play`) keeps the shell's output pipe open, so the
       command doesn't return until it closes: start it without inheriting the CLI's handles (#207)
+- [x] "It's done" beside Continue and Try again: the person keeps a build as it is and it stops
+      offering to carry on (`project_build_finish`, #210)
 - [x] The desktop app keeps `desktop.log` beside its settings: startup steps, warnings, a window
       that couldn't start, panics
 - [x] The cost says when it's an estimate: Claude Code's figure is its own guess at API prices,

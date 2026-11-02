@@ -194,6 +194,8 @@ Built with	建置工具
 Built with {stack}, as you asked, so no game engine is needed.	已依你的要求使用 {stack} 建置，因此不需要遊戲引擎。
 Call graph	呼叫圖
 Call path	呼叫路徑
+Call the build done	將建置標為完成
+Called done. A new message carries on from here.	已標為完成。傳送新訊息即可從這裡繼續。
 Cancel	取消
 Cancel: don't use this folder	取消：不使用此資料夾
 Capture a website for rebuilding	擷取網站用於重建
@@ -544,6 +546,7 @@ It isn't on this computer yet. Craft Anything can download Ghidra {version} and 
 It isn't on this computer yet. Install Ghidra {version} from its release page, then choose its folder.	這台電腦尚未安裝 Ghidra。請從發佈頁面安裝 Ghidra {version}，然後選擇其資料夾。
 It's already open.	它已經開啟了。
 It's already open. Right-click it to open another copy.	已經開啟。按右鍵可再開啟一個副本。
+It's done	就這樣吧
 It's mine, or I'm allowed to look	這是我的，或我已獲准查看
 Its copy is deleted, with anything it saved there. The project itself stays as it is.	將刪除此副本及其儲存的所有內容。專案本身保持不變。
 Its folder is deleted with everything in it: what was built, the checks and the conversation.	將刪除其資料夾及其中的全部內容：建置成果、檢查結果和對話。
@@ -563,6 +566,7 @@ Just look inside	只檢視內部
 Keep going without asking	繼續執行，無須詢問
 Keep it	保留
 Keep it in the sidebar to open any time, whatever later builds change.	將其保留在側邊欄中，隨時開啟，不受後續建置變更的影響。
+Keep the build as it is and stop offering to carry on.	保留建置的現狀，不再提示繼續。
 Keep this version in the sidebar to open any time.	將此版本保留在側邊欄中，隨時開啟。
 Keeps this version exactly as it is now. Later builds can't change or break it, and anything it saves stays with the copy.	完整保留目前版本。後續建置無法修改或破壞它，它儲存的所有內容也會留在此副本中。
 Key saved	金鑰已儲存

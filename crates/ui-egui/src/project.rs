@@ -1159,6 +1159,7 @@ fn draw_items(
                                 if widgets::primary_icon(ui, Some("refresh-cw"), "Try again", true).clicked() {
                                     *retry = true;
                                 }
+                                done_button(app, ui, ws);
                                 // A fix that names a command to run (sign in, install…) offers to copy it.
                                 if let Some(cmd) = remediation.as_deref().and_then(command_in)
                                     && widgets::secondary(ui, Some("copy"), "Copy the command").on_hover_text(cmd).clicked()
@@ -1245,11 +1246,22 @@ fn continue_card(app: &mut CraftApp, ui: &mut Ui, ws: &Workspace) {
         });
         ui.add(egui::Label::new(RichText::new(tr(body)).color(t.text_dim)).wrap());
         ui.add_space(6.0);
-        go = widgets::primary_icon(ui, Some("play"), "Continue", true).clicked();
+        ui.horizontal(|ui| {
+            go = widgets::primary_icon(ui, Some("play"), "Continue", true).clicked();
+            done_button(app, ui, ws);
+        });
     });
     ui.add_space(chat::MESSAGE_GAP);
     if go {
         app.continue_build();
+    }
+}
+
+/// "It's done": the person is happy with the build as it is, so it stops offering to carry on
+/// (#210). Shown only when nothing is running.
+fn done_button(app: &mut CraftApp, ui: &mut Ui, ws: &Workspace) {
+    if widgets::secondary(ui, Some("check"), "It's done").on_hover_text(tr("Keep the build as it is and stop offering to carry on.")).clicked() {
+        app.act("project_build_finish", serde_json::json!({"project": ws.root}), tr("Call the build done"));
     }
 }
 
