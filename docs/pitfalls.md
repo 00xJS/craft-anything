@@ -546,3 +546,8 @@ parser between JSON recovery and ReAct: count the opener, require a standalone c
 least that long, and reject an earlier matching close followed by more text. Shorter backtick
 lines inside a longer fence are content. Test both paths and the next HTTP request, including
 malformed suffixes and non-call JSON examples whose strings contain protocol markers.
+
+**A view that asked to be scrolled on every frame.** The command palette called `scroll_to_me` on
+the selected row each frame, so the wheel's scroll was pulled back to it at once and the list
+kept jumping to the top (#584). Scroll something into view on the frame it changed (a key, a new
+query), never as a standing request.

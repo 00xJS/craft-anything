@@ -960,6 +960,33 @@ fn command_palette_opens_and_lists_tools() {
     assert!(!h.state().state.palette.open);
 }
 
+/// #584: the palette's list jumped back to the top after every scroll, because the selected row
+/// asked to be scrolled into view on every frame.
+#[test]
+fn the_command_palette_stays_where_it_was_scrolled() {
+    let mut h = harness(|| demo::app(demo::engine(Mode::Experienced, true)));
+    h.run_steps(3);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    h.run_steps(3);
+    let before = h.get_by_label("Session status").rect();
+    // Over the list's first rows (this one may be below what the list shows).
+    h.event(egui::Event::PointerMoved(egui::pos2(before.center().x, 250.0)));
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -300.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(20);
+    let after = h.get_by_label("Session status").rect();
+    assert!(after.top() < before.top() - 100.0, "it scrolled and stayed scrolled: {before:?} → {after:?}");
+    // The arrow keys still bring the selection back into view.
+    h.key_press(egui::Key::ArrowDown);
+    h.key_press(egui::Key::ArrowUp);
+    h.run_steps(20);
+    assert_eq!(h.get_by_label("Session status").rect().top(), before.top());
+}
+
 /// A stand-in model server whose every answer lists an embedding model, then `qwen3:8b`. Its
 /// OpenAI-style address.
 fn model_server() -> String {
