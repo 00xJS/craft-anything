@@ -95,7 +95,7 @@ fn browse(ui: &mut Ui, id: egui::Id, text: &mut String, attachments: &[PathBuf],
     } else {
         now.as_ref().filter(|_| at_end(ui.ctx(), id, text) && ui.input_mut(|i| i.consume_key(plain, egui::Key::ArrowDown))).map(|b| newer(&list(), b))
     };
-    let Some(b) = next else { return None };
+    let b = next?;
     text.clone_from(&b.shown);
     if b.back == 0 {
         ui.data_mut(|d| d.remove_temp::<Browsing>(key));
