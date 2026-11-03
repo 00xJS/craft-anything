@@ -148,12 +148,12 @@ Owner: maintainers · Status: in progress
 Review comes before new work while the queue is long, smallest and clean PRs first. A PR is merged
 only when it's green and a maintainer has fully reviewed it, code as well as wording.
 - [ ] Maintainers: protect `main` (PRs required, squash only); the only ruleset covers `release`
-- [ ] Auto mode's delete check is a safety bug that shows up as Mac test failures. It splits a
+- [x] Auto mode's delete check is a safety bug that shows up as Mac test failures. It splits a
       command on spaces, so `rm -rf "C:/x/Game Backup/y"` from a project at `C:/x/Game` goes ahead
       unasked, and it lower-cases paths, so on a Mac or Linux a delete inside a project with
       capitals in its path is refused; `auto_mode_keeps_going_but_never_does_the_dangerous_things`
       fails on a Mac for that. `real_binary_end_to_end_if_present` fails there too, expecting
-      `/bin/ls` to be Linux — in PR #357
+      `/bin/ls` to be Linux: both fixed (#357)
 - [ ] **decision** First-time contributors' CI: GitHub holds their runs for approval, so their PRs
       show no `gate` run (#490 and #413 among them, and #413 holds up #455). Approve each push, or
       change the repository's approval setting
