@@ -10,6 +10,7 @@
 
 pub mod acp;
 pub mod adapters;
+pub mod models;
 
 pub use acp::AcpConversation;
 pub use adapters::{AgentAdapter, AgentAdapters, ArgsCx};
@@ -120,10 +121,20 @@ pub fn cli_can_start(cli: Option<&Path>, stop: &CancelToken) -> Result<(), ToolE
 /// Whether a local build by `agent` can have our tool server: over ACP every agent is handed it,
 /// else its adapter says.
 pub fn check_builder_tools(adapter: &dyn AgentAdapter, agent: &str, options: &BackendOptions, stop: &CancelToken) -> Result<(), ToolError> {
-    if options.acp == Some(true) && acp::acp_args(agent).is_some() {
+    if selected_acp_args(adapter, agent, options).is_some() {
         return cli_can_start(craft_anything_platform::self_cli_path().as_deref(), stop);
     }
+    adapter.check_native_options(options)?;
     adapter.check_tool_server(stop)
+}
+
+/// The requested transport, shared by builder preflight and execution. ACP cannot carry explicit
+/// catalogue model/variant selections yet, so those must pass the native adapter's checks.
+fn selected_acp_args(adapter: &dyn AgentAdapter, agent: &str, options: &BackendOptions) -> Option<&'static [&'static str]> {
+    if adapter.has_model_catalog() && (options.cli_model.is_some() || options.cli_thinking.is_some()) {
+        return None;
+    }
+    acp::acp_args(agent).filter(|_| options.acp == Some(true))
 }
 
 fn toml_string(s: &str) -> String {
@@ -435,7 +446,8 @@ pub fn builder_conversation(spec: CliSpec, approver: acp::Approver) -> Box<dyn C
 fn acp_for(spec: &CliSpec) -> Option<AcpConversation> {
     let agent = spec.config.model.clone();
     let local = spec.config.ssh_host.as_deref().is_none_or(|h| h.trim().is_empty());
-    let acp_args = acp::acp_args(&agent).filter(|_| spec.options.acp == Some(true) && local)?;
+    let adapter = spec.adapters.for_agent(&agent);
+    let acp_args = selected_acp_args(adapter.as_ref(), &agent, &spec.options).filter(|_| local)?;
     let program = spec.options.command.clone().unwrap_or_else(|| program_for(&agent));
     let mut args = spec.options.args.clone();
     args.extend(acp_args.iter().map(|a| a.to_string()));
@@ -549,6 +561,19 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, sta
     let program = spec.options.command.clone().unwrap_or_else(|| program_for(&agent));
     let remote = spec.config.ssh_host.clone().filter(|h| !h.trim().is_empty());
     let mut adapter = spec.adapters.for_agent(&agent);
+    if let Err(e) = adapter.check_native_options(&spec.options) {
+        let _ = tx.send(AgentEvent::Error { message: e.message, remediation: e.remediation, log: None });
+        return nothing_done(&name);
+    }
+    if let Err(e) = adapter.validate_model(&spec.config, &spec.options, spec.project.as_deref(), stop) {
+        let event = if e.code == ErrorCode::Cancelled {
+            AgentEvent::Status { text: "Stopped.".into() }
+        } else {
+            AgentEvent::Error { message: e.message, remediation: e.remediation, log: None }
+        };
+        let _ = tx.send(event);
+        return nothing_done(&name);
+    }
     let (help, needed) = adapter.required_flags();
     if !needed.is_empty() {
         let ok = match remote {
@@ -978,6 +1003,115 @@ mod tests {
         assert!(agent_env(false, None).contains(&("CLAUDE_CODE_EFFORT_LEVEL", "high".to_string())), "high unless chosen");
     }
     use crate::BackendKind;
+
+    /// Explicit OpenCode picks cannot pass ACP preflight then run natively without our MCP server.
+    #[test]
+    fn explicit_opencode_picks_are_refused_before_native_chat_or_build() {
+        let adapter = adapter_for("opencode");
+        let defaults = BackendOptions { acp: Some(true), ..Default::default() };
+        assert!(selected_acp_args(adapter.as_ref(), "opencode", &defaults).is_some());
+        for (model, thinking) in [(Some("test/model"), None), (None, Some(crate::Effort::High)), (Some("test/model"), Some(crate::Effort::Max))] {
+            for acp in [false, true] {
+                let options = BackendOptions {
+                    command: Some("missing-test-opencode".into()),
+                    cli_model: model.map(str::to_string),
+                    cli_thinking: thinking,
+                    acp: Some(acp),
+                    ..Default::default()
+                };
+                let refused = check_builder_tools(adapter.as_ref(), "opencode", &options, &CancelToken::default()).unwrap_err();
+                assert_eq!(refused.code, ErrorCode::BadSettings);
+                assert!(refused.message.contains("cannot yet connect"));
+                for host in [None, Some("test-host")] {
+                    for building in [false, true] {
+                        let config = BackendConfig {
+                            name: "OpenCode".into(),
+                            kind: BackendKind::AgentCli,
+                            model: "opencode".into(),
+                            base_url: None,
+                            ssh_host: host.map(str::to_string),
+                            enabled: true,
+                        };
+                        let mut spec = CliSpec::new(config, options.clone(), false, None);
+                        if building {
+                            spec.builder = Some(Builder { investigation: None, inbox: PathBuf::from("test-inbox") });
+                        }
+                        assert!(acp_for(&spec).is_none());
+                        let mut c = if building { builder_conversation(spec, Arc::new(|_, _| false)) } else { conversation(spec) };
+                        c.send("test");
+                        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                        let mut events = Vec::new();
+                        while !events.iter().any(|e| matches!(e, AgentEvent::TurnDone { .. })) {
+                            assert!(std::time::Instant::now() < deadline, "missing terminal event: {events:?}");
+                            events.extend(c.poll());
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                        assert!(!c.is_busy());
+                        events.extend(c.poll());
+                        assert!(
+                            matches!(events.as_slice(), [
+                            AgentEvent::Error { message, remediation: Some(_), log: None },
+                            AgentEvent::TurnDone { backend, input_tokens: 0, output_tokens: 0, cost_usd: None, cost_is_estimate: false }
+                        ] if message == &refused.message && backend == "OpenCode"),
+                            "{events:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Validation failures finish exactly once, preserving cancellation status and other error details.
+    #[test]
+    fn cancelled_model_validation_reports_stopped_and_other_failures_stay_errors() {
+        struct RefusedModel(ErrorCode);
+        impl AgentAdapter for RefusedModel {
+            /// Register the fixture without replacing any built-in agent.
+            fn ids(&self) -> &'static [&'static str] {
+                &["test-validation"]
+            }
+            /// Fail the test if a rejected model reaches command construction.
+            fn args(&self, _cx: &ArgsCx) -> Vec<String> {
+                panic!("failed validation must not start the agent")
+            }
+            /// Return the selected validation failure without performing I/O.
+            fn validate_model(&self, _config: &BackendConfig, _options: &BackendOptions, _directory: Option<&Path>, _stop: &Stop) -> Result<(), ToolError> {
+                Err(ToolError::new(self.0, "Validation stopped").with_remediation("Reload the models."))
+            }
+        }
+        for code in [ErrorCode::Cancelled, ErrorCode::BadInput, ErrorCode::TimedOut] {
+            let config = BackendConfig {
+                name: "Test".into(),
+                kind: BackendKind::AgentCli,
+                model: "test-validation".into(),
+                base_url: None,
+                ssh_host: None,
+                enabled: true,
+            };
+            let mut spec = CliSpec::new(config, BackendOptions::default(), false, None);
+            spec.adapters.register(Arc::new(RefusedModel(code)));
+            let mut conversation = CliConversation::new(spec);
+            conversation.send("test");
+            let events: Vec<_> = (0..2).map(|_| conversation.rx.recv_timeout(Duration::from_secs(5)).unwrap()).collect();
+            assert!(!conversation.is_busy(), "the next message is accepted before TurnDone");
+            assert!(conversation.poll().is_empty(), "exactly one terminal event");
+            if code == ErrorCode::Cancelled {
+                assert!(matches!(events.as_slice(), [AgentEvent::Status { text }, AgentEvent::TurnDone { .. }] if text == "Stopped."), "{events:?}");
+            } else {
+                assert!(
+                    matches!(events.as_slice(), [AgentEvent::Error { message, remediation: Some(help), log: None }, AgentEvent::TurnDone { .. }]
+                    if message == "Validation stopped" && help == "Reload the models."),
+                    "{events:?}"
+                );
+            }
+            assert!(
+                matches!(events.last(), Some(AgentEvent::TurnDone {
+                backend, input_tokens: 0, output_tokens: 0, cost_usd: None, cost_is_estimate: false,
+            }) if backend == "Test"),
+                "{events:?}"
+            );
+        }
+    }
 
     fn mcp() -> McpCommand {
         McpCommand { command: "/opt/ca/craft-anything-cli".into(), args: vec!["mcp".into(), "--project".into(), "/p/x.cany".into()], notes: None }

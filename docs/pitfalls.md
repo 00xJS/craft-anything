@@ -97,6 +97,11 @@ after and compare them byte for byte (done for every brief across 162 combinatio
 
 ## Building and running
 
+**A model catalogue queried in the wrong project.** OpenCode V2's raw `api get /api/model` does
+not reliably select the invoking CLI's directory. Use the `model.list` operation with an explicit
+`location[directory]` parameter, and test that the returned Location matches it. Over SSH,
+expand the remote shell's working directory, never send a local project path.
+
 **Rebuilding a binary that is running fails on Windows** ("Access is denied"), and the next command
 silently used the old binary. Long-running binaries (live rebuilds, servers) get their own
 `CARGO_TARGET_DIR`.
@@ -239,6 +244,11 @@ edit, right before committing.
 
 ## Design
 
+**An early error without a terminal event.** Model validation returned after reporting an error,
+but headless chat waits for `TurnDone`, not just an idle worker. Preflight failures and cancellation
+must finish the event sequence too; regression tests check both the error/status and the terminal event.
+Worker-thread creation failures need the same terminal event even though no worker ever started.
+
 **Reading literals and skipping the rest.** The Electron window reader skipped a spread inside
 `webPreferences`, so a window whose preferences came partly from another object was reported as
 "contextIsolation is not set; the default applies", which nobody had checked until a live run on
@@ -270,6 +280,20 @@ And again inside one process: the engine had its own `write_atomic` whose temp f
 by process only, so two threads saving `craft.json` wrote the same temp file and one rename found
 it gone (#273). There is one atomic writer, `craft_anything_platform::fs::write_atomic`; don't
 write another.
+The UI settings worker also released the session guard after cloning settings, letting that stale
+snapshot overwrite a later model-selection save. Keep the guard through the worker's disk write
+so session-based writers cannot overtake each other between reading and saving.
+The exit-time save must merge the session's latest AI table before writing the app's pending settings;
+the UI's AI snapshot may predate a selection already committed by the hub. But waiting for that guard
+can hold shutdown behind a tool for hours. Try it once; if busy, durably defer only non-AI settings
+and recover them at startup against the latest committed AI table, rather than racing a live writer.
+After a successful full exit save, discard an older deferred snapshot so startup cannot replay it
+over the newer app settings.
+
+**Preflight checked a different transport.** An explicit OpenCode selection bypassed ACP, but
+builder preflight still checked ACP's helper and the native adapter never supplied the MCP server.
+Share transport selection between preflight and execution; reject unsupported native options
+before running a process rather than starting an agent without the tools its task requires.
 
 **Keywords that only some code paths honour.** "…in Rust" picked Rust for apps but not for games, so
 a headless game rebuild stopped at once for want of Unity. It was found only by a live run. Run the
@@ -352,6 +376,9 @@ the screen shows the last result.
 `try_session().unwrap_or_default()` at startup, so a busy engine meant Clean room and no AI, and
 the next settings change saved those defaults over theirs. Seen once in a live run. A fallback
 must never stand in for data that gets saved back: wait (it's startup), or keep what's on disk.
+The model picker later captured a busy session as "no project", queried in the wrong directory,
+and rejected the save as a settings change. Capture settings and project under one guard; report
+contention, preserve the draft and matching background results, and check again when available.
 
 **A save that changed memory first.** Adding an AI in the app put it in the session's settings,
 then the file write failed (on Windows, likely a virus scan holding config.toml), so the app showed

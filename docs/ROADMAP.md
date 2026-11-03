@@ -305,6 +305,36 @@ Owner: maintainers · Status: in progress
 
 ### R2.2 More coding agents
 Owner: open · Status: in progress
+- [x] Offer OpenCode locally and over SSH with its own visible chat models and supported thinking
+      depths (Low, Medium, High, Xhigh, Max) in settings and headless clients. Choices are validated
+      before saving; explicit choices are refused at execution until native MCP support is available.
+      See [OpenCode](opencode.md).
+- [x] Capture OpenCode settings and project together; refuse a busy session instead of treating
+      it as no project, and preserve open model pickers and matching results during contention.
+- [x] Report cancelled model validation as stopped, while preserving error events for other failures.
+- [x] Finish rejected or cancelled model validation with a terminal event so headless chat exits;
+      document functions touched by the OpenCode model-selection changes.
+- [x] Integrate the five-level `Effort` type from #395 for agent variants, and share a strict
+      disk-based selection save between the hub and headless tools, preserving unrelated edits.
+- [x] Rebase onto main after #395's squash merge, preserve extra model arguments without a saved
+      selection, and render the remote-host placeholder visibly in the setup instructions.
+- [x] Hold the UI settings worker's session guard through its disk save so it cannot overwrite
+      a newer model selection; reverify the existing terminal-event regression for validation failures.
+- [x] Label the settings-save guard so filesystem I/O is identifiable as a running job by the lock tracker.
+- [x] Finish a failed CLI worker-thread start with a terminal event after its error so headless chat stops polling.
+- [x] Synchronize the UI exit-time settings save with the session's latest AI table and other writers;
+      an isolated exit-save regression preserves the latest model/depth and pending app settings.
+- [x] Never wait for a running tool's session lock at shutdown: defer non-AI app edits in a versioned
+      sidecar when busy, then recover against the latest committed AI settings at startup.
+- [x] Discard superseded deferred settings after a successful full exit save; document model-only
+      and model-with-variant command forms, and share transport selection between preflight and runs.
+- [x] Rebase after #567 and translate the ten model-selection strings and two agent tool titles
+      in the Russian catalogue, restoring coverage and catalogue key parity.
+- [ ] Supply and verify the run's Craft Anything MCP server in native OpenCode before enabling
+      explicit model/thinking execution (currently refused for chat and builds, locally and over SSH).
+- [ ] Verify OpenCode model discovery and an explicit thinking selection on a live SSH host,
+      and complete a live generation with the selected model and variant (local catalogue verified).
+
 "Found on this computer" has to mean "can do the job". Today only Claude Code gets everything.
 **Every builder gets the same tools:**
 - [ ] A table of what each adapter gets (our tool server, approvals, resume, notes mid-turn, a

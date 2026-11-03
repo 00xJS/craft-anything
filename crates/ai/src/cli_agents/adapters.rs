@@ -38,6 +38,30 @@ pub trait AgentAdapter: Send + Sync {
     fn ids(&self) -> &'static [&'static str];
     /// argv after the program for one message.
     fn args(&self, cx: &ArgsCx) -> Vec<String>;
+    /// Whether this agent supplies its own live model and thinking choices.
+    fn has_model_catalog(&self) -> bool {
+        false
+    }
+    /// Query models visible in this backend's execution context, respecting cancellation.
+    /// Agents without catalogue support return an empty list.
+    fn model_catalog(
+        &self,
+        _config: &BackendConfig,
+        _options: &BackendOptions,
+        _directory: Option<&Path>,
+        _stop: &Stop,
+    ) -> Result<Vec<models::AgentModel>, ToolError> {
+        Ok(Vec::new())
+    }
+    /// Check a saved choice in the actual run context before invoking the agent.
+    fn validate_model(&self, _config: &BackendConfig, _options: &BackendOptions, _directory: Option<&Path>, _stop: &Stop) -> Result<(), ToolError> {
+        Ok(())
+    }
+    /// Refuse options that the native transport cannot support, before preflight or process I/O.
+    /// Saving a model choice and discovering its catalogue do not imply native execution support.
+    fn check_native_options(&self, _options: &BackendOptions) -> Result<(), ToolError> {
+        Ok(())
+    }
     /// `(help invocation, substrings it must mention)`, checked once before the first run; when
     /// they're missing the run falls back to the plain adapter. Empty: nothing to check.
     fn required_flags(&self) -> (&'static [&'static str], &'static [&'static str]) {

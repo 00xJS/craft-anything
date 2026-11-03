@@ -159,6 +159,11 @@ pub enum Done {
         name: String,
         result: Result<Vec<String>, ToolError>,
     },
+    AgentModelChoices {
+        request: u64,
+        context: craft_anything_ai::ModelContext,
+        result: Result<Vec<craft_anything_ai::AgentModel>, ToolError>,
+    },
     Picked {
         pick: Pick,
         path: Option<PathBuf>,
@@ -350,6 +355,8 @@ pub struct CraftApp {
     /// The AI whose model is being chosen in Settings → AI, and the models it offers once they've
     /// come (`None`: still asking).
     pub model_picker: Option<(String, Option<Vec<String>>)>,
+    pub agent_model_picker: Option<builders::AgentModelPicker>,
+    model_request: u64,
     /// The agent app whose program the file dialog is choosing.
     pub picking_program_for: Option<String>,
     /// The backend the person chose to build with (Settings → AI), if any.
@@ -431,6 +438,7 @@ pub struct CraftApp {
 }
 
 impl CraftApp {
+    /// Initialize UI state from the shared engine's saved settings, waiting rather than substituting defaults.
     pub fn new(engine: Arc<Engine>, hub: Arc<AiHub>) -> Self {
         // Wait for the engine if it's busy: defaults here would show Clean room and no AI, and the
         // next settings change would save them over the person's own.
@@ -449,6 +457,8 @@ impl CraftApp {
             backends: Vec::new(),
             backend_options: Default::default(),
             model_picker: None,
+            agent_model_picker: None,
+            model_request: 0,
             picking_program_for: None,
             builder: None,
             extractor: None,
@@ -649,8 +659,11 @@ impl CraftApp {
         let engine = self.engine.clone();
         // What's in the session when it runs, so the newest settings are the ones written.
         self.saving = Some(self.jobs.spawn("Save settings", false, move |_| {
-            let settings = engine.session().settings.clone();
-            settings.save().map_err(|e| e.message)?;
+            // Keep the guard through the write so a model-selection save cannot be overtaken
+            // by an older settings snapshot. This runs on the worker, never the UI thread.
+            let session = engine.session();
+            session.label("Save settings");
+            session.settings.save().map_err(|e| e.message)?;
             Ok(Done::Nothing)
         }));
     }
@@ -1219,6 +1232,7 @@ impl CraftApp {
 
     // ---- results ----------------------------------------------------------------------------
 
+    /// Apply a completed background job, reporting failures and accepting picker results only for matching requests.
     fn handle_done(&mut self, done: jobs::Finished<Done>) {
         let job = done.job;
         if self.saving == Some(job) {
@@ -1316,6 +1330,13 @@ impl CraftApp {
                     self.toast(e.for_people(), true);
                 }
             },
+            Done::AgentModelChoices { request, context, result } => {
+                // Keep a matching result even while the engine is busy. Settings invalidates
+                // changed contexts once it can read the session again; saving rechecks too.
+                if let Some(picker) = self.agent_model_picker.as_mut().filter(|p| p.request == request && p.context == context) {
+                    picker.result = Some(result.map_err(|e| e.for_people()));
+                }
+            }
             Done::BackendAdded { name, result } => match result {
                 Ok(()) => {
                     if self.server_form.name.trim() == name {
@@ -1713,7 +1734,25 @@ impl eframe::App for CraftApp {
         }
         // A change not written yet (or one being written as the window closed) is written now.
         if self.persist && (self.settings_dirty || self.save_due.is_some() || self.saving.is_some()) {
-            let _ = self.settings.save();
+            let saved = if let Some(mut session) = self.engine.try_session() {
+                session.label("Save settings on exit");
+                // AI changes belong to the session; keep the app's other pending edits.
+                self.settings.ai = session.settings.ai.clone();
+                session.settings = self.settings.clone();
+                session.settings.save().is_ok()
+            } else {
+                false
+            };
+            if saved {
+                // This full save supersedes any deferred edits left by a failed recovery.
+                if let Err(e) = Settings::discard_pending(&Settings::path()) {
+                    log::error!("Couldn't discard superseded settings on exit: {}", e.message);
+                }
+            } else if let Err(e) = self.settings.defer_save_to(&Settings::path()) {
+                // A tool can hold the session for hours. Keep edits separately for startup recovery;
+                // never race its eventual save by merging a disk snapshot into config.toml here.
+                log::error!("Couldn't keep pending settings on exit: {}", e.message);
+            }
         }
     }
 }
