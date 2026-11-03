@@ -235,7 +235,11 @@ impl ChatStream {
             serde_json::from_str(data).map_err(|e| ToolError::new(ErrorCode::GarbledOutput, format!("The server sent a chunk we couldn't read: {e}")))?;
         if let Some(err) = v.get("error") {
             let msg = err.get("message").and_then(Value::as_str).unwrap_or("unknown error");
-            return Err(ToolError::new(ErrorCode::EngineMissing, format!("Stream error: {msg}")));
+            let provider = err.get("code").and_then(Value::as_str).or_else(|| err.get("type").and_then(Value::as_str));
+            let status = err.get("code").and_then(Value::as_u64);
+            return Err(
+                ToolError::new(ErrorCode::ProgramFailed, format!("Stream error: {msg}")).with_details(json!({"provider_error": provider, "status": status}))
+            );
         }
         if let Some(m) = v.get("model").and_then(Value::as_str) {
             self.model = m.to_string();

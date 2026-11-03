@@ -41,6 +41,39 @@ workspace clippy, layers, fmt and the secret scan of all history were clean. Chi
 | SQLite database files (`db_sqlite_show`) | A rowid alias column (`INTEGER PRIMARY KEY`, including the table-constraint form) shows the rowid; `DESC`, non-`INTEGER` and composite keys keep their stored values | Hand-built fixtures; generated files compared with the official SQLite library |
 | SQLite WITHOUT ROWID tables | Read from the index b-tree, interior records and overflow included; rows in primary-key order, values in declaration order, `rowid` null | Hand-built fixtures; generated files compared with the official SQLite library |
 
+### Builder retry policy
+
+Builder failures carry a typed reason through `Conversation::last_failure`. Typed authentication,
+billing, missing programs, unavailable tools, configuration and unknown protocol failures stop
+for attention. Transport interruptions, rate limits and nonzero process exits without a typed
+error get at most three retries; the decision no longer searches English error messages.
+Structured provider waits win; the earlier numeric “retry in”
+hint is only a delay fallback after a failure has already been classified as retryable. All waits
+remain cancellable and bounded to fifteen minutes.
+Local inbox and workspace write failures are not retried using a concurrent backend failure's
+retry advice; the original local error is returned.
+A missing saved session starts afresh only when a fresh request is available; otherwise the run
+stops without retrying the unavailable session.
+
+Claude Code's failed or unauthenticated `craft-anything` MCP server in its init event stops the
+owned CLI process. Pending servers and failures in unrelated optional servers do not stop it.
+Claude assistant error codes, HTTP status/provider errors and ACP authentication errors retain
+their typed meanings. A later generic result does not erase a more specific error.
+
+API retries continue the existing history without inserting the user's message again or replaying
+completed tools. Stateless CLI retries receive the whole original request. OpenCode now uses
+`run --format json`: its API error status and retry flag decide retryability while text, tools and
+usage still reach the feed. Missing or invalid step costs keep the turn's cost unknown; explicit
+zero remains a known cost. A CLI that fails with only a numeric exit also uses bounded retries;
+its display error remains available if recovery fails. The process wrapper sends one final turn
+event and becomes available for the next request.
+
+Protocol fixtures, a loopback HTTP server, scripted API turns and executable CLI stand-ins cover
+these paths, including cancellation and the retry cap. An executable that exits 1 without a
+structured error resumes its saved session, while typed setup errors retain priority over the
+same exit status. No live provider or paid-model run was performed. The separate source of #64's
+41 attempts remains unverified.
+
 ### Bun stored-text encoding
 
 Packed Bun members with encoding value 2 are labelled `utf16le`, matching their stored UTF-16LE
