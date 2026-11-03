@@ -151,7 +151,7 @@ pub fn scan_html(src: &str) -> HtmlFacts {
         let at = pos + rel;
         let rest = lower.get(at + 1..).unwrap_or("");
         // Inspect only the names we handle: malformed runs of `<` must not rescan the remaining document.
-        let name = ["script", "link", "meta", "title"]
+        let name = ["script", "link", "meta", "title", "style", "textarea", "xmp", "iframe", "noembed", "noframes", "plaintext"]
             .into_iter()
             .find(|name| rest.starts_with(*name) && rest.as_bytes().get(name.len()).is_none_or(|c| c.is_ascii_whitespace() || matches!(*c, b'/' | b'>')))
             .unwrap_or_default();
@@ -173,14 +173,7 @@ pub fn scan_html(src: &str) -> HtmlFacts {
             }
             "style" | "textarea" | "xmp" | "iframe" | "noembed" | "noframes" => {
                 let (_, end) = attributes(src, &lower, after);
-                let needle = format!("</{name}");
-                let close = lower.get(end..).and_then(|tail| {
-                    tail.match_indices(&needle).find_map(|(offset, _)| {
-                        let at = end + offset;
-                        lower.as_bytes().get(at + needle.len()).filter(|c| c.is_ascii_whitespace() || matches!(c, b'/' | b'>')).map(|_| at)
-                    })
-                });
-                pos = close.unwrap_or(lower.len()).max(at + 1);
+                pos = closing_tag(&lower, end, name).unwrap_or(lower.len()).max(at + 1);
             }
             "plaintext" => break,
             "link" => {
