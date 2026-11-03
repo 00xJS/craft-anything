@@ -1,5 +1,17 @@
 # de: original German UI translations (informal "du"). Licensed MIT OR Apache-2.0.
 # UTF-8: English source<TAB>translation. Keep placeholders and escapes intact.
+OpenCode default	OpenCode-Standard
+Model default	Modellstandard
+Thinking depth	Denktiefe
+OpenCode model	OpenCode-Modell
+Remote program	Entferntes Programm
+Reload models	Modelle neu laden
+Apply	Übernehmen
+OpenCode has no visible chat models. Connect a provider in OpenCode, then reload.	OpenCode hat keine sichtbaren Chat-Modelle. Verbinde in OpenCode einen Anbieter und lade dann neu.
+The saved model is no longer visible. Choose another model or the OpenCode default.	Das gespeicherte Modell ist nicht mehr sichtbar. Wähle ein anderes Modell oder den OpenCode-Standard.
+The saved thinking depth is unavailable for this model. Choose its default or an offered depth.	Die gespeicherte Denktiefe ist für dieses Modell nicht verfügbar. Wähle seinen Standard oder eine angebotene Tiefe.
+List an agent's models	Modelle eines Agenten auflisten
+Choose an agent's model and thinking	Modell und Denktiefe eines Agenten wählen
  GB	 GB
  and {n} more	 und {n} weitere
  {ascii}	 {ascii}
@@ -160,7 +172,7 @@ Asking for its models…	Modelle werden abgefragt …
 Asset catalog	Asset-Katalog
 At most this many rounds of fixes after the first build.	Höchstens so viele Fehlerkorrekturrunden nach dem ersten Build.
 Attach pictures	Bilder anhängen
-Attach pictures (or drop them here)	Bilder anhängen (oder hier ablegen)
+Attach pictures (or drop or paste them here)	Bilder anhängen (oder hier ablegen oder einfügen)
 Auto mode	Automatikmodus
 Automatic	Automatisch
 Automatic ({name})	Automatisch ({name})
@@ -616,6 +628,7 @@ List segments	Segmente auflisten
 List shared Cutter sessions	Geteilte Cutter-Sitzungen auflisten
 List strings	Strings auflisten
 Live: the project's latest build	Live: der neueste Build des Projekts
+Load a picture	Ein Bild laden
 Load a screenshot	Einen Screenshot laden
 Loading…	Wird geladen …
 Log	Protokoll
@@ -707,7 +720,7 @@ Not now	Jetzt nicht
 Nothing allowed yet.	Noch nichts erlaubt.
 Nothing can build yet: install Claude Code (and sign in to it once), or add an AI with an API key below.	Es kann noch nichts gebaut werden: Installiere Claude Code (und melde dich einmal dort an) oder füge unten eine KI mit API-Schlüssel hinzu.
 Nothing found	Nichts gefunden
-Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have.	Noch nichts gefunden. Wir suchen nach API-Schlüsseln, lokalen Modellservern (Ollama, LM Studio) und Agent-Apps, die du schon hast.
+Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have. One on another port or computer can be added by its address below.	Noch nichts gefunden. Wir suchen nach API-Schlüsseln, lokalen Modellservern (Ollama, LM Studio) und Agent-Apps, die du schon hast. Einen Server auf einem anderen Port oder Computer kannst du unten über seine Adresse hinzufügen.
 Nothing inside it is read.	Darin wird nichts gelesen.
 Nothing inside it is read; Craft Anything works from what you can see. Your version gets its own art.	Darin wird nichts gelesen; Craft Anything arbeitet mit dem, was du sehen kannst. Deine Version bekommt eigene Grafiken.
 Nothing inside the original is read: not its code, files or page source. Craft Anything works from what you can see: pictures, the page as a visitor sees it, and watching it run.	Im Original wird nichts gelesen: weder Code noch Dateien noch Seitenquelltext. Craft Anything arbeitet mit dem, was du sehen kannst: Bilder, die Seite, wie ein Besucher sie sieht, und das Beobachten beim Ausführen.
@@ -787,6 +800,7 @@ Page through evidence	Belege seitenweise durchblättern
 Part of the app got stuck, so it was stopped and the rest carried on. Your work is kept.	Ein Teil der App ist hängen geblieben, deshalb wurde er gestoppt und der Rest lief weiter. Deine Arbeit bleibt erhalten.
 Part of the app is stuck. Restarting clears it, and your work is kept.	Ein Teil der App hängt. Ein Neustart behebt das, und deine Arbeit bleibt erhalten.
 Part of this screen hit a bug and was skipped. Your work is safe.	Ein Teil dieses Bildschirms hatte einen Fehler und wurde übersprungen. Deine Arbeit ist sicher.
+Paste pictures	Bilder einfügen
 Paste your API key (kept in your system keychain)	Füge deinen API-Schlüssel ein (wird im System-Schlüsselbund gespeichert)
 Paste your {name} key	Füge deinen {name}-Schlüssel ein
 Path	Pfad
@@ -1065,6 +1079,7 @@ The builder's questions	Die Fragen des Builders
 The builder's questions come to you as cards, and it waits for your answer.	Die Fragen des Builders kommen als Karten zu dir, und er wartet auf deine Antwort.
 The builder's questions will come to you.	Die Fragen des Builders kommen zu dir.
 The built-in engines still show you everything they find.	Die eingebauten Engines zeigen dir trotzdem alles, was sie finden.
+The clipboard can't be read:	Die Zwischenablage kann nicht gelesen werden:
 The code	Der Code
 The code format Android apps use.	Das Codeformat, das Android-Apps verwenden.
 The coding agent's estimate at API prices, not your bill. A subscription isn't charged this.	Die Schätzung des Coding-Agents zu API-Preisen, nicht deine Rechnung. Ein Abonnement wird damit nicht belastet.
@@ -1075,6 +1090,8 @@ The installer is open. Follow its steps, then come back here.	Das Installationsp
 The lowest-level human-readable form of machine code: one small instruction per line.	Die niedrigste für Menschen lesbare Form von Maschinencode: eine kleine Anweisung pro Zeile.
 The names were removed from the program before it was shipped, so we have to work them out.	Die Namen wurden vor der Auslieferung aus dem Programm entfernt, deshalb müssen wir sie herleiten.
 The packed contents of an Electron app (a website inside a desktop app)	Der gepackte Inhalt einer Electron-App (eine Website in einer Desktop-App)
+The pasted picture wasn't attached: another screen was opened meanwhile.	Das eingefügte Bild wurde nicht angehängt: In der Zwischenzeit wurde ein anderer Bildschirm geöffnet.
+The picture on the clipboard is too large.	Das Bild in der Zwischenablage ist zu groß.
 The program's machine code written out as one tiny instruction per line.	Der Maschinencode des Programms, ausgeschrieben als eine winzige Anweisung pro Zeile.
 The project's name and round	Name und Runde des Projekts
 The raw result	Das Rohergebnis
@@ -1085,6 +1102,7 @@ The {} view isn't available yet in this build.	Die Ansicht „{}“ ist in diese
 Theme	Design
 There's no /{name} command. You can use {commands}.	Es gibt keinen Befehl /{name}. Du kannst {commands} verwenden.
 There's no AI brain set up yet, so here's what the built-in engines found:	Es ist noch keine KI eingerichtet, deshalb hier, was die eingebauten Engines gefunden haben:
+There's no picture on the clipboard to paste.	In der Zwischenablage ist kein Bild zum Einfügen.
 They're my app: edit them in place	Es ist meine App: direkt bearbeiten
 Things a program borrows from the operating system or libraries, like "open a file" or "draw a window".	Dinge, die ein Programm vom Betriebssystem oder von Bibliotheken borgt, etwa „eine Datei öffnen“ oder „ein Fenster zeichnen“.
 Things a program or library offers for other programs to use.	Dinge, die ein Programm oder eine Bibliothek anderen Programmen zur Verfügung stellt.
@@ -1318,6 +1336,8 @@ your files there are the app, edited in place	deine Dateien dort sind die App, d
 {mb} MB	{mb} MB
 {name} builds what you make.	{name} baut, was du machst.
 {name} builds what you make; answers come from {brain}.	{name} baut, was du machst; Antworten kommen von {brain}.
+{name} can't be attached: a message takes pictures up to 20 MB.	{name} kann nicht angehängt werden: Eine Nachricht nimmt Bilder bis 20 MB.
+{name} can't be attached: it isn't a PNG, JPEG, GIF or WebP picture.	{name} kann nicht angehängt werden: Es ist kein PNG-, JPEG-, GIF- oder WebP-Bild.
 {name} is ready	{name} ist bereit
 {name} is ready.	{name} ist bereit.
 {name} isn't available yet in this build.	{name} ist in diesem Build noch nicht verfügbar.

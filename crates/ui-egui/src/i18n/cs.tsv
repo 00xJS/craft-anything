@@ -1,5 +1,17 @@
 # cs: original Czech UI translations. Licensed MIT OR Apache-2.0.
 # UTF-8: English source<TAB>translation. Keep placeholders and escapes intact.
+OpenCode default	Výchozí v OpenCode
+Model default	Výchozí pro model
+Thinking depth	Hloubka uvažování
+OpenCode model	Model v OpenCode
+Remote program	Vzdálený program
+Reload models	Znovu načíst modely
+Apply	Použít
+OpenCode has no visible chat models. Connect a provider in OpenCode, then reload.	OpenCode nemá žádné viditelné modely pro chat. Připojte v OpenCode poskytovatele a pak znovu načtěte.
+The saved model is no longer visible. Choose another model or the OpenCode default.	Uložený model už není vidět. Vyberte jiný model nebo výchozí v OpenCode.
+The saved thinking depth is unavailable for this model. Choose its default or an offered depth.	Uložená hloubka uvažování není pro tento model k dispozici. Vyberte jeho výchozí nebo nabízenou hloubku.
+List an agent's models	Vypsat modely agenta
+Choose an agent's model and thinking	Vybrat model a uvažování agenta
  GB	 GB
  and {n} more	 a další: {n}
  {ascii}	 {ascii}
@@ -160,7 +172,7 @@ Asking for its models…	Zjišťování dostupných modelů…
 Asset catalog	Katalog podkladů
 At most this many rounds of fixes after the first build.	Nejvyšší počet kol oprav po prvním sestavení.
 Attach pictures	Přiložit obrázky
-Attach pictures (or drop them here)	Přiložit obrázky (nebo je přetáhněte sem)
+Attach pictures (or drop or paste them here)	Přiložit obrázky (nebo je přetáhněte či vložte sem)
 Auto mode	Automatický režim
 Automatic	Automaticky
 Automatic ({name})	Automaticky ({name})
@@ -616,6 +628,7 @@ List segments	Vypsat segmenty
 List shared Cutter sessions	Vypsat sdílené relace Cutter
 List strings	Vypsat řetězce
 Live: the project's latest build	Průběžné: nejnovější sestavení projektu
+Load a picture	Načíst obrázek
 Load a screenshot	Načíst snímek obrazovky
 Loading…	Načítání…
 Log	Protokol
@@ -707,7 +720,7 @@ Not now	Teď ne
 Nothing allowed yet.	Zatím není nic povoleno.
 Nothing can build yet: install Claude Code (and sign in to it once), or add an AI with an API key below.	Zatím nelze sestavovat: nainstalujte Claude Code (a jednou se v něm přihlaste), nebo níže přidejte AI s klíčem API.
 Nothing found	Nic nenalezeno
-Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have.	Zatím nic nenalezeno. Hledáme klíče API, místní servery modelů (Ollama, LM Studio) a aplikace agentů, které už máte.
+Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have. One on another port or computer can be added by its address below.	Zatím nic nenalezeno. Hledáme klíče API, místní servery modelů (Ollama, LM Studio) a aplikace agentů, které už máte. Server na jiném portu nebo jiném počítači můžete přidat podle adresy níže.
 Nothing inside it is read.	Nic uvnitř se nečte.
 Nothing inside it is read; Craft Anything works from what you can see. Your version gets its own art.	Nic uvnitř se nečte; Craft Anything vychází z toho, co vidíte. Vaše verze dostane vlastní grafiku.
 Nothing inside the original is read: not its code, files or page source. Craft Anything works from what you can see: pictures, the page as a visitor sees it, and watching it run.	Nic uvnitř originálu se nečte: ani jeho kód, ani soubory, ani zdrojový kód stránek. Craft Anything vychází z toho, co vidíte: obrázky, stránka z pohledu návštěvníka a pozorování běhu.
@@ -787,6 +800,7 @@ Page through evidence	Procházet stránky důkazů
 Part of the app got stuck, so it was stopped and the rest carried on. Your work is kept.	Část aplikace se zasekla, proto byla zastavena a zbytek pokračuje. Vaše práce je zachována.
 Part of the app is stuck. Restarting clears it, and your work is kept.	Část aplikace se zasekla. Restart ji uvolní a vaše práce zůstane zachována.
 Part of this screen hit a bug and was skipped. Your work is safe.	Část této obrazovky narazila na chybu a byla přeskočena. Vaše práce je v bezpečí.
+Paste pictures	Vložit obrázky
 Paste your API key (kept in your system keychain)	Vložte klíč API (uloží se do systémové klíčenky)
 Paste your {name} key	Vložte klíč {name}
 Path	Cesta
@@ -1065,6 +1079,7 @@ The builder's questions	Otázky sestavovacího agenta
 The builder's questions come to you as cards, and it waits for your answer.	Otázky sestavovacího agenta se zobrazí jako karty a agent počká na vaši odpověď.
 The builder's questions will come to you.	Otázky sestavovacího agenta budete dostávat vy.
 The built-in engines still show you everything they find.	Vestavěné enginy nadále zobrazují vše, co zjistí.
+The clipboard can't be read:	Schránku nelze přečíst:
 The code	Kód
 The code format Android apps use.	Formát kódu používaný aplikacemi pro Android.
 The coding agent's estimate at API prices, not your bill. A subscription isn't charged this.	Odhad programovacího agenta podle cen API, nikoli vaše vyúčtování. V rámci předplatného se tato částka neúčtuje.
@@ -1075,6 +1090,8 @@ The installer is open. Follow its steps, then come back here.	Instalátor je ote
 The lowest-level human-readable form of machine code: one small instruction per line.	Nejnižší člověkem čitelná podoba strojového kódu: jedna drobná instrukce na řádek.
 The names were removed from the program before it was shipped, so we have to work them out.	Názvy byly z programu před distribucí odstraněny, proto je musíme odvodit.
 The packed contents of an Electron app (a website inside a desktop app)	Zabalený obsah aplikace Electron (web uvnitř desktopové aplikace)
+The pasted picture wasn't attached: another screen was opened meanwhile.	Vložený obrázek nebyl přiložen: mezitím se otevřela jiná obrazovka.
+The picture on the clipboard is too large.	Obrázek ve schránce je příliš velký.
 The program's machine code written out as one tiny instruction per line.	Strojový kód programu rozepsaný po jednotlivých drobných instrukcích na řádky.
 The project's name and round	Název projektu a kolo
 The raw result	Surový výsledek
@@ -1085,6 +1102,7 @@ The {} view isn't available yet in this build.	Zobrazení {} v tomto sestavení 
 Theme	Motiv
 There's no /{name} command. You can use {commands}.	Příkaz /{name} neexistuje. Můžete použít {commands}.
 There's no AI brain set up yet, so here's what the built-in engines found:	Zatím není nastaven žádný AI asistent, proto uvádím zjištění vestavěných enginů:
+There's no picture on the clipboard to paste.	Ve schránce není žádný obrázek k vložení.
 They're my app: edit them in place	Je to moje aplikace: upravit ji na místě
 Things a program borrows from the operating system or libraries, like "open a file" or "draw a window".	Operace, které program přebírá z operačního systému nebo knihoven, například „otevřít soubor“ nebo „vykreslit okno“.
 Things a program or library offers for other programs to use.	Funkce, které program nebo knihovna nabízí jiným programům.
@@ -1318,6 +1336,8 @@ your files there are the app, edited in place	vaše soubory ve složce jsou apli
 {mb} MB	{mb} MB
 {name} builds what you make.	{name} sestavuje vaše výtvory.
 {name} builds what you make; answers come from {brain}.	{name} sestavuje vaše výtvory; odpovědi poskytuje {brain}.
+{name} can't be attached: a message takes pictures up to 20 MB.	{name} nelze přiložit: zpráva přijímá obrázky do 20 MB.
+{name} can't be attached: it isn't a PNG, JPEG, GIF or WebP picture.	{name} nelze přiložit: není to obrázek PNG, JPEG, GIF ani WebP.
 {name} is ready	Připraveno: {name}
 {name} is ready.	Připraveno: {name}.
 {name} isn't available yet in this build.	V tomto sestavení zatím chybí: {name}.
