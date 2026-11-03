@@ -351,8 +351,9 @@ Owner: open · Status: in progress
 **ACP:**
 - [ ] Gemini CLI, opencode, goose via ACP or native adapters; each verified live, then turn ACP on
       by default for the ones that pass
-- [ ] Over ACP, a continued session shows the earlier conversation again: `session/load` replays it
-      as `session/update`s, which we show as new; drop updates until the load answers
+- [x] Over ACP, suppress `session/update` notifications until `session/load` answers, keeping
+      replayed messages and tool activity out of the current turn
+      — commit `38ffc39be084`
 - [ ] Over ACP, turns report 0 tokens: the protocol sends only `usage_update` (context used and
       size). Read real counts where an agent keeps them (Maki: `token_usage` in its session file
       under `~/.local/state/maki/sessions/`) or say the count is unknown instead of 0
