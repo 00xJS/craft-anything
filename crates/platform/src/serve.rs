@@ -155,7 +155,13 @@ fn handle(mut stream: TcpStream, root: &Path) -> std::io::Result<()> {
             }
             Ok(())
         }
-        None => stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot found"),
+        None => {
+            stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nConnection: close\r\n\r\n")?;
+            if method != "HEAD" {
+                stream.write_all(b"Not found")?;
+            }
+            Ok(())
+        }
     }
 }
 
