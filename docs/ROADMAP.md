@@ -170,6 +170,9 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 ### R5.3 A builder that can't make progress stops
 Owner: open · Status: todo
 Every round spends the person's money or quota. One that can't do anything shouldn't start.
+- [x] Preserve the interrupted request when an agent cannot restore its session: ACP starts a new
+      session, or a registered CLI adapter falls back to Plain (#552 review).
+      — claimed: Afloat16, branch bugfix/r5.3-interrupted-request-recovery-20261103
 - [x] A build stops and says why after two builder turns in a row that changed nothing in `app/`,
       on every backend (#44, #110, #417, #481). The count is saved in the project, so it holds
       across runs: a run ends at 7 checks (`max_rounds`) but check numbers carry on, so #44's check
@@ -214,9 +217,13 @@ been run live.
       services whose real window differs from 150k (#374) — implementation: `6bd94b84828ec89b805cb8a246f557d0a778c037`
 - [ ] Find LM Studio on another port (#73)
 - [ ] See why Bionic or LM Studio can't be picked (#140)
+- [x] Do not select an embedding, ranking or transcription model as a chat backend when a local server has no chat models — claimed: Afloat16, branch bugfix/r5.4-nonchat-model-detection-20261103
 
 ### R5.5 API-key builds fail in words people can use
 Owner: open · Status: todo
+- [x] Bound accumulated data across all lines of one server-sent event, so short lines cannot
+      grow a streamed API response without limit
+      — claimed: Afloat16, branch bugfix/r5.5-bounded-sse-events-20261103
 - [x] Show the provider's own reason: #369 bought $10 of credit and got only "OpenRouter answered
       400: Provider returned error". Find the reason in the response body and show it — PR #542
 - [ ] A live API-key build (needs a key on the test machine)
@@ -349,8 +356,9 @@ Owner: open · Status: in progress
 - [ ] OpenCode's plain adapter never passes our tool server, so its builder has none of our tools
       and hunts for a setting that doesn't exist (#481). Hand it the server, or build over ACP by
       default once that passes
-- [ ] Aider has no adapter, so the plain one hands it the prompt as a file name, and it can open a
-      browser sign-in nobody agreed to (#72). Give it an adapter, or stop offering it
+- [x] Aider has no adapter, so the plain one hands it the prompt as a file name, and it can open a
+      browser sign-in nobody agreed to (#72). Give it an adapter, or stop offering it — claimed: Afloat16, branch bugfix/r2.2-aider-recommendations-20261103
+- [ ] Add a non-interactive Aider adapter before recommending it again; detection currently leaves it out.
 - [ ] Codex (#499): in a chat the tool server has no active target, tools turned on with
       `enable_toolset` can't be called, The
       reporter attached a patch for chat continuity; look at that first
@@ -410,7 +418,7 @@ Owner: open · Status: in progress
       (#259, a guess at its cause)
 - [ ] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467); find what
       writes it (no code for it was found; maybe the file picker)
-- [ ] Windows: look in `%LOCALAPPDATA%\agy\bin` too (#62)
+- [x] Windows: look in `%LOCALAPPDATA%\agy\bin` too (#62) — claimed: Afloat16, branch bugfix/r2.2-antigravity-search-20261103
 - [ ] "Claude Code on <ssh host>" is offered for any SSH host, whether or not it has Claude Code
       (#62)
 - [ ] Gemini CLI's sign-in reportedly refuses individuals now (#400): check, and stop recommending

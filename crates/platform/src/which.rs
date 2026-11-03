@@ -236,7 +236,8 @@ fn candidates(base: &Path) -> Vec<PathBuf> {
         let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
         for e in exts.split(';').filter(|e| !e.is_empty()) {
             let mut s = base.as_os_str().to_os_string();
-            s.push(e);
+            // Lower case, as installers name their files; PATHEXT spells them `.EXE`.
+            s.push(e.to_ascii_lowercase());
             v.push(PathBuf::from(s));
         }
     }
@@ -315,7 +316,7 @@ mod tests {
         let bin = home.path().join(r"AppData\Local\hermes\bin");
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(bin.join("hermes.exe"), "").unwrap();
-        let path = with_usual_dirs(None, Some(home.path().to_path_buf()));
+        let path = with_usual_dirs(None, Some(home.path().to_path_buf()), None);
         assert_eq!(which_in("hermes", path), [bin.join("hermes.exe")]);
     }
 
