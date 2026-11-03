@@ -107,6 +107,8 @@ fn file_block_map(data: &[u8], sb: &Sb, inode_off: u64, flags: u32, nblocks: u64
         if let Some(ind) = r.u32_le(ib + 48).filter(|&p| p != 0) {
             read_indirect(data, sb, u64::from(ind), 1, per, &mut logical, &mut map);
         }
+        // The single-indirect span still occupies its logical blocks when its root is absent.
+        logical = 12 + per;
         // Double indirect.
         if let Some(dind) = r.u32_le(ib + 52).filter(|&p| p != 0) {
             read_indirect(data, sb, u64::from(dind), 2, per, &mut logical, &mut map);
