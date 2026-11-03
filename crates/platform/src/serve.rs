@@ -142,19 +142,12 @@ fn handle(mut stream: TcpStream, root: &Path) -> std::io::Result<()> {
     if method != "GET" && method != "HEAD" {
         return stream.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     }
-    match resolve(root, target).and_then(|p| std::fs::read(&p).ok().map(|b| (p, b))) {
-        Some((p, body)) => {
-            let head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-                content_type(&p),
-                body.len()
-            );
-            stream.write_all(head.as_bytes())?;
-            if method == "GET" {
-                stream.write_all(&body)?;
-            }
-            Ok(())
-        }
+    match resolve(root, target).and_then(|p| {
+        let file = std::fs::File::open(&p).ok()?;
+        let len = file.metadata().ok()?.len();
+        Some((p, file, len))
+    }) {
+        Some((p, file, len)) => send_file(&mut stream, file, len, content_type(&p), method == "GET"),
         None => {
             stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nConnection: close\r\n\r\n")?;
             if method != "HEAD" {
@@ -164,6 +157,18 @@ fn handle(mut stream: TcpStream, root: &Path) -> std::io::Result<()> {
         }
     }
 }
+
+fn send_file(stream: &mut impl Write, file: impl Read, len: u64, mime: &str, include_body: bool) -> std::io::Result<()> {
+    let head = format!("HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {len}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");
+    stream.write_all(head.as_bytes())?;
+    if include_body {
+        std::io::copy(&mut file.take(len), stream)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod stream_tests;
 
 #[cfg(test)]
 mod tests {
