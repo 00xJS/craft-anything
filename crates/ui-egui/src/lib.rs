@@ -25,6 +25,7 @@ pub mod just_ask;
 pub mod make;
 pub mod manage;
 pub mod palette;
+pub mod paste;
 pub mod pins;
 pub mod project;
 pub mod prompt_box;
@@ -172,6 +173,11 @@ pub enum Done {
     Pictures(Vec<PathBuf>),
     /// Pictures for the next message were chosen.
     ToAttach(Vec<PathBuf>),
+    /// Pictures were pasted: for the project open then (`Some`), or for Make (`None`).
+    Pasted {
+        project: Option<PathBuf>,
+        files: Vec<PathBuf>,
+    },
     /// The game engines on this computer were listed.
     GameEngines(craft_anything_engines::game::Inventory),
     /// What engine made the game at `path`.
@@ -224,6 +230,11 @@ pub enum Done {
     Facts(project::Facts),
     /// A screenshot thumbnail was decoded (`None` when it couldn't be).
     Thumb {
+        path: PathBuf,
+        image: Option<egui::TextureHandle>,
+    },
+    /// An attachment's picture for its chip in a prompt box.
+    Preview {
         path: PathBuf,
         image: Option<egui::TextureHandle>,
     },
@@ -375,6 +386,8 @@ pub struct CraftApp {
     /// What was typed for each note still waiting for a builder, by note id, to put back in the
     /// prompt box when the note is taken back.
     pub drafts: std::collections::HashMap<u64, project::Draft>,
+    /// A picture still being pasted into the open project's prompt box (`paste_pictures`).
+    pub pending_paste: Option<project::PendingPaste>,
     /// Each project's building time and AI use, every build together (read from its usage.json).
     pub usage: std::collections::HashMap<PathBuf, usage::ProjectClock>,
     /// All AI use since the app opened: builds and chat.
@@ -394,6 +407,8 @@ pub struct CraftApp {
     open_url: Option<String>,
     /// The open project's screenshot thumbnails (dropped when another project opens).
     pub thumbs: std::collections::HashMap<PathBuf, project::Thumb>,
+    /// Pictures of the attachments in the prompt boxes (`CraftApp::previews`).
+    pub previews: std::collections::HashMap<PathBuf, project::Thumb>,
     /// The kinds of thing this app can make; a fork registers its own here.
     pub kinds: craft_anything_ai::rebuild::KindRegistry,
     /// Game engines on this computer (`None` until the first look finishes).
@@ -469,6 +484,7 @@ impl CraftApp {
             server_form: ServerForm::default(),
             runs: craft_anything_ai::rebuild::RunSet::new(craft_anything_engine::settings::BuildSettings::default().parallel),
             drafts: Default::default(),
+            pending_paste: None,
             usage: Default::default(),
             session_usage: Default::default(),
             workspace: None,
@@ -479,6 +495,7 @@ impl CraftApp {
             pins_read_at: None,
             open_url: None,
             thumbs: Default::default(),
+            previews: Default::default(),
             kinds: craft_anything_ai::rebuild::KindRegistry::built_in(),
             game_engines: None,
             asset_keys: None,
@@ -1269,6 +1286,7 @@ impl CraftApp {
             Done::PicturesAdded(added) => self.pictures_added(added),
             Done::Created { ws, request, backend, pictures } => self.created(*ws, request, backend, pictures),
             Done::Thumb { path, image } => self.thumb_ready(path, image),
+            Done::Preview { path, image } => self.preview_ready(path, image),
             Done::Tool { tool, params, route, result } => self.tool_done(tool, params, route, result),
             Done::Acted { tool, result } => self.acted(tool, result),
             Done::Opened { path, result } => match result {
@@ -1384,6 +1402,7 @@ impl CraftApp {
             }
             Done::Pictures(files) => self.add_pictures(files),
             Done::ToAttach(files) => self.attach(files),
+            Done::Pasted { project, files } => self.pasted(project, files),
             Done::Attached { root, text, attachments, files } => self.deliver(root, text, attachments, files),
             Done::GameEngines(inv) => self.engines_found(inv),
             Done::GameFound { path, found } => {
@@ -1486,9 +1505,7 @@ impl CraftApp {
             theme::apply(ctx, want.0, want.1);
             self.applied_theme = Some(want);
         }
-        for f in self.jobs.poll() {
-            guard("job result", || self.handle_done(f));
-        }
+        self.take_finished_jobs();
         if let Some(url) = self.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
@@ -1690,6 +1707,17 @@ pub fn app_icon(size: f32) -> egui::Image<'static> {
 /// The configured backends and the ones chosen to build and to extract (read off the UI thread).
 pub(crate) fn backends(hub: &AiHub) -> Done {
     Done::Backends(hub.backends(), hub.chosen(craft_anything_ai::Role::Builder), hub.chosen(craft_anything_ai::Role::Extractor), hub.options())
+}
+
+impl CraftApp {
+    /// Act on every background job that has finished since the last frame.
+    pub(crate) fn take_finished_jobs(&mut self) {
+        for f in self.jobs.poll() {
+            let (job, ok) = (f.job, f.result.is_ok());
+            guard("job result", || self.handle_done(f));
+            guard("pasted message", || self.paste_done(job, ok));
+        }
+    }
 }
 
 pub fn guard<R>(what: &str, f: impl FnOnce() -> R) -> Option<R> {
