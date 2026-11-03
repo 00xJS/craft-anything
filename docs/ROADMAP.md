@@ -528,6 +528,10 @@ Owner: open · Status: in progress
       and named references), keeps script and title text through lookalike closing tags, and skips
       raw-text elements, markup inside attribute values and custom tag names such as
       `<script:widget>` (#591–#596, by Afloat16)
+- [x] HAR reports redact credentials whose query names are percent-encoded (and the stand-in
+      backend matches older recordings the same way), redact declared secrets in every kept field
+      (names, methods, hosts, versions, timings), count body bytes before text conversion, and
+      template only real calendar dates in API paths (#602–#605, by Afloat16)
 
 ---
 
