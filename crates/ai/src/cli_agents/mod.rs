@@ -495,6 +495,38 @@ impl CliConversation {
     pub fn session_id(&self) -> Option<String> {
         self.session.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
+
+    fn send_prompt(&mut self, text: &str, retry: bool) {
+        if self.busy.swap(true, Ordering::SeqCst) {
+            let _ = self.tx.send(AgentEvent::Error {
+                message: "Still working on the last message.".into(),
+                remediation: Some("Wait for it to finish or press stop.".into()),
+                log: None,
+            });
+            return;
+        }
+        self.stop.reset();
+        self.lost.store(false, Ordering::SeqCst);
+        *self.failure.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        let (spec, tx, stop, busy) = (self.spec.clone(), self.tx.clone(), self.stop.clone(), self.busy.clone());
+        let state = RunState { session: self.session.clone(), verified: self.verified.clone(), lost: self.lost.clone(), failure: self.failure.clone() };
+        let text = text.to_string();
+        let spawned = std::thread::Builder::new().name("ai-cli".into()).spawn(move || {
+            let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_cli(&spec, &text, retry, &tx, &stop, &state))).unwrap_or_else(|_| {
+                let _ = tx.send(AgentEvent::Error { message: "The agent runner hit a bug and stopped safely.".into(), remediation: None, log: None });
+                nothing_done(&spec.config.name)
+            });
+            end_turn(&busy, done, |e| {
+                let _ = tx.send(e);
+            });
+        });
+        if spawned.is_err() {
+            let _ = self.tx.send(AgentEvent::Error { message: "Couldn't start a worker thread.".into(), remediation: None, log: None });
+            end_turn(&self.busy, nothing_done(&self.spec.config.name), |e| {
+                let _ = self.tx.send(e);
+            });
+        }
+    }
 }
 
 /// The environment an agent program runs with: Claude Code's limits raised for a long build, and
@@ -553,7 +585,7 @@ fn nothing_done(backend: &str) -> AgentEvent {
 /// send once the conversation can take the next message. The session it reports is kept for the
 /// next message; one it was asked to continue but doesn't have is forgotten and flagged in
 /// `state.lost` before the error that says so is sent.
-fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, state: &RunState) -> AgentEvent {
+fn run_cli(spec: &CliSpec, text: &str, retry: bool, tx: &Sender<AgentEvent>, stop: &Stop, state: &RunState) -> AgentEvent {
     let RunState { session, verified, lost, failure } = state;
     let name = spec.config.name.clone();
     let agent = spec.config.model.clone();
@@ -587,6 +619,9 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, sta
                 text: format!("{program}'s help doesn't list {} here, so it runs with the plain adapter (prompt in, text out).", needed.join(" / ")),
             });
             adapter = Arc::new(adapters::Plain);
+            // A saved session cannot be continued through the adapter that will actually run.
+            // Forget it before retry chooses between the original request and a continuation.
+            *session.lock().unwrap_or_else(PoisonError::into_inner) = None;
         } else if !ok {
             let _ = tx.send(AgentEvent::Status { text: format!("Couldn't confirm that {program} has {}; trying it anyway.", needed.join(" / ")) });
         }
@@ -594,6 +629,7 @@ fn run_cli(spec: &CliSpec, text: &str, tx: &Sender<AgentEvent>, stop: &Stop, sta
     let preamble = spec.preamble.clone().unwrap_or_else(|| crate::prompt::cli_preamble(spec.beginner));
     let mcp = mcp_for(spec, remote.is_some());
     let resume = session.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    let text = if retry && adapter.resumes() && resume.is_some() { crate::failure::CONTINUE_TURN } else { text };
     let builder = spec.builder.is_some();
     // A question goes only to an agent that can be held to reading (a fallback adapter can't).
     if spec.question && !adapter.answers_questions() {
@@ -848,8 +884,7 @@ impl FailureContext {
 
 impl Conversation for CliConversation {
     fn retry(&mut self, text: &str) {
-        let resumable = self.spec.adapters.for_agent(&self.spec.config.model).resumes() && self.session_id().is_some();
-        self.send(if resumable { crate::failure::CONTINUE_TURN } else { text });
+        self.send_prompt(text, true);
     }
 
     fn last_failure(&self) -> Option<TurnFailure> {
@@ -870,35 +905,7 @@ impl Conversation for CliConversation {
     /// and the conversation takes the next message before that's sent: whoever reads it may send
     /// the next message at once (a session that wasn't there is followed by a fresh start).
     fn send(&mut self, text: &str) {
-        if self.busy.swap(true, Ordering::SeqCst) {
-            let _ = self.tx.send(AgentEvent::Error {
-                message: "Still working on the last message.".into(),
-                remediation: Some("Wait for it to finish or press stop.".into()),
-                log: None,
-            });
-            return;
-        }
-        self.stop.reset();
-        self.lost.store(false, Ordering::SeqCst);
-        *self.failure.lock().unwrap_or_else(PoisonError::into_inner) = None;
-        let (spec, tx, stop, busy) = (self.spec.clone(), self.tx.clone(), self.stop.clone(), self.busy.clone());
-        let state = RunState { session: self.session.clone(), verified: self.verified.clone(), lost: self.lost.clone(), failure: self.failure.clone() };
-        let text = text.to_string();
-        let spawned = std::thread::Builder::new().name("ai-cli".into()).spawn(move || {
-            let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_cli(&spec, &text, &tx, &stop, &state))).unwrap_or_else(|_| {
-                let _ = tx.send(AgentEvent::Error { message: "The agent runner hit a bug and stopped safely.".into(), remediation: None, log: None });
-                nothing_done(&spec.config.name)
-            });
-            end_turn(&busy, done, |e| {
-                let _ = tx.send(e);
-            });
-        });
-        if spawned.is_err() {
-            let _ = self.tx.send(AgentEvent::Error { message: "Couldn't start a worker thread.".into(), remediation: None, log: None });
-            end_turn(&self.busy, nothing_done(&self.spec.config.name), |e| {
-                let _ = self.tx.send(e);
-            });
-        }
+        self.send_prompt(text, false);
     }
 
     fn poll(&mut self) -> Vec<AgentEvent> {
@@ -1578,6 +1585,70 @@ mod tests {
         let text: String = all.iter().filter_map(|e| if let AgentEvent::TextDelta { text } = e { Some(text.clone()) } else { None }).collect();
         assert!(text.contains("hello there"), "{all:?}");
         assert!(text.contains("Request"), "preamble is passed too");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_retry_uses_the_adapter_selected_after_checking_required_flags() {
+        retry_after_checking_flags(true);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_first_retry_waits_for_the_actual_adapter_selection() {
+        retry_after_checking_flags(false);
+    }
+
+    #[cfg(unix)]
+    fn retry_after_checking_flags(send_first: bool) {
+        use std::os::unix::fs::PermissionsExt;
+        for supported in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let program = dir.path().join("agy");
+            let help = if supported { "--output-format stream-json" } else { "old command options" };
+            let script = format!(
+                "#!/bin/sh\nd=$(dirname \"$0\")\nif [ \"$1\" = --help ]; then echo '{help}'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$d/argv\"\necho run >> \"$d/runs\"\nexit 7\n"
+            );
+            std::fs::write(&program, script).unwrap();
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let config = BackendConfig {
+                name: "Antigravity".into(),
+                kind: BackendKind::AgentCli,
+                model: "antigravity".into(),
+                base_url: None,
+                ssh_host: None,
+                enabled: true,
+            };
+            let options = BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
+            let mut spec = CliSpec::new(config, options, false, None);
+            spec.preamble = Some("P:".into());
+            spec.resume = Some("saved".into());
+            let mut c = CliConversation::new(spec);
+            let finish = |c: &mut CliConversation| {
+                let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                let mut all = Vec::new();
+                while !all.iter().any(|e| matches!(e, AgentEvent::TurnDone { .. })) {
+                    assert!(std::time::Instant::now() < deadline, "no TurnDone: {all:?}");
+                    all.extend(c.poll());
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                all
+            };
+            let original = "Build the requested blue header.";
+            if send_first {
+                c.send(original);
+                let first = finish(&mut c);
+                assert!(first.iter().any(|e| matches!(e, AgentEvent::Error { .. })), "{first:?}");
+            }
+            c.retry(original);
+            let retried = finish(&mut c);
+            assert_eq!(retried.iter().any(|e| matches!(e, AgentEvent::Status { text } if text.contains("plain adapter"))), !supported);
+            let argv = std::fs::read_to_string(dir.path().join("argv")).unwrap();
+            let expected = format!("P:{}", if supported { crate::failure::CONTINUE_TURN } else { original });
+            assert_eq!(argv.lines().last(), Some(expected.as_str()), "supported={supported}: {argv}");
+            assert_eq!(argv.contains("--conversation\nsaved\n"), supported, "{argv}");
+            assert_eq!(std::fs::read_to_string(dir.path().join("runs")).unwrap(), if send_first { "run\nrun\n" } else { "run\n" });
+        }
     }
 
     /// #402: a 34,641-character message in argv passed Windows' command-line limit (os error 206);
