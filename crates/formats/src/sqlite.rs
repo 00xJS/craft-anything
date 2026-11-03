@@ -185,7 +185,7 @@ pub struct RowPage {
 #[derive(Debug, Clone, Serialize)]
 pub struct RowCount {
     pub count: u64,
-    /// True when the walk hit a budget, so the count is a lower bound.
+    /// True when a budget or an unreadable page/child stopped the walk; the count is a lower bound.
     pub bounded: bool,
 }
 
@@ -212,6 +212,27 @@ pub struct SqliteDb<'a> {
     data: &'a [u8],
     header: Header,
     usable: usize,
+}
+
+/// A b-tree page limited to its available, non-reserved bytes.
+struct BtreePage<'a> {
+    data: &'a [u8],
+    header: usize,
+    kind: u8,
+    cells: usize,
+    pointers: usize,
+    pointers_end: usize,
+}
+
+impl BtreePage<'_> {
+    fn cell_offset(&self, index: usize) -> Option<usize> {
+        if index >= self.cells {
+            return None;
+        }
+        let pointer = self.pointers.checked_add(index.checked_mul(2)?)?;
+        let offset = usize::from(read_u16_be(self.data, pointer)?);
+        (offset >= self.pointers_end && offset < self.data.len()).then_some(offset)
+    }
 }
 
 /// True when `data` starts with the SQLite 3 magic string.
@@ -338,6 +359,24 @@ impl<'a> SqliteDb<'a> {
         if pageno == 1 { base.checked_add(100) } else { Some(base) }
     }
 
+    fn btree_page(&self, pageno: u32) -> Option<BtreePage<'_>> {
+        let base = self.page_base(pageno)?;
+        let end = base.checked_add(self.usable)?.min(self.data.len());
+        let data = self.data.get(base..end)?;
+        let header: usize = if pageno == 1 { 100 } else { 0 };
+        let kind = *data.get(header)?;
+        let header_size = match kind {
+            0x05 | 0x02 => 12,
+            0x0d | 0x0a => 8,
+            _ => return None,
+        };
+        let cells = usize::from(read_u16_be(data, header.checked_add(3)?)?);
+        let pointers = header.checked_add(header_size)?;
+        let pointers_end = pointers.checked_add(cells.checked_mul(2)?)?;
+        data.get(header..pointers_end)?;
+        Some(BtreePage { data, header, kind, cells, pointers, pointers_end })
+    }
+
     /// Build the whole-database overview, including the schema.
     pub fn overview(&self) -> Overview {
         let (schema, schema_truncated) = self.schema();
@@ -457,7 +496,7 @@ impl<'a> SqliteDb<'a> {
         RowPage { rows: page, offset: skipped, truncated: hit_cap, notes: w.notes }
     }
 
-    /// Recursively count rows. Returns false when a budget stopped the walk.
+    /// Recursively count rows. Returns false when a budget or an unreadable page/child stopped the walk.
     fn count_leaf_cells(&self, pageno: u32, depth: usize, visited: &mut Vec<u32>, budget: &mut usize, count: &mut u64, index_tree: bool) -> bool {
         if depth > MAX_DEPTH || *budget == 0 {
             return false;
@@ -467,9 +506,9 @@ impl<'a> SqliteDb<'a> {
         }
         visited.push(pageno);
         *budget -= 1;
-        let Some(hdr) = self.btree_header_off(pageno) else { return true };
-        let ptype = *self.data.get(hdr).unwrap_or(&0);
-        let ncells = read_u16_be(self.data, hdr.saturating_add(3)).unwrap_or(0) as usize;
+        let Some(page) = self.btree_page(pageno) else { return false };
+        let ptype = page.kind;
+        let ncells = page.cells;
         match ptype {
             0x0d if !index_tree => {
                 *count = count.saturating_add(ncells as u64);
@@ -489,11 +528,13 @@ impl<'a> SqliteDb<'a> {
                     if *budget == 0 {
                         return false;
                     }
-                    if let Some(child) = self.interior_child(pageno, hdr, i) {
+                    if let Some(child) = Self::interior_child(&page, i) {
                         ok &= self.count_leaf_cells(child, depth + 1, visited, budget, count, index_tree);
+                    } else {
+                        ok = false;
                     }
                 }
-                if let Some(right) = read_u32_be(self.data, hdr.saturating_add(8)) {
+                if let Some(right) = read_u32_be(page.data, page.header.saturating_add(8)) {
                     ok &= self.count_leaf_cells(right, depth + 1, visited, budget, count, index_tree);
                 }
                 ok
@@ -512,20 +553,25 @@ impl<'a> SqliteDb<'a> {
         }
         w.visited.push(pageno);
         w.budget -= 1;
-        let Some(hdr) = self.btree_header_off(pageno) else { return };
-        let Some(base) = self.page_base(pageno) else { return };
-        let ptype = *self.data.get(hdr).unwrap_or(&0);
-        let ncells = read_u16_be(self.data, hdr.saturating_add(3)).unwrap_or(0) as usize;
-        let cell_ptr_base = hdr.saturating_add(if ptype == 0x05 || ptype == 0x02 { 12 } else { 8 });
+        let Some(page) = self.btree_page(pageno) else {
+            w.notes.push(format!("Skipped an unreadable b-tree page {pageno}."));
+            return;
+        };
+        let ptype = page.kind;
+        let ncells = page.cells;
         match ptype {
             0x0d | 0x0a if (ptype == 0x0a) == w.index_tree => {
                 for i in 0..ncells {
                     if w.want != 0 && w.out.len() >= w.want {
                         return;
                     }
-                    let Some(ptr) = read_u16_be(self.data, cell_ptr_base.saturating_add(i * 2)) else { continue };
-                    let cell_off = base.saturating_add(ptr as usize);
-                    let row = if w.index_tree { self.read_index_cell(cell_off, &mut w.notes) } else { self.read_table_leaf_cell(cell_off, &mut w.notes) };
+                    let row = page.cell_offset(i).and_then(|cell_off| {
+                        if w.index_tree {
+                            self.read_index_cell(page.data, cell_off, &mut w.notes)
+                        } else {
+                            self.read_table_leaf_cell(page.data, cell_off, &mut w.notes)
+                        }
+                    });
                     match row {
                         Some(row) => w.out.push(row),
                         None => w.notes.push(format!("Skipped an unreadable row on page {pageno}.")),
@@ -537,24 +583,23 @@ impl<'a> SqliteDb<'a> {
                     if (w.want != 0 && w.out.len() >= w.want) || w.budget == 0 {
                         return;
                     }
-                    if let Some(child) = self.interior_child(pageno, hdr, i) {
+                    if let Some(child) = Self::interior_child(&page, i) {
                         self.collect_table_rows(w, child, depth + 1);
+                    } else {
+                        w.notes.push(format!("Skipped an unreadable child pointer on page {pageno}."));
                     }
                     if w.index_tree {
                         if w.want != 0 && w.out.len() >= w.want {
                             return;
                         }
-                        let row = read_u16_be(self.data, cell_ptr_base.saturating_add(i * 2))
-                            .and_then(|ptr| base.checked_add(ptr as usize))
-                            .and_then(|off| off.checked_add(4))
-                            .and_then(|off| self.read_index_cell(off, &mut w.notes));
+                        let row = page.cell_offset(i).and_then(|off| off.checked_add(4)).and_then(|off| self.read_index_cell(page.data, off, &mut w.notes));
                         match row {
                             Some(row) => w.out.push(row),
                             None => w.notes.push(format!("Skipped an unreadable row on page {pageno}.")),
                         }
                     }
                 }
-                if let Some(right) = read_u32_be(self.data, hdr.saturating_add(8)) {
+                if let Some(right) = read_u32_be(page.data, page.header.saturating_add(8)) {
                     self.collect_table_rows(w, right, depth + 1);
                 }
             }
@@ -563,36 +608,32 @@ impl<'a> SqliteDb<'a> {
     }
 
     /// The left-child page number of cell `i` on an interior page.
-    fn interior_child(&self, pageno: u32, hdr: usize, i: usize) -> Option<u32> {
-        let base = self.page_base(pageno)?;
-        let cell_ptr_base = hdr.checked_add(12)?;
-        let ptr = read_u16_be(self.data, cell_ptr_base.checked_add(i.checked_mul(2)?)?)?;
-        let cell_off = base.checked_add(ptr as usize)?;
-        read_u32_be(self.data, cell_off)
+    fn interior_child(page: &BtreePage<'_>, i: usize) -> Option<u32> {
+        read_u32_be(page.data, page.cell_offset(i)?)
     }
 
     /// Decode one table-leaf cell into a row, following overflow pages if needed.
-    fn read_table_leaf_cell(&self, cell_off: usize, notes: &mut Vec<String>) -> Option<Row> {
-        let (payload_len, n1) = varint(self.data, cell_off)?;
-        let (rowid, n2) = varint(self.data, cell_off.checked_add(n1)?)?;
+    fn read_table_leaf_cell(&self, page: &[u8], cell_off: usize, notes: &mut Vec<String>) -> Option<Row> {
+        let (payload_len, n1) = varint(page, cell_off)?;
+        let (rowid, n2) = varint(page, cell_off.checked_add(n1)?)?;
         let body_off = cell_off.checked_add(n1)?.checked_add(n2)?;
         let payload_len = usize::try_from(payload_len).ok()?;
-        let payload = self.assemble_payload(body_off, payload_len, true, notes)?;
+        let payload = self.assemble_payload(page, body_off, payload_len, true, notes)?;
         let values = parse_record(&payload, self.header.text_encoding);
         let rowid = i64::from_le_bytes(rowid.to_le_bytes());
         Some(Row { rowid: Some(rowid), values })
     }
 
     /// Index cells hold a whole row, without a rowid, using the index local-payload formula.
-    fn read_index_cell(&self, cell_off: usize, notes: &mut Vec<String>) -> Option<Row> {
-        let (payload_len, n) = varint(self.data, cell_off)?;
+    fn read_index_cell(&self, page: &[u8], cell_off: usize, notes: &mut Vec<String>) -> Option<Row> {
+        let (payload_len, n) = varint(page, cell_off)?;
         let payload_len = usize::try_from(payload_len).ok()?;
-        let payload = self.assemble_payload(cell_off.checked_add(n)?, payload_len, false, notes)?;
+        let payload = self.assemble_payload(page, cell_off.checked_add(n)?, payload_len, false, notes)?;
         Some(Row { rowid: None, values: parse_record(&payload, self.header.text_encoding) })
     }
 
     /// Assemble a cell payload: the local part plus any overflow-page chain, capped.
-    fn assemble_payload(&self, local_off: usize, payload_len: usize, is_table_leaf: bool, notes: &mut Vec<String>) -> Option<Vec<u8>> {
+    fn assemble_payload(&self, page: &[u8], local_off: usize, payload_len: usize, is_table_leaf: bool, notes: &mut Vec<String>) -> Option<Vec<u8>> {
         let usable = self.usable;
         // Maximum bytes stored on the page before spilling to overflow.
         let x = if is_table_leaf { usable.saturating_sub(35) } else { ((usable.saturating_sub(12)) * 64 / 255).saturating_sub(23) };
@@ -606,12 +647,12 @@ impl<'a> SqliteDb<'a> {
             if k <= x { k } else { m }
         };
         let mut out = Vec::new();
-        let first = self.data.get(local_off..local_off.checked_add(local)?)?;
+        let first = page.get(local_off..local_off.checked_add(local)?)?;
         out.extend_from_slice(first);
         if local < payload_len {
             // The 4 bytes after the local part point at the first overflow page.
             let next_off = local_off.checked_add(local)?;
-            let mut next = read_u32_be(self.data, next_off).unwrap_or(0);
+            let mut next = read_u32_be(page, next_off).unwrap_or(0);
             let per_page = usable.saturating_sub(4);
             let mut pages = 0usize;
             while next != 0 && out.len() < payload_len.min(MAX_CELL_SIZE) {
