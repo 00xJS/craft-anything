@@ -177,7 +177,8 @@ pub fn tar(data: &[u8], max_members: usize) -> Option<Listing> {
             }
             b'g' => {}
             _ => {
-                let ustar = h.get(257..262) == Some(b"ustar");
+                // Old GNU headers use these bytes for timestamps and sparse-file metadata.
+                let ustar = h.get(257..263) == Some(b"ustar\0");
                 let base = text(h.get(0..100).unwrap_or(&[]));
                 let prefix = if ustar { text(h.get(345..500).unwrap_or(&[])) } else { String::new() };
                 let joined = if prefix.is_empty() { base } else { format!("{prefix}/{base}") };
