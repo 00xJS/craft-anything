@@ -636,6 +636,8 @@ Owner: open · Status: in progress
       backend matches older recordings the same way), redact declared secrets in every kept field
       (names, methods, hosts, versions, timings), count body bytes before text conversion, and
       template only real calendar dates in API paths (#602–#605, by Afloat16)
+- [x] Preserve empty query pairs when matching older stand-in recordings, without treating raw
+      query separators as pairs — claimed: Afloat16, branch `bugfix/r3.13-preserve-empty-query-pairs-20261103`
 
 ---
 
