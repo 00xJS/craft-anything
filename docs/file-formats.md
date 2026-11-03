@@ -22,6 +22,15 @@ version up to the current one, then turn the document into Rust types. The step 
 Other JSON in a project (`assets.json`, `inbox/`, `checks/`, evidence records) has no version yet;
 add one the first time its shape changes.
 
+## Stand-in cached responses
+
+Version 1 stand-in files retain a recorded 304 when no usable cached body was saved. Those samples
+remain in the file for diagnostics, but replay skips them within the best matching path, query and
+operation group. If that group has no usable answer, it reports `cached_body_unavailable` instead
+of sending a bare 304 to a fresh client. A usable cached body is still stored and replayed as a 200
+with `was_not_modified: true`. This interpretation also applies to existing v1 files; the persisted
+shape and version are unchanged.
+
 ## Newer files
 
 A file from a newer Craft Anything is never downgraded or overwritten, because the fields we don't
