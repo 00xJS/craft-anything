@@ -275,6 +275,21 @@ fn a_server_is_added_by_its_address() {
     assert_eq!(h.backends().len(), 2, "only the ones that answered");
 }
 
+#[test]
+fn a_backend_context_budget_reaches_the_model() {
+    let (hub, dir) = hub();
+    let table: toml::Table = toml::from_str(
+        "[[backends]]\nname = \"Local\"\nkind = \"openai_compatible\"\nmodel = \"qwen3:8b\"\nbase_url = \"http://127.0.0.1:9/v1\"\ncontext_tokens = 8000\n",
+    )
+    .unwrap();
+    let entry = AiConfig::from_table(&table).unwrap().backends.remove(0);
+    hub.add_backend_with(entry, None).unwrap();
+    let slot = hub.build_model(&hub.entry("Local").unwrap()).unwrap();
+    assert_eq!(slot.context_tokens, 8000);
+    let saved = AiConfig::from_settings(&Settings::load_from(&dir.path().join("config.toml")));
+    assert_eq!(saved.get("Local").unwrap().options.context_tokens, Some(8000));
+}
+
 /// #374: a remote OpenAI-compatible service was treated as a local model: a 24K-token context
 /// and a cost of nothing. Only a server on this computer or its network is local.
 #[test]
