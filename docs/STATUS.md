@@ -304,3 +304,12 @@ If the turn fails or is cancelled after consuming a note, its reset is saved bef
 so reopening keeps the new request's full allowance. The original failure or cancellation remains
 the result; a reset that cannot be saved is reported separately and never overwrites a broken
 or newer record. Scripted turns cover both outcomes, blank notes and unreadable records.
+
+## Local model identifier task hints
+
+Automatic local setup recognizes numeric suffixes on known embedding, reranking and speech task
+tokens. Generic GGUF filenames (`ggml-model-*.gguf`, `ggml-model.gguf` and `model.gguf`) also keep
+their immediate model directory as a task hint, with either path separator. Named model files,
+publisher prefixes and unrelated words are not classified by arbitrary ancestor directories.
+Regression tests cover mixed model lists and servers listing only specialised models through
+the local discovery API. Classification remains a name heuristic; it does not probe model capabilities.

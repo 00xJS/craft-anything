@@ -74,9 +74,15 @@ const NOT_CHAT: &[&str] = &["embed", "embedding", "embeddings", "embeddinggemma"
 
 /// The first model a server lists that can chat. A specialised model isn't a chat fallback.
 pub(crate) fn chat_model(models: &[String]) -> Option<String> {
+    let specialised =
+        |name: &str| name.split(|c: char| !c.is_ascii_alphanumeric()).any(|token| NOT_CHAT.contains(&token.trim_end_matches(|c: char| c.is_ascii_digit())));
     let chats = |m: &&String| {
-        let name = m.rsplit('/').next().unwrap_or(m).to_ascii_lowercase();
-        !name.split(|c: char| !c.is_ascii_alphanumeric()).any(|token| NOT_CHAT.contains(&token))
+        let lower = m.to_ascii_lowercase();
+        let (directory, name) = lower.rsplit_once(['/', '\\']).unwrap_or(("", lower.as_str()));
+        // A generic GGUF filename needs its model directory; arbitrary ancestors do not identify it.
+        let generic_gguf = name == "model.gguf" || name == "ggml-model.gguf" || (name.starts_with("ggml-model-") && name.ends_with(".gguf"));
+        let model_directory = directory.rsplit(['/', '\\']).next().unwrap_or_default();
+        !(specialised(name) || generic_gguf && specialised(model_directory))
     };
     models.iter().find(chats).cloned()
 }
@@ -281,6 +287,9 @@ fn remote_agents(host: String) -> Vec<Detected> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod model_id_tests;
 
 #[cfg(test)]
 mod tests {
