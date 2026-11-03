@@ -597,6 +597,46 @@ fn local_server_without_tools_falls_back_to_react() {
     assert!(last["content"].as_str().unwrap().starts_with("Observation:"));
 }
 
+/// #498: return a field-specific error to the model, then accept its corrected call.
+#[test]
+fn a_model_can_correct_an_array_sent_to_a_string_parameter() {
+    let call = |id: &str, input: Value| {
+        chat_sse(&[json!({"choices":[{
+            "delta":{"tool_calls":[{"index":0,"id":id,"type":"function","function":{
+                "name":"core_unknown_add","arguments":input.to_string()
+            }}]},"finish_reason":"tool_calls"
+        }]})])
+    };
+    let (url, seen) = mock(vec![
+        (200, "text/event-stream", call("wrong", json!({"question": ["Where is the loop?"]}))),
+        (200, "text/event-stream", call("corrected", json!({"question": "Where is the loop?"}))),
+        (200, "text/event-stream", chat_sse(&[json!({"choices":[{"delta":{"content":"Recorded."},"finish_reason":"stop"}]})])),
+    ]);
+    let (h, _d) = hub();
+    add(&h, "Local", BackendKind::OpenaiCompatible, &url, None);
+    let mut c = h.start(Some("Local"), true).unwrap();
+    let events = run(&mut c, "Record what remains unknown.");
+    let completed: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::ToolFinished { tool, ok, .. } if tool == "core_unknown_add" => Some(*ok),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completed, vec![false, true]);
+    assert_eq!(h.engine.session().unknowns().count(), 1, "only the corrected call creates a record");
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 3);
+    let result = seen[1].body["messages"].as_array().unwrap().last().unwrap();
+    assert_eq!(result["role"], "tool");
+    assert_eq!(result["tool_call_id"], "wrong");
+    let error: Value = serde_json::from_str(result["content"].as_str().unwrap()).unwrap();
+    assert_eq!(error["error"]["code"], "bad_input");
+    assert_eq!(error["error"]["details"]["parameter_path"], "/question");
+    assert!(error["error"]["message"].as_str().unwrap().contains("expected a string"));
+    assert!(error["error"]["remediation"].as_str().unwrap().contains("call the tool again"));
+}
+
 #[test]
 fn json_text_tool_calls_execute_through_both_protocols() {
     for react in [false, true] {

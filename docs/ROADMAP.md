@@ -199,8 +199,9 @@ been run live.
 - [x] Preserve `length` and `content_filter` stop reasons on native tool-call streams; a parsed
       call must not override truncation or refusal and execute tools. Pair other retained
       unexecuted calls with results before the conversation continues — PR #544
-- [ ] Accept a tool argument of a near type, such as a list for a string, or answer so the model
-      can correct it (#498)
+- [x] Return a rejected tool argument's JSON Pointer when known and guidance to correct the call
+      (#498), keeping schema types strict
+      — commit `0c3ae5cca569`
 - [ ] Find how each local server is told its context size and set it, or stop with a plain message
       when the prompt won't fit. We assume 24k and send no `num_ctx`, which an OpenAI-style endpoint
       may ignore anyway; LM Studio refused a 12.6k prompt on its 8k default (#73)
