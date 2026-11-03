@@ -518,6 +518,13 @@ Owner: open · Status: in progress
 - [ ] `native_publisher_show` hashes the file minus the signature fields, not section by section;
       a file with unusual gaps between sections can read as different
 
+### R3.13 Web inspection correctness
+Owner: open · Status: in progress
+- [x] The HTML scanner finds script preloads in `rel` token lists, decodes asset URLs once (numeric
+      and named references), keeps script and title text through lookalike closing tags, and skips
+      raw-text elements, markup inside attribute values and custom tag names such as
+      `<script:widget>` (#591–#596, by Afloat16)
+
 ---
 
 ## M4 Release
