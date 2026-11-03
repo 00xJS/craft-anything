@@ -173,6 +173,10 @@ pub fn sleb128(r: &Reader<'_>, off: usize) -> Option<(i64, usize)> {
     let mut shift = 0u32;
     for i in 0..10usize {
         let b = r.u8(off.checked_add(i)?)?;
+        // Only one value bit remains in the tenth byte; the rest must extend its sign.
+        if i == 9 && !matches!(b, 0x00 | 0x7f) {
+            return None;
+        }
         result |= i64::from(b & 0x7f).checked_shl(shift)?;
         shift += 7;
         if b & 0x80 == 0 {
