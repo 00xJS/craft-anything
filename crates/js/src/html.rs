@@ -90,6 +90,15 @@ fn get<'v>(attrs: &'v [(String, String)], k: &str) -> Option<&'v str> {
     attrs.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
 }
 
+/// Find an actual closing tag, not a longer name such as `</scripture>`.
+fn closing_tag(lower: &str, from: usize, name: &str) -> Option<usize> {
+    let needle = format!("</{name}");
+    lower.get(from..)?.match_indices(&needle).find_map(|(offset, _)| {
+        let at = from + offset;
+        lower.as_bytes().get(at + needle.len()).filter(|c| c.is_ascii_whitespace() || matches!(c, b'/' | b'>')).map(|_| at)
+    })
+}
+
 /// Scan an HTML document.
 pub fn scan_html(src: &str) -> HtmlFacts {
     let lower = src.to_ascii_lowercase();
@@ -110,7 +119,7 @@ pub fn scan_html(src: &str) -> HtmlFacts {
         match name {
             "script" => {
                 let (attrs, end) = attributes(src, &lower, after);
-                let close = lower.get(end..).and_then(|r| r.find("</script")).map_or(lower.len(), |c| end + c);
+                let close = closing_tag(&lower, end, "script").unwrap_or(lower.len());
                 let module = get(&attrs, "type").is_some_and(|t| t.eq_ignore_ascii_case("module"));
                 let line = lines.line(u32::try_from(at).unwrap_or(u32::MAX));
                 let src_attr = get(&attrs, "src").map(String::from);
@@ -142,7 +151,7 @@ pub fn scan_html(src: &str) -> HtmlFacts {
             }
             "title" => {
                 let (_, end) = attributes(src, &lower, after);
-                let close = lower.get(end..).and_then(|r| r.find("</title")).map_or(end, |c| end + c);
+                let close = closing_tag(&lower, end, "title").unwrap_or(lower.len());
                 out.title = src.get(end..close).map(|t| t.trim().chars().take(200).collect());
                 pos = close.max(at + 1);
             }
