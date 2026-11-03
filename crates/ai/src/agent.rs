@@ -371,6 +371,7 @@ impl AgentLoop {
                 }
                 StopReason::PauseTurn => {
                     self.history.push(result.message);
+                    self.record_unrun_tools(&uses);
                     continue;
                 }
                 StopReason::ToolUse if !uses.is_empty() => {
@@ -399,6 +400,7 @@ impl AgentLoop {
                 }
                 _ => {
                     self.history.push(result.message);
+                    self.record_unrun_tools(&uses);
                     break;
                 }
             }
@@ -412,6 +414,22 @@ impl AgentLoop {
             cost_usd: msg_cost,
             cost_is_estimate: false,
         });
+    }
+
+    /// Pair retained calls left unexecuted by a stop reason before reusing the history.
+    fn record_unrun_tools(&mut self, uses: &[(String, String, Value)]) {
+        if uses.is_empty() {
+            return;
+        }
+        let blocks = uses
+            .iter()
+            .map(|(id, _, _)| Block::ToolResult {
+                tool_use_id: id.clone(),
+                content: "Not run: the reply stopped without requesting tool execution.".into(),
+                is_error: true,
+            })
+            .collect();
+        self.history.push(Msg { role: Speaker::User, blocks });
     }
 
     /// Keep the conversation in its transcript file, when it has one.
