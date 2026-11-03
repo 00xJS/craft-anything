@@ -195,11 +195,18 @@ pub(crate) fn is_uuid(s: &str) -> bool {
 
 fn is_iso_date(s: &str) -> bool {
     let b = s.as_bytes();
-    b.len() >= 10
-        && b.get(4) == Some(&b'-')
-        && b.get(7) == Some(&b'-')
-        && b.iter().take(4).all(u8::is_ascii_digit)
-        && b.get(5..7).is_some_and(|m| m.iter().all(u8::is_ascii_digit))
+    if b.len() != 10 || b.get(4) != Some(&b'-') || b.get(7) != Some(&b'-') {
+        return false;
+    }
+    let number = |start, end| s.get(start..end).filter(|v| v.bytes().all(|b| b.is_ascii_digit())).and_then(|v| v.parse::<u32>().ok());
+    let (Some(year), Some(month), Some(day)) = (number(0, 4), number(5, 7), number(8, 10)) else { return false };
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => 28 + u32::from(year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))),
+        _ => return false,
+    };
+    (1..=days).contains(&day)
 }
 
 /// The outline of a JSON value: types only, never values.
