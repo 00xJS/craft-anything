@@ -134,7 +134,8 @@ pub fn scan_html(src: &str) -> HtmlFacts {
             "link" => {
                 let (attrs, end) = attributes(src, &lower, after);
                 let rel_attr = get(&attrs, "rel").unwrap_or("").to_ascii_lowercase();
-                if (rel_attr == "modulepreload" || (rel_attr == "preload" && get(&attrs, "as") == Some("script")))
+                let script_destination = get(&attrs, "as").is_some_and(|value| value.eq_ignore_ascii_case("script"));
+                if rel_attr.split_ascii_whitespace().any(|token| token == "modulepreload" || (token == "preload" && script_destination))
                     && let Some(h) = get(&attrs, "href")
                     && out.preloads.len() < MAX_TAGS
                 {
