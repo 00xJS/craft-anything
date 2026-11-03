@@ -317,26 +317,8 @@ pub fn decode_data_url(url: &str) -> Option<Vec<u8>> {
 }
 
 /// Standard or URL-safe base64, padding optional. `None` on any invalid character.
-pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
-    let mut out = Vec::with_capacity(s.len() / 4 * 3 + 3);
-    let mut acc = 0u32;
-    let mut bits = 0u32;
-    for c in s.bytes() {
-        let v = match c {
-            b'=' => break,
-            b'-' => 62,
-            b'_' => 63,
-            b' ' | b'\n' | b'\r' | b'\t' => continue,
-            _ => b64(c)? as u32,
-        };
-        acc = (acc << 6) | v;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(((acc >> bits) & 0xff) as u8);
-        }
-    }
-    Some(out)
+pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    crate::bytes::decode_base64(text, true)
 }
 
 #[cfg(test)]
