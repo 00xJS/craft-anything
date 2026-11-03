@@ -546,7 +546,6 @@ Gaps found while using the app for real projects.
       request may take to arrive (#597, #598, #600, #601, by Afloat16)
 - [x] The command palette stays where the wheel scrolls it; it follows the selection only when the
       arrow keys or typing move it (#584)
-
 - [x] Linux: draw on the GPU that drives the screen. egui-wgpu's default picks the discrete GPU, so
       on a laptop whose integrated GPU drives the panel the window took 20 s to open and the whole
       desktop lagged (#571). Pick by the connected displays in `/sys/class/drm`: the built-in
