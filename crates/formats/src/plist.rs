@@ -230,13 +230,15 @@ pub fn parse_binary(data: &[u8]) -> Result<Value, FormatError> {
     for i in 0..num {
         let o = read_be(&r, table + i * off_size, off_size).ok_or_else(|| FormatError::Truncated("offset table".into()))?;
         let o = usize::try_from(o).map_err(|_| FormatError::Malformed("object offset".into()))?;
-        if o >= table {
+        if o < 8 || o >= table {
             return Err(FormatError::Malformed(format!("object {i} lies outside the object area")));
         }
         offsets.push(o);
     }
     let top = usize::try_from(top).map_err(|_| FormatError::Malformed("top object".into()))?;
-    let mut b = Bin { r, offsets, ref_size, nodes: 0 };
+    // Object payloads and references must not borrow bytes from the offset table or trailer.
+    let objects = data.get(..table).ok_or_else(|| FormatError::Truncated("object area".into()))?;
+    let mut b = Bin { r: Reader::new(objects), offsets, ref_size, nodes: 0 };
     let mut stack = Vec::new();
     b.object(top, &mut stack)
 }
