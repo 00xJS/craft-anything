@@ -194,7 +194,7 @@ been run live.
       STATUS.md which models it worked with. Do this first: it shows which of the lines below matter
 - [ ] An assistant turn with no text sends `content: null` (`openai.rs`), which likely causes #403's
       `invalid message content type: <nil>`: send an empty string
-- [ ] Understand a tool call a model writes as JSON in its text (#417). The fallback protocol reads
+- [x] Understand a tool call a model writes as JSON in its text (#417; implementation `dfe9a4db2dcb3e27edbd67311cbb4202584e7af6`). The fallback protocol reads
       only `Action:` and `Action Input:` lines, so anything else ends the turn with nothing done
 - [x] Preserve `length` and `content_filter` stop reasons on native tool-call streams; a parsed
       call must not override truncation or refusal and execute tools. Pair other retained

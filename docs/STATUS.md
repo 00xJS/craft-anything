@@ -127,6 +127,24 @@ not been rechecked for this change; Windows runtime validation remains on the ro
 
 The full workspace gates (`cargo xtask ci`) passed in [hosted CI for #541](https://github.com/storytold/craft-anything/actions/runs/41584228995).
 
+### Tool calls written as JSON
+
+The text fallback accepts complete bare or fenced JSON calls with `name` and `arguments`
+(`parameters` also accepted), including a `function` wrapper and JSON-encoded arguments.
+Automatic recovery also handles these responses when native tool calling was offered. A call
+must name a tool offered in that turn; ordinary JSON answers and JSON examples surrounded by
+prose are left as text. Native calls are kept once; text-call recovery skips truncated or refused replies.
+Complete backtick-fenced legacy ReAct steps remain supported when their body begins with an explicit
+protocol marker. Both parsers use the same fence boundaries: at least three opening backticks and a
+standalone closing line of at least that length, with no earlier matching closing fence. Shorter
+backtick lines inside a longer fence remain content. Ordinary fenced code, malformed fences and non-call
+JSON objects or examples containing protocol markers remain text; valid call arguments may contain those markers.
+The parser regressions failed on the previous guards and passed with their corrections.
+Fenced JSON calls also use these boundaries during automatic recovery and accept only an empty or `json` info string.
+Checked with parser fixtures, HTTP/SSE stand-ins exercising real engine tool execution in both
+protocols, and non-action, stop-reason and duplicate-call controls. No live local-model build
+was run; other text-call formats remain unsupported.
+
 ## Known limits
 
 - Locks: every mutex but the browser viewer's goes through `platform::sync`. A deadlock on one thread or across
