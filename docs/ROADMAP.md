@@ -465,6 +465,10 @@ Gaps found while using the app for real projects.
 - [ ] Claude Code's own extras: its Ultracode switch (a setting, not an effort level; the
       effort environment variable we use can't turn it on) and its model names beyond the list
       (`opusplan`, `[1m]` variants) offered in Settings → AI; `ai model` already takes any name
+- [x] The preview server answers only requests addressed to this computer (a Host and Origin
+      check against DNS rebinding), streams large files instead of reading them into memory,
+      sends no body for HEAD on a missing file, and caps open connections and the time a
+      request may take to arrive (#597, #598, #600, #601, by Afloat16)
 
 ### R2.10 Pinned builds
 Owner: maintainers · Status: in progress
