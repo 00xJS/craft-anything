@@ -340,6 +340,19 @@ pub fn cpio(data: &[u8], max_members: usize) -> Option<Listing> {
             out.length = pos as u64;
             break;
         }
+        if format == "cpio-crc" {
+            match h.get(102..110).and_then(hex_field).and_then(|n| u32::try_from(n).ok()) {
+                Some(expected) => {
+                    if let Some(body) = r.slice(data_off, size) {
+                        let actual = body.iter().fold(0u32, |sum, &byte| sum.wrapping_add(u32::from(byte)));
+                        if actual != expected {
+                            out.warnings.push(format!("{name}: data checksum mismatch (stored {expected:08x}, computed {actual:08x})"));
+                        }
+                    }
+                }
+                None => out.warnings.push(format!("{name}: unreadable data checksum")),
+            }
+        }
         out.members.push(Member { name, kind, size: filesize, data_offset: data_off as u64, link_target, mode });
         if next > data.len() {
             out.warnings.push("archive ends early (no trailer)".into());
