@@ -150,9 +150,12 @@ pub fn scan_html(src: &str) -> HtmlFacts {
         }
         let at = pos + rel;
         let rest = lower.get(at + 1..).unwrap_or("");
-        let name_len = rest.bytes().take_while(|c| c.is_ascii_alphanumeric() || *c == b'-').count();
-        let name = rest.get(..name_len).unwrap_or("");
-        let after = at + 1 + name_len;
+        // Inspect only the names we handle: malformed runs of `<` must not rescan the remaining document.
+        let name = ["script", "link", "meta", "title"]
+            .into_iter()
+            .find(|name| rest.starts_with(*name) && rest.as_bytes().get(name.len()).is_none_or(|c| c.is_ascii_whitespace() || matches!(*c, b'/' | b'>')))
+            .unwrap_or_default();
+        let after = at + 1 + name.len();
         match name {
             "script" => {
                 let (attrs, end) = attributes(src, &lower, after);
