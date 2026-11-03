@@ -162,7 +162,7 @@ fn decode_query_name(name: &str) -> String {
 }
 
 pub(crate) fn is_credential_param(k: &str) -> bool {
-    let l = k.to_ascii_lowercase();
+    let l = decode_query_name(k).to_ascii_lowercase();
     CREDENTIAL_PARAMS.contains(&l.as_str()) || l.ends_with("_token") || l.ends_with("token") || l.contains("password") || l.contains("secret")
 }
 
