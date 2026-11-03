@@ -96,6 +96,20 @@ Synthetic images cover an extended root, a nested extended directory with a nonz
 and both together; the results are compared with the existing basic-directory fixture. Compressed
 metadata, directory indexes and a real firmware extraction were not newly checked for this fix.
 
+### Keep-awake helper cleanup
+
+Rebuilds release their keep-awake guard before emitting `Finished` and clearing the running flag.
+The guard waits up to five seconds for the owned helper's supervised cleanup, logging a warning
+if that deadline passes. Cleanup runs on the rebuild worker, with a bounded shutdown wait.
+
+Checked on Linux with real subprocess stand-ins: dropping a guard closes the helper's listener,
+a stand-in CLI can drop it and exit immediately without leaving the helper running, and an
+already-finished helper releases promptly. The immediate-exit case fails with the earlier
+asynchronous cleanup. The intermittent Windows report and Windows/macOS sleep inhibition have
+not been rechecked for this change; Windows runtime validation remains on the roadmap.
+
+The full workspace gates (`cargo xtask ci`) passed in [hosted CI for #541](https://github.com/storytold/craft-anything/actions/runs/41584228995).
+
 ## Known limits
 
 - Locks: every mutex but the browser viewer's goes through `platform::sync`. A deadlock on one thread or across
