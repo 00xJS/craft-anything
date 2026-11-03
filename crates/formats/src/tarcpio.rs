@@ -142,8 +142,8 @@ pub fn tar(data: &[u8], max_members: usize) -> Option<Listing> {
             out.length = pos as u64;
             break;
         };
-        if let Some(s) = pax_size.take()
-            && !matches!(typeflag, b'x' | b'g' | b'L' | b'K')
+        if !matches!(typeflag, b'x' | b'g' | b'L' | b'K')
+            && let Some(s) = pax_size.take()
         {
             size = s;
         }
