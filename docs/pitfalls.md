@@ -45,6 +45,9 @@ added an app the new rule rejected; both were green on their own branch.
   And again with a new catalog: #555 added "Pausing…" to every catalog there was, and #486 (Russian)
   merged after it without it. A new language and a new UI string merged together need the string
   in the new catalog too.
+  And with a layout change: #687 moved coding agents onto their own tab of what Detect found, and
+  #664, merged next, tested a button on that list without picking the tab. Checking that two PRs
+  merge cleanly isn't checking that their tests pass together: run the UI tests on the merge.
 
 **A dependency change merged without its lockfile.** Changes were staged with
 `git add -A crates apps docs`, which leaves out the root `Cargo.lock`, so a new dependency reached
