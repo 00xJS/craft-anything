@@ -679,7 +679,19 @@ fn transport(proto: u8, p: &[u8], d: &mut Decoded) {
                 return;
             };
             d.protocols.push("udp");
-            let payload = p.get(8..).unwrap_or(&[]);
+            let length = r.u16_be(4).map(usize::from).unwrap_or(0);
+            let payload = if p.len() < 8 {
+                d.note = Some("UDP header cut short".into());
+                &[][..]
+            } else if length < 8 {
+                d.note = Some("UDP length is smaller than its header".into());
+                &[][..]
+            } else {
+                if length > p.len() {
+                    d.note = Some("UDP datagram cut short".into());
+                }
+                p.get(8..length.min(p.len())).unwrap_or(&[])
+            };
             d.transport = Some(Transport { protocol: "udp", src_port: Some(sp), dst_port: Some(dp), payload_len: payload.len(), ..empty });
             if sp == 53 || dp == 53 {
                 dns(payload, d, "dns");
