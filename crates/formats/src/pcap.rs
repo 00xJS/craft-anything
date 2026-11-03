@@ -674,8 +674,19 @@ fn transport(proto: u8, p: &[u8], d: &mut Decoded) {
                 payload_len: payload.len(),
                 ..empty
             });
-            if (sp == 53 || dp == 53) && payload.len() > 2 {
-                dns(payload.get(2..).unwrap_or(&[]), d, "dns");
+            if (sp == 53 || dp == 53) && !payload.is_empty() {
+                let framed = Reader::new(payload);
+                match framed.u16_be(0) {
+                    Some(length) if length < 12 => d.note = Some("DNS over TCP length is smaller than its header".into()),
+                    Some(length) => {
+                        if let Some(message) = framed.slice(2, usize::from(length)) {
+                            dns(message, d, "dns");
+                        } else {
+                            d.note = Some("DNS over TCP message cut short".into());
+                        }
+                    }
+                    None => d.note = Some("DNS over TCP length prefix cut short".into()),
+                }
             } else if !payload.is_empty() {
                 tcp_app(payload, d);
             }
