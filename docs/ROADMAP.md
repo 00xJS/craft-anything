@@ -662,6 +662,14 @@ Owner: open · Status: in progress
       (#606–#615, by Afloat16)
 - [x] Bound and cancel CRC cpio verification across firmware probes, and reject non-hex checksum
       fields — claimed: Afloat16, branch bugfix/r3.12-bound-cpio-crc-scans-20261103
+- [x] More parsers keep to the bytes they declare and refuse impossible values: signed LEB128 past
+      64 bits, damaged modified UTF-8 (valid text around it survives), widened Java instructions
+      and invocation operands, DEX register lists and array widths, SQLite text in the database's
+      encoding with cells kept inside their page and overflow cycles stopped, Android string pools,
+      ZIP output limits for stored entries, decoded sizes and ZIP64 fields, ASAR header framing,
+      ROMFS dot roots, cramfs, ext and JFFS2 sizes and holes, PyInstaller modules outside their
+      PYZ, JSON config edits (comments kept, every duplicate key removed), and UDP, TCP, DNS over
+      TCP, pcapng and TLS lengths (#688–#715, by Afloat16)
 
 ### R3.13 Web inspection correctness
 Owner: open · Status: in progress

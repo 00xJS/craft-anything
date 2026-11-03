@@ -67,7 +67,7 @@ fn inode_offset(data: &[u8], sb: &Sb, ino: u32) -> Option<u64> {
     table.checked_mul(sb.block_size)?.checked_add(index.checked_mul(sb.inode_size)?)
 }
 
-/// Read a block (physical number) into `out`, bounded; missing/zero blocks contribute zeros.
+/// Return a complete physical block; an out-of-image block is unavailable, not a sparse hole.
 fn block_bytes<'a>(data: &'a [u8], sb: &Sb, block: u64) -> Option<&'a [u8]> {
     let start = usize::try_from(block.checked_mul(sb.block_size)?).ok()?;
     let end = start.checked_add(usize::try_from(sb.block_size).ok()?)?;
@@ -107,6 +107,8 @@ fn file_block_map(data: &[u8], sb: &Sb, inode_off: u64, flags: u32, nblocks: u64
         if let Some(ind) = r.u32_le(ib + 48).filter(|&p| p != 0) {
             read_indirect(data, sb, u64::from(ind), 1, per, &mut logical, &mut map);
         }
+        // The single-indirect span still occupies its logical blocks when its root is absent.
+        logical = 12 + per;
         // Double indirect.
         if let Some(dind) = r.u32_le(ib + 52).filter(|&p| p != 0) {
             read_indirect(data, sb, u64::from(dind), 2, per, &mut logical, &mut map);
@@ -204,7 +206,11 @@ fn file_data(data: &[u8], sb: &Sb, inode_off: u64, flags: u32, size: u64, limits
         match phys {
             Some(p) => match block_bytes(data, sb, *p) {
                 Some(b) => out.extend_from_slice(b),
-                None => out.resize(out.len() + usize::try_from(sb.block_size).unwrap_or(0), 0),
+                None => {
+                    img.warn(format!("ext: physical block {p} lies outside the image; file data not recovered"));
+                    img.complete = false;
+                    return None;
+                }
             },
             None => out.resize(out.len().saturating_add(usize::try_from(sb.block_size).unwrap_or(0)), 0),
         }

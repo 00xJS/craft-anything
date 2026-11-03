@@ -58,30 +58,43 @@ impl StringPool {
     /// Parse the pool whose chunk starts at `off`.
     pub fn parse(data: &[u8], off: usize) -> Result<StringPool, FormatError> {
         let r = Reader::new(data);
-        let (t, _h, size) = chunk(&r, off).ok_or_else(|| FormatError::Truncated("string pool header".into()))?;
+        let (t, hdr, size) = chunk(&r, off).ok_or_else(|| FormatError::Truncated("string pool header".into()))?;
         if t != RES_STRING_POOL {
             return Err(FormatError::Malformed(format!("expected a string pool, found chunk type {t:#x}")));
         }
-        let end = off + size;
-        let count = r.u32_le(off + 8).ok_or_else(|| FormatError::Truncated("string pool".into()))? as usize;
-        let flags = r.u32_le(off + 16).ok_or_else(|| FormatError::Truncated("string pool".into()))?;
-        let strings_start = r.u32_le(off + 20).ok_or_else(|| FormatError::Truncated("string pool".into()))? as usize;
-        let utf8 = flags & (1 << 8) != 0;
-        let hdr = usize::from(r.u16_le(off + 2).unwrap_or(28));
-        if count.saturating_mul(4) > size {
-            return Err(FormatError::Malformed(format!("string pool declares {count} strings in {size} bytes")));
+        if hdr < 28 {
+            return Err(FormatError::Malformed("string pool header is smaller than 28 bytes".into()));
         }
-        let base = off.checked_add(strings_start).ok_or_else(|| FormatError::Malformed("string data offset".into()))?;
+        let r = Reader::new(r.slice(off, size).ok_or_else(|| FormatError::Truncated("string pool".into()))?);
+        let count = r.u32_le(8).ok_or_else(|| FormatError::Truncated("string pool".into()))? as usize;
+        let styles = r.u32_le(12).ok_or_else(|| FormatError::Truncated("string pool".into()))? as usize;
+        let flags = r.u32_le(16).ok_or_else(|| FormatError::Truncated("string pool".into()))?;
+        let strings_start = r.u32_le(20).ok_or_else(|| FormatError::Truncated("string pool".into()))? as usize;
+        let styles_start = r.u32_le(24).ok_or_else(|| FormatError::Truncated("string pool".into()))? as usize;
+        let utf8 = flags & (1 << 8) != 0;
+        let offsets_end = count
+            .checked_add(styles)
+            .and_then(|n| n.checked_mul(4))
+            .and_then(|n| hdr.checked_add(n))
+            .ok_or_else(|| FormatError::Malformed("string pool offset tables are too large".into()))?;
+        if offsets_end > size || strings_start > size || (count != 0 && strings_start < offsets_end) {
+            return Err(FormatError::Malformed("string pool offset tables or string data lie outside their area".into()));
+        }
+        if (styles != 0 && styles_start == 0) || (styles_start != 0 && (styles_start < offsets_end || styles_start < strings_start || styles_start > size)) {
+            return Err(FormatError::Malformed("string pool style data lie outside their area".into()));
+        }
+        let end = if styles_start == 0 { size } else { styles_start };
+        let string_bytes = r.slice(strings_start, end - strings_start).ok_or_else(|| FormatError::Truncated("string data".into()))?;
+        let strings_reader = Reader::new(string_bytes);
         let mut strings = Vec::with_capacity(count.min(MAX_STRINGS).min(65_536));
         for i in 0..count.min(MAX_STRINGS) {
-            let so = r.u32_le(off + hdr + i * 4).ok_or_else(|| FormatError::Truncated("string offsets".into()))? as usize;
-            let at = base.saturating_add(so);
-            let s = if at >= end {
+            let at = r.u32_le(hdr + i * 4).ok_or_else(|| FormatError::Truncated("string offsets".into()))? as usize;
+            let s = if at >= string_bytes.len() {
                 None
             } else if utf8 {
-                utf8_string(&r, at, end)
+                utf8_string(&strings_reader, at, string_bytes.len())
             } else {
-                utf16_string(&r, at, end)
+                utf16_string(&strings_reader, at, string_bytes.len())
             };
             strings.push(s.unwrap_or_default());
         }
@@ -103,7 +116,8 @@ fn utf8_string(r: &Reader<'_>, at: usize, end: usize) -> Option<String> {
     let (_chars, n1) = utf8_len(r, at)?;
     let (bytes, n2) = utf8_len(r, at.checked_add(n1)?)?;
     let start = at.checked_add(n1 + n2)?;
-    if start.checked_add(bytes)? > end {
+    let terminator = start.checked_add(bytes)?;
+    if terminator >= end || r.u8(terminator)? != 0 {
         return None;
     }
     let b = r.slice(start, bytes.min(MAX_STRING * 4))?;
@@ -114,7 +128,8 @@ fn utf16_string(r: &Reader<'_>, at: usize, end: usize) -> Option<String> {
     let u0 = usize::from(r.u16_le(at)?);
     let (len, hdr) = if u0 & 0x8000 != 0 { (((u0 & 0x7fff) << 16) | usize::from(r.u16_le(at + 2)?), 4) } else { (u0, 2) };
     let start = at.checked_add(hdr)?;
-    if start.checked_add(len.checked_mul(2)?)? > end {
+    let terminator = start.checked_add(len.checked_mul(2)?)?;
+    if terminator.checked_add(2)? > end || r.u16_le(terminator)? != 0 {
         return None;
     }
     let n = len.min(MAX_STRING);
