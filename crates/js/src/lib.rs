@@ -228,7 +228,7 @@ fn parse_and_visit(src: &str, st: SourceType) -> Option<Analysis> {
     let webpack_hint = facts.bundler_markers.keys().any(|k| k.contains("webpack"));
     let mut bv = bundle::BundleVisitor::new(src, &lines, webpack_hint, scoping);
     bv.visit_program(&ret.program);
-    let bundle = bv.finish();
+    let bundle = bv.finish(&ret.program);
     Some(Analysis { facts, bundle })
 }
 

@@ -261,6 +261,24 @@ but headless chat waits for `TurnDone`, not just an idle worker. Preflight failu
 must finish the event sequence too; regression tests check both the error/status and the terminal event.
 Worker-thread creation failures need the same terminal event even though no worker ever started.
 
+**A conditional call erased the skipped path's value.** The ARM decoder discarded conditions on
+calls, and value flow replaced the earlier register definitions as if every call executed. Keep
+the call's condition and merge its possible writes with the skipped path in both block transfer
+and edge construction. A known non-returning target stops only an unconditional call; after a
+conditional one, only the skipped path contributes values. Test both kinds within one block and
+across blocks, with unconditional calls as controls.
+
+**A candidate cap discarded a real dependency.** The esbuild module reader kept the first 4096
+resolved zero-argument calls, then filtered for known wrappers; ordinary local calls could fill
+the buffer before a real dependency appeared. Discover wrapper bindings first and count only
+recognised dependencies against their limit. Keep the buffer bounded, and test unrelated calls,
+forward declarations and more actual dependencies than the limit permits.
+
+**An occurrence label was also a binding name.** The second `obj.x` window and the first
+`obj["x[2]"]` window both appeared as `obj.x[2]`. Reserve literal labels and use a separate
+disambiguator for collisions; never change the occurrence index to make a label unique. Include
+unchanged windows when reserving labels so a different set of changes cannot rename a window.
+
 **Reading literals and skipping the rest.** The Electron window reader skipped a spread inside
 `webPreferences`, so a window whose preferences came partly from another object was reported as
 "contextIsolation is not set; the default applies", which nobody had checked until a live run on
