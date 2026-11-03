@@ -83,7 +83,44 @@ fn attributes(src: &str, lower: &str, mut i: usize) -> (Vec<(String, String)>, u
 }
 
 fn decode_entities(s: &str) -> String {
-    s.replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">")
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(at) = rest.find('&') {
+        out.push_str(rest.get(..at).unwrap_or_default());
+        rest = rest.get(at + 1..).unwrap_or_default();
+        let decoded = rest
+            .strip_prefix('#')
+            .and_then(|number| {
+                let (digits, radix) = number.strip_prefix(['x', 'X']).map_or((number, 10), |n| (n, 16));
+                let count = digits.bytes().take_while(|c| if radix == 16 { c.is_ascii_hexdigit() } else { c.is_ascii_digit() }).count();
+                if count == 0 {
+                    return None;
+                }
+                let value = digits.get(..count).and_then(|s| u32::from_str_radix(s, radix).ok()).unwrap_or(u32::MAX);
+                let consumed = rest.len() - digits.len() + count;
+                let consumed = consumed + usize::from(rest.as_bytes().get(consumed) == Some(&b';'));
+                // HTML maps the numeric C1 references through the Windows-1252 table.
+                const C1: [u32; 32] = [
+                    0x20ac, 0x81, 0x201a, 0x192, 0x201e, 0x2026, 0x2020, 0x2021, 0x2c6, 0x2030, 0x160, 0x2039, 0x152, 0x8d, 0x17d, 0x8f, 0x90, 0x2018, 0x2019,
+                    0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x2dc, 0x2122, 0x161, 0x203a, 0x153, 0x9d, 0x17e, 0x178,
+                ];
+                let value = value.checked_sub(0x80).and_then(|i| C1.get(i as usize)).copied().unwrap_or(value);
+                Some((char::from_u32(value).filter(|c| *c != '\0').unwrap_or('\u{fffd}'), consumed))
+            })
+            .or_else(|| {
+                [("amp;", '&'), ("quot;", '"'), ("apos;", '\''), ("lt;", '<'), ("gt;", '>')]
+                    .into_iter()
+                    .find_map(|(name, value)| rest.starts_with(name).then_some((value, name.len())))
+            });
+        if let Some((c, consumed)) = decoded {
+            out.push(c);
+            rest = rest.get(consumed..).unwrap_or_default();
+        } else {
+            out.push('&');
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn get<'v>(attrs: &'v [(String, String)], k: &str) -> Option<&'v str> {
