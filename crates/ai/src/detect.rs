@@ -31,6 +31,17 @@ pub fn env_keys(get: impl Fn(&str) -> Option<String>) -> Vec<Detected> {
             out.push(Detected { suggestion: cfg(name, kind, model), reason: format!("Found {var} in your environment"), needs_key: false });
         }
     }
+    // A Google AI Studio key is free and the easiest one to get (#646): always offered, found or pasted.
+    let gemini = get("GEMINI_API_KEY").is_some_and(|v| !v.trim().is_empty());
+    out.push(Detected {
+        suggestion: cfg(GEMINI_NAME, BackendKind::Gemini, crate::openai::GEMINI_DEFAULT_MODEL),
+        reason: if gemini {
+            "Found GEMINI_API_KEY in your environment".into()
+        } else {
+            "Gemini: paste a free key from Google AI Studio (aistudio.google.com/apikey)".into()
+        },
+        needs_key: !gemini,
+    });
     // Kimi K3.1 Pro builds through OpenRouter: with its key found, or one the person pastes.
     let found = get("OPENROUTER_API_KEY").is_some_and(|v| !v.trim().is_empty());
     out.push(Detected {
@@ -47,6 +58,8 @@ pub fn env_keys(get: impl Fn(&str) -> Option<String>) -> Vec<Detected> {
 
 /// The name Kimi K3.1 Pro is added under.
 pub const KIMI_NAME: &str = "Kimi K3.1 Pro (OpenRouter)";
+/// Name given to a Google AI Studio (Gemini API key) backend.
+pub const GEMINI_NAME: &str = "Gemini (Google AI Studio)";
 
 /// Is something listening at this URL's host:port? (bounded TCP connect)
 pub fn port_open(base_url: &str, timeout: Duration) -> bool {
@@ -286,15 +299,27 @@ mod tests {
     #[test]
     fn env_detection() {
         let d = env_keys(|v| (v == "OPENROUTER_API_KEY").then(|| "k".to_string()));
-        assert_eq!(d.len(), 2);
+        assert_eq!(d.len(), 3);
         assert_eq!(d[0].suggestion.kind, BackendKind::Openrouter);
         assert!(d[0].reason.contains("OPENROUTER_API_KEY"));
+        // Gemini is always offered; without its key it asks for one.
+        assert!(d[1].suggestion.kind == BackendKind::Gemini && d[1].needs_key);
         // Kimi K3.1 Pro rides on the same key, so it needs none of its own.
-        assert_eq!((d[1].suggestion.model.as_str(), d[1].needs_key), (crate::openai::KIMI_K3_1, false));
-        // Without a key, Kimi K3.1 Pro is still offered, asking for one.
+        assert_eq!((d[2].suggestion.model.as_str(), d[2].needs_key), (crate::openai::KIMI_K3_1, false));
+        // Without a key, Gemini and Kimi K3.1 Pro are still offered, asking for one.
         let none = env_keys(|_| Some("  ".into()));
-        assert_eq!(none.len(), 1);
-        assert!(none[0].needs_key && none[0].suggestion.name == KIMI_NAME);
+        assert_eq!(none.len(), 2);
+        assert!(none[0].needs_key && none[0].suggestion.name == GEMINI_NAME);
+        assert!(none[1].needs_key && none[1].suggestion.name == KIMI_NAME);
+    }
+
+    #[test]
+    fn gemini_key_in_the_environment_is_used() {
+        let d = env_keys(|v| (v == "GEMINI_API_KEY").then(|| "k".to_string()));
+        let g = d.iter().find(|x| x.suggestion.kind == BackendKind::Gemini).expect("Gemini offered");
+        assert!(!g.needs_key && g.reason.contains("GEMINI_API_KEY"));
+        assert_eq!(g.suggestion.model, crate::openai::GEMINI_DEFAULT_MODEL);
+        assert!(BackendKind::Gemini.needs_key());
     }
 
     #[test]

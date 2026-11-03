@@ -169,7 +169,7 @@ fn brain(app: &mut CraftApp, ui: &mut Ui, width: f32) {
 
 fn kind_icon(k: BackendKind) -> &'static str {
     match k {
-        BackendKind::Anthropic | BackendKind::Openai | BackendKind::Openrouter => "key-round",
+        BackendKind::Anthropic | BackendKind::Openai | BackendKind::Openrouter | BackendKind::Gemini => "key-round",
         BackendKind::OpenaiCompatible => "server",
         BackendKind::AgentCli => "terminal",
     }

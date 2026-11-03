@@ -10,12 +10,17 @@ use std::collections::BTreeMap;
 
 pub const OPENAI_BASE: &str = "https://api.openai.com/v1";
 pub const OPENROUTER_BASE: &str = "https://openrouter.ai/api/v1";
+/// Gemini's OpenAI-compatible endpoint, for a Google AI Studio key.
+pub const GEMINI_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-5";
 pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-opus-5-5";
 /// Kimi K3.1 Pro (Moonshot AI) on OpenRouter: 1M-token context, tool calls.
 pub const KIMI_K3_1: &str = "moonshotai/kimi-k3.1-pro";
 /// OpenRouter models offered when adding it.
 pub const OPENROUTER_MODELS: &[&str] = &[OPENROUTER_DEFAULT_MODEL, KIMI_K3_1];
+/// Gemini models offered when adding a Google AI Studio key; the live list comes from the key.
+pub const GEMINI_DEFAULT_MODEL: &str = "gemini-3.8-flash";
+pub const GEMINI_MODELS: &[&str] = &[GEMINI_DEFAULT_MODEL, "gemini-4-argon"];
 /// Generic app identification for OpenRouter (no personal data).
 pub const APP_REFERER: &str = "https://github.com/storytold/craft-anything";
 pub const APP_TITLE: &str = "Craft Anything";
@@ -54,6 +59,11 @@ impl OpenAi {
         o.extra_headers = vec![("HTTP-Referer", APP_REFERER.to_string()), ("X-Title", APP_TITLE.to_string())];
         o.openrouter = true;
         o
+    }
+
+    /// A Google AI Studio (Gemini API) key, through Gemini's OpenAI-compatible endpoint.
+    pub fn gemini(base: Option<&str>, key: String, model: &str) -> Self {
+        Self::compatible("Gemini", base.unwrap_or(GEMINI_BASE), Some(key), if model.is_empty() { GEMINI_DEFAULT_MODEL } else { model })
     }
 
     pub fn compatible(label: &str, base: &str, key: Option<String>, model: &str) -> Self {
@@ -664,6 +674,15 @@ mod tests {
     /// #369: OpenRouter routes to an upstream provider per request, and one without tool calling
     /// answered "400: Provider returned error". With tools in the request, only providers that
     /// support every parameter are used; nothing else changes.
+    #[test]
+    fn gemini_uses_the_google_endpoint_with_a_bearer_key() {
+        let g = OpenAi::gemini(None, "k".into(), "");
+        assert_eq!(g.url("chat/completions"), format!("{GEMINI_BASE}/chat/completions"));
+        assert_eq!(g.model, GEMINI_DEFAULT_MODEL);
+        assert!(g.headers().contains(&("authorization", "Bearer k".to_string())));
+        assert!(!g.openrouter);
+    }
+
     #[test]
     fn openrouter_only_routes_a_tool_request_to_providers_that_support_tools() {
         use crate::model::{Effort, ToolDef, TurnRequest};

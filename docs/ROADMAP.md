@@ -263,6 +263,10 @@ Owner: open · Status: todo
 - [ ] Check #369 live with Kimi K3 and a key limited to Kimi/Moonshot models (needs the person's
       OpenRouter key): that the build starts, or that the error now names the provider's reason
 - [ ] A live API-key build (needs a key on the test machine)
+- [x] A Google AI Studio (Gemini API) key is its own choice in Settings → AI and first run (#646):
+      the `gemini` backend kind uses Gemini's OpenAI-compatible endpoint and `GEMINI_API_KEY`
+- [ ] Check a Gemini build live with a real Google AI Studio key (tool calls through the
+      OpenAI-compatible endpoint)
 - [ ] Failure logs for the other ways an AI stops (API backends, MCP server start-up), like the
       ones agent CLIs write to `logs/` in the config folder
 
