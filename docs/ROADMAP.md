@@ -126,6 +126,17 @@ cheapest help we can give anyone, so nothing below should hold it up for long.
       path, not its name
 - [ ] Live-check #152 on Windows 11 with OpenCode from npm, and on a machine with the agent but no
       Node.js
+- [x] A start that dies before its window (a native driver crash leaves no dialog or log, #74, #104,
+      #33) is remembered: `starting` beside `desktop.log` is written before the window is asked for
+      and removed once it's open, and a start that finds it draws with WARP that once
+      (`apps/craft-anything/src/start_guard.rs`)
+- [ ] Live-check the start fallback on Windows: make a start die before its window (kill the
+      process at launch), start again, and see `desktop.log` say it drew without the graphics card
+      and log `drawing with` an adapter of type `Cpu` (WARP), and that the window opens
+- [ ] The software retry still lets wgpu start every DX12 adapter before `pick_adapter` runs, so a
+      driver that crashes while its device is created crashes the retry too. wgpu has no way to
+      skip hardware adapters; needs a different route (another renderer, or a helper that starts
+      the app with only WARP visible)
 - [ ] Add to `docs/releasing.md`: before publishing, a Deep build through Claude Code from the
       finished package, on a Mac and on Windows. Starting the CLI from the package (#91) doesn't
       show whether Claude Code accepts its tools
@@ -166,6 +177,11 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
       here any more: every job calls `storytold/craft-common-actions@main`, so a fix belongs there
 - [ ] STATUS.md's "Known limits" still says the project feed, game-engine and Ghidra installs and
       launching exist only in the desktop app, which R1.6 ended: update it
+- [x] A spinner on screen no longer makes the window redraw at the display's rate: egui's own asks
+      for a frame at once every frame, ours at the animation's pace (`widgets::Spinner`, #579)
+- [ ] Measure #579 on Windows 11 (0.3.0 portable): the app's CPU while idle, while a build runs and
+      during a website capture, before and after; and why a website capture is slow and sits for a
+      long time (no details were given, so nothing was changed for it)
 
 ### R5.3 A builder that can't make progress stops
 Owner: open · Status: todo
@@ -190,8 +206,12 @@ Every round spends the person's money or quota. One that can't do anything shoul
       `agent.session_id()` is set, which API backends and OpenCode's plain adapter never set (read
       in the code, not run). So #148 didn't reach #142, which was OpenCode. Wait and send the turn
       again for them too, then close #142 — commit `f80a16a66834`
-- [ ] **decision** Whether a build gets a token or cost limit of its own, beyond rounds: #399 used
-      9.4M tokens in 19 minutes of the first stage, then failed to compile
+- [x] A builder step on an API backend stops after 25 failed build commands in a row (none
+      succeeding between), says so and keeps the project (`MAX_FAILED_BUILDS` in `agent.rs`, #399:
+      9.4M tokens in 19 minutes of the first stage, never compiled). Try again carries on
+- [ ] **decision** Whether a build gets a token or cost limit of its own, beyond rounds and that
+      stop (#399): a model that changes code without ever running a build isn't caught by it
+- [ ] Check live that the stop fires on a real API-backend build and the message reads well
 
 ### R5.4 Local models can build
 Owner: open · Status: todo
@@ -200,6 +220,12 @@ The built-in agent loop assumes a capable tool-calling model. Reports #24, #44, 
 been run live.
 - [ ] A live local build through Ollama, small target, to Ready or to a clear stop, and note in
       STATUS.md which models it worked with. Do this first: it shows which of the lines below matter
+- [x] A builder on a local model is offered 13 tools (about 10,000 characters of descriptions)
+      instead of 33-41 (23,000-30,000): the Build tools and the Core tools the brief names, not the
+      study set a model explores with instead of writing (#417, `LOCAL_BUILDER_CORE`). Measured as
+      text, not on a model; Ollama's default context (4k) was too small for the old list alone
+- [ ] Run #417's case live (Ollama, `qwen2.5-coder:14b`, "a scientific calculator") before and
+      after this: does it call `build_file_write` now? If it still doesn't, the model can't build
 - [ ] An assistant turn with no text sends `content: null` (`openai.rs`), which likely causes #403's
       `invalid message content type: <nil>`: send an empty string
 - [x] Understand a tool call a model writes as JSON in its text (#417; implementation `dfe9a4db2dcb3e27edbd67311cbb4202584e7af6`). The fallback protocol reads
@@ -215,7 +241,11 @@ been run live.
       may ignore anyway; LM Studio refused a 12.6k prompt on its 8k default (#73)
 - [x] A per-backend context budget in `[[ai.backends]]` (`LoopConfig::context_tokens` exists), for
       services whose real window differs from 150k (#374) — implementation: `6bd94b84828ec89b805cb8a246f557d0a778c037`
-- [ ] Find LM Studio on another port (#73)
+- [x] Find LM Studio on another port (#73): the port in its settings file (when it is there) and
+      the ports 1235-1239 are probed like the usual servers; OpenCode's own `baseURL`s were already
+      read (#83)
+- [ ] Check live that LM Studio on `--port 1235` is offered, and where its settings file is on
+      Windows, macOS and Linux (`LM_STUDIO_SETTINGS` is from memory of its folders, not verified)
 - [ ] See why Bionic or LM Studio can't be picked (#140)
 - [x] Do not select an embedding, ranking or transcription model as a chat backend when a local server has no chat models — claimed: Afloat16, branch bugfix/r5.4-nonchat-model-detection-20261103
 
@@ -226,6 +256,12 @@ Owner: open · Status: todo
       — claimed: Afloat16, branch bugfix/r5.5-bounded-sse-events-20261103
 - [x] Show the provider's own reason: #369 bought $10 of credit and got only "OpenRouter answered
       400: Provider returned error". Find the reason in the response body and show it — PR #542
+- [x] OpenRouter picks an upstream provider per request, and one without tool calling answered
+      "400: Provider returned error" (#369): a request with tools now sets
+      `provider.require_parameters`, and a 404 "no provider for these parameters" falls back to the
+      text protocol like any server that rejects tools
+- [ ] Check #369 live with Kimi K3 and a key limited to Kimi/Moonshot models (needs the person's
+      OpenRouter key): that the build starts, or that the error now names the provider's reason
 - [ ] A live API-key build (needs a key on the test machine)
 - [ ] Failure logs for the other ways an AI stops (API backends, MCP server start-up), like the
       ones agent CLIs write to `logs/` in the config folder
@@ -435,6 +471,13 @@ Owner: open · Status: in progress
 ### R2.4 Runtime study for apps and games (with consent)
 Owner: maintainers · Status: in progress
 - [ ] UI tree on Linux (AT-SPI)
+- [x] `apple_calls_observe`: the breakpoint callback is one valid line (it had a literal backslash
+      and `n` between statements, so lldb stopped before launching, #251), covers every breakpoint
+      instead of only the first, a failed lldb run is an error and not "0 calls", and names or
+      arguments with line breaks are refused (they'd add commands to lldb's command file). The
+      callback body was compiled with Python; lldb itself was not run
+- [ ] Run `apple_calls_observe` on a Mac against a small program with `lldb` (the #251 probe):
+      the hit for `alpha` is recorded, and a program lldb can't debug says so
 - [ ] Window capture tried on macOS and Linux (only Windows so far); games behind a launcher
 - [ ] Short scripted input sessions (enigo) to record screens of the original
 

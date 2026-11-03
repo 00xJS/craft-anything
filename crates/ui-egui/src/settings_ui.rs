@@ -410,7 +410,7 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
                                     }
                                 }
                                 Some((_, None)) => {
-                                    ui.add(egui::Spinner::new().size(theme::CAPTION).color(t.accent));
+                                    ui.add(crate::widgets::Spinner::new().size(theme::CAPTION).color(t.accent));
                                     ui.label(RichText::new(tr("Asking for its models…")).color(t.text_faint).size(theme::CAPTION));
                                 }
                                 Some((_, Some(models))) => {
@@ -546,7 +546,7 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
         widgets::caption(ui, "Found on this computer");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if app.detecting {
-                ui.add(egui::Spinner::new().color(t.accent));
+                ui.add(crate::widgets::Spinner::new().color(t.accent));
             } else if widgets::secondary(ui, Some("radar"), "Detect").clicked() {
                 app.detect_backends();
             }
@@ -556,7 +556,7 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
     let detected = app.detected.clone().unwrap_or_default();
     if detected.is_empty() && !app.detecting {
         ui.label(
-            RichText::new(tr("Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have."))
+            RichText::new(tr("Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have. One on another port or computer can be added by its address below."))
                 .color(t.text_faint),
         );
     }
