@@ -655,9 +655,14 @@ impl<'a> SqliteDb<'a> {
             let mut next = read_u32_be(page, next_off).unwrap_or(0);
             let per_page = usable.saturating_sub(4);
             let mut pages = 0usize;
+            let mut visited = std::collections::BTreeSet::new();
             while next != 0 && out.len() < payload_len.min(MAX_CELL_SIZE) {
                 if pages >= MAX_OVERFLOW_PAGES {
                     notes.push("An overflow chain was cut at the page cap; a value is partial.".into());
+                    break;
+                }
+                if !visited.insert(next) {
+                    notes.push("An overflow chain repeats a page; a value is partial.".into());
                     break;
                 }
                 pages += 1;
