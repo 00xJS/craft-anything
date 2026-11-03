@@ -671,3 +671,10 @@ opencode-session under settings::config_dir() when the first request was made, s
 tests left a file on the developer's machine and two runs could collide. Anything we persist goes
 through the hub's stores (AiHub::with_stores, Session::isolated), which tests point at a temp
 folder; production code never writes under the real config folder by hand.
+
+**A per-probe walk repeated expensive work on the same bytes.** CRC cpio verification was bounded
+inside one archive, but a firmware scan could rediscover overlapping, trailerless archives and
+sum the same payload repeatedly. Count checksum byte visits across the whole scan, poll its
+cancellation callback inside long sums, and distinguish skipped verification from a mismatch.
+Test overlapping candidates with correct checksums and a complete nested archive so a structural
+trailer cannot turn unchecked data into a high-confidence result.
