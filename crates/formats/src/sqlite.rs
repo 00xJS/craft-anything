@@ -578,7 +578,7 @@ impl<'a> SqliteDb<'a> {
         let body_off = cell_off.checked_add(n1)?.checked_add(n2)?;
         let payload_len = usize::try_from(payload_len).ok()?;
         let payload = self.assemble_payload(body_off, payload_len, true, notes)?;
-        let values = parse_record(&payload);
+        let values = parse_record(&payload, self.header.text_encoding);
         let rowid = i64::from_le_bytes(rowid.to_le_bytes());
         Some(Row { rowid: Some(rowid), values })
     }
@@ -588,7 +588,7 @@ impl<'a> SqliteDb<'a> {
         let (payload_len, n) = varint(self.data, cell_off)?;
         let payload_len = usize::try_from(payload_len).ok()?;
         let payload = self.assemble_payload(cell_off.checked_add(n)?, payload_len, false, notes)?;
-        Some(Row { rowid: None, values: parse_record(&payload) })
+        Some(Row { rowid: None, values: parse_record(&payload, self.header.text_encoding) })
     }
 
     /// Assemble a cell payload: the local part plus any overflow-page chain, capped.
@@ -638,7 +638,7 @@ impl<'a> SqliteDb<'a> {
 }
 
 /// Decode a SQLite record (the "payload") into column values.
-fn parse_record(payload: &[u8]) -> Vec<CellValue> {
+fn parse_record(payload: &[u8], text_encoding: &str) -> Vec<CellValue> {
     let mut out = Vec::new();
     let Some((hdr_len, n)) = varint(payload, 0) else { return out };
     let hdr_len = hdr_len as usize;
@@ -662,7 +662,7 @@ fn parse_record(payload: &[u8]) -> Vec<CellValue> {
     // Then read each value from the body region.
     let mut body = hdr_len;
     for st in types {
-        let (val, size) = decode_serial(st, payload, body);
+        let (val, size) = decode_serial(st, payload, body, text_encoding);
         out.push(val);
         body = body.saturating_add(size);
     }
@@ -670,7 +670,7 @@ fn parse_record(payload: &[u8]) -> Vec<CellValue> {
 }
 
 /// Decode one serial-typed value at `off`; returns the value and its byte size.
-fn decode_serial(serial: u64, data: &[u8], off: usize) -> (CellValue, usize) {
+fn decode_serial(serial: u64, data: &[u8], off: usize, text_encoding: &str) -> (CellValue, usize) {
     let size = match serial {
         1..=4 => serial as usize,
         5 => 6,
@@ -706,11 +706,10 @@ fn decode_serial(serial: u64, data: &[u8], off: usize) -> (CellValue, usize) {
             (value, len)
         }
         _ => {
-            // Odd and >= 13: text of (n-13)/2 bytes (encoding handled by the caller's DB header;
-            // decoded here as UTF-8 lossily, which is correct for the common case).
+            // Odd and >= 13: text of (n-13)/2 bytes, using the database's declared encoding.
             let len = size;
             let slice = data.get(off..off.saturating_add(len).min(data.len())).unwrap_or(&[]);
-            let mut value = text_value(slice);
+            let mut value = encoded_text_value(slice, text_encoding);
             if slice.len() < len
                 && let CellValue::Text { truncated, .. } = &mut value
             {
@@ -731,9 +730,28 @@ fn int_be(data: &[u8], off: usize, len: usize) -> CellValue {
 }
 
 fn text_value(slice: &[u8]) -> CellValue {
+    encoded_text_value(slice, "utf-8")
+}
+
+fn encoded_text_value(slice: &[u8], encoding: &str) -> CellValue {
     let truncated = slice.len() > MAX_TEXT;
     let take = slice.get(..MAX_TEXT.min(slice.len())).unwrap_or(slice);
-    CellValue::Text { text: String::from_utf8_lossy(take).into_owned(), truncated }
+    let text = match encoding {
+        "utf-16le" | "utf-16be" => {
+            let (pairs, _) = take.as_chunks::<2>();
+            let units: Vec<u16> = pairs
+                .iter()
+                .map(|&pair| if encoding == "utf-16le" { u16::from_le_bytes(pair) } else { u16::from_be_bytes(pair) })
+                .collect();
+            let mut text = String::from_utf16_lossy(&units);
+            if !take.len().is_multiple_of(2) {
+                text.push(char::REPLACEMENT_CHARACTER);
+            }
+            text
+        }
+        _ => String::from_utf8_lossy(take).into_owned(),
+    };
+    CellValue::Text { text, truncated }
 }
 
 fn blob_value(slice: &[u8], len: usize) -> CellValue {
@@ -1510,15 +1528,15 @@ mod tests {
 
     #[test]
     fn decode_serial_types() {
-        assert_eq!(decode_serial(0, &[], 0).0, CellValue::Null);
-        assert_eq!(decode_serial(8, &[], 0).0, CellValue::Int(0));
-        assert_eq!(decode_serial(9, &[], 0).0, CellValue::Int(1));
-        assert_eq!(decode_serial(1, &[0xff], 0).0, CellValue::Int(-1));
-        assert_eq!(decode_serial(2, &[0x01, 0x00], 0).0, CellValue::Int(256));
+        assert_eq!(decode_serial(0, &[], 0, "utf-8").0, CellValue::Null);
+        assert_eq!(decode_serial(8, &[], 0, "utf-8").0, CellValue::Int(0));
+        assert_eq!(decode_serial(9, &[], 0, "utf-8").0, CellValue::Int(1));
+        assert_eq!(decode_serial(1, &[0xff], 0, "utf-8").0, CellValue::Int(-1));
+        assert_eq!(decode_serial(2, &[0x01, 0x00], 0, "utf-8").0, CellValue::Int(256));
         // text: serial 13 -> (13-13)/2 = 0 bytes; serial 19 -> 3 bytes
-        assert_eq!(decode_serial(19, b"abc", 0), (CellValue::Text { text: "abc".into(), truncated: false }, 3));
+        assert_eq!(decode_serial(19, b"abc", 0, "utf-8"), (CellValue::Text { text: "abc".into(), truncated: false }, 3));
         // blob: serial 18 -> (18-12)/2 = 3 bytes
-        match decode_serial(18, b"xyz", 0).0 {
+        match decode_serial(18, b"xyz", 0, "utf-8").0 {
             CellValue::Blob { len, .. } => assert_eq!(len, 3),
             other => panic!("expected blob, got {other:?}"),
         }
