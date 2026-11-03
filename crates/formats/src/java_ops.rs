@@ -413,6 +413,9 @@ pub fn decode_one(code: &[u8], pc: usize) -> Option<Insn> {
 
 fn decode_wide(code: &[u8], pc: usize) -> Option<Insn> {
     let real = *code.get(pc + 1)?;
+    if !matches!(real, 0x15..=0x19 | 0x36..=0x3a | 0x84 | 0xa9) {
+        return None;
+    }
     let o = opcode(real);
     let mut insn = base(pc, real, o.name);
     insn.wide = true;
