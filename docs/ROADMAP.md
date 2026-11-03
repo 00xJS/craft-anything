@@ -94,14 +94,16 @@ Issues are ranked by people affected and how badly, after leaving out what's alr
 
 ### R5.1 The next release
 Owner: maintainers · Status: todo
-Two reported failures are fixed on `main` and still broken for everyone on 0.3.0. This is the
+Two reported failures, the Windows start-up crash (#414) and a builder resuming another's
+session (#471), are fixed on `main` and still broken for everyone on 0.3.0. This is the
 cheapest help we can give anyone, so nothing below should hold it up for long.
-- [ ] Settle #490 before the release, so a fix can go in it: a real Deep build through Claude Code
-      with the published 0.3.0 CLI, on macOS and on Windows, with Claude Code 2.1.179 (the
-      reporter's) as well as a current one. A source build with 2.1.316 mounted 314 of 315 tools,
-      so this isn't reproduced and isn't ruled out. Find which tool didn't mount: one boolean schema
-      is left, nested in `core_evidence_browse`, below what
-      `every_mcp_input_property_has_an_object_schema` looks at. Then merge or decline #490
+- [ ] #490 has changes requested: a JSON object given to `--left` or `--right` becomes text, and
+      its new test passes without the fix. Merge it once that's fixed, or decline it; it doesn't
+      hold up the release. What it reports is 0.2.0's, fixed by #93 (`f6725c2`): on Windows the
+      published 0.3.0 CLI with Claude Code 2.1.179 mounted 314 of 315 tools (the 315th is the
+      approval tool, which Claude Code doesn't list but calls), and a real Deep build reached Ready
+      with `core_action_approve` answering five prompts. The reporter was asked for `--version`.
+      macOS is still owed (R5.7)
 - [ ] Cut the next release (`docs/releasing.md`). 0.3.0 lacks `0748ef1` (#414: Windows starts DX12
       only, the crash behind "it won't open"), `1e8f661` (#471: a builder never continues another
       builder's session) and `3357daf` (#430: Claude Code's message on stdin). Take #357 (R5.2) too
@@ -257,6 +259,9 @@ yet, and the quick start is how every new person begins.
 - [ ] Ghidra setup tried for real on Linux and macOS (the Java pins were checked by tests only)
 - [ ] Follow the README quick start on a clean machine (Windows, and Linux or macOS)
 - [ ] Build the new DMG on a Mac (release dry run) and look at the window once
+- [ ] #490 on macOS: a real Deep build through Claude Code with the published 0.3.0 CLI, with
+      2.1.179 and a current version. Windows passed; the Mac CLI was only checked to contain the
+      fixed schema
 - [ ] macOS CLI zip blocked by Gatekeeper when downloaded in a browser (#94), though Apple has its
       notarization tickets: find why the online lookup fails for people (it passes on our Mac, which
       may be exempt), on a machine that shows it
