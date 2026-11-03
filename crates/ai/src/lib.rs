@@ -417,7 +417,9 @@ impl AiHub {
         let model = match model.map(str::trim).filter(|m| !m.is_empty()) {
             Some(m) => m.to_string(),
             None => detect::chat_model(&models).ok_or_else(|| {
-                ToolError::new(ErrorCode::NotFound, format!("{address} has no models yet.")).with_remediation("Add a model on the server first, or name one.")
+                let reason = if models.is_empty() { "has no models yet" } else { "doesn't list a model that can chat" };
+                ToolError::new(ErrorCode::NotFound, format!("{address} {reason}."))
+                    .with_remediation("Load a chat model on the server first, or enter the name of a chat model you know is available.")
             })?,
         };
         let config = BackendConfig {
