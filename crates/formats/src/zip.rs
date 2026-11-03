@@ -275,6 +275,7 @@ pub fn read_entry_unverified(data: &[u8], e: &ZipEntry, max_bytes: u64) -> Resul
     let raw = raw_entry_data(data, e)?;
     let cap = usize::try_from(max_bytes).unwrap_or(usize::MAX);
     let out = match e.method {
+        0 if raw.len() as u64 > max_bytes => return Err(ZipError::TooLarge(max_bytes)),
         0 => raw.to_vec(),
         8 => miniz_oxide::inflate::decompress_to_vec_with_limit(raw, cap).map_err(|err| match err.status {
             miniz_oxide::inflate::TINFLStatus::HasMoreOutput => ZipError::TooLarge(max_bytes),
