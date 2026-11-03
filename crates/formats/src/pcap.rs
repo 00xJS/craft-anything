@@ -224,14 +224,26 @@ impl<'a> Capture<'a> {
                     _ if r.u32_be(p + 8) == Some(NG_BOM) => false,
                     _ => return self.stop(format!("section header at offset {p} has no byte-order mark")),
                 };
-                self.kind = Kind::Ng { le };
-                self.section_base = self.interfaces.len();
             }
             let Some(blen) = rd_u32(&r, le, p + 4).and_then(|v| usize::try_from(v).ok()) else {
                 return self.stop(format!("block at offset {p} is cut short"));
             };
-            if blen < 12 || blen % 4 != 0 || r.slice(p, blen).is_none() {
+            let minimum = match btype {
+                NG_SHB => 28,
+                1 => 20,
+                2 | 6 => 32,
+                3 => 16,
+                _ => 12,
+            };
+            if blen < minimum || blen % 4 != 0 || r.slice(p, blen).is_none() {
                 return self.stop(format!("block at offset {p} has an impossible length {blen}"));
+            }
+            if rd_u32(&r, le, p + blen - 4).and_then(|n| usize::try_from(n).ok()) != Some(blen) {
+                return self.stop(format!("block at offset {p} has an inconsistent trailing length"));
+            }
+            if btype == NG_SHB {
+                self.kind = Kind::Ng { le };
+                self.section_base = self.interfaces.len();
             }
             self.pos = p + blen;
             let body = p + 8;
