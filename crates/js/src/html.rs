@@ -30,7 +30,7 @@ pub struct HtmlFacts {
 fn attributes(src: &str, lower: &str, mut i: usize) -> (Vec<(String, String)>, usize) {
     let b = lower.as_bytes();
     let mut out = Vec::new();
-    while i < b.len() && out.len() < 64 {
+    while i < b.len() {
         while b.get(i).is_some_and(|c| c.is_ascii_whitespace() || *c == b'/') {
             i += 1;
         }
@@ -75,7 +75,7 @@ fn attributes(src: &str, lower: &str, mut i: usize) -> (Vec<(String, String)>, u
         }
         if name.is_empty() {
             i += 1;
-        } else {
+        } else if out.len() < 64 {
             out.push((name, decode_entities(&value)));
         }
     }
@@ -198,6 +198,12 @@ pub fn scan_html(src: &str) -> HtmlFacts {
             }
             _ if rest.starts_with("!--") => {
                 pos = lower.get(at..).and_then(|r| r.find("-->")).map_or(lower.len(), |c| at + c + 3);
+            }
+            _ if rest.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+                || rest.strip_prefix('/').and_then(|s| s.as_bytes().first()).is_some_and(u8::is_ascii_alphabetic) =>
+            {
+                let (_, end) = attributes(src, &lower, after);
+                pos = end.max(at + 1);
             }
             _ => pos = at + 1,
         }
