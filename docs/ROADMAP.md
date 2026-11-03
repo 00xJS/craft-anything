@@ -531,6 +531,16 @@ Owner: open · Status: in progress
 - [ ] `native_publisher_show` hashes the file minus the signature fields, not section by section;
       a file with unusual gaps between sections can read as different
 
+### R3.12 Format parser correctness
+Owner: open · Status: in progress
+- [x] Parsers refuse what they used to half-read: binary plists keep objects inside their object
+      area and reject unrepresentable widths, base64 (plists, source maps) refuses damaged tails
+      and incomplete quanta through one shared decoder, OIDs must be minimally encoded, and string
+      offsets past the address space are left out. Tar keeps old GNU timestamps out of names and
+      PAX sizes across other metadata records; CRC cpio checks member data; source maps decode
+      percent-escaped data URLs and report indexed-map columns in the generated file
+      (#606–#615, by Afloat16)
+
 ### R3.13 Web inspection correctness
 Owner: open · Status: in progress
 - [x] The HTML scanner finds script preloads in `rel` token lists, decodes asset URLs once (numeric
