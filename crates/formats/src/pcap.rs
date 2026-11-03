@@ -652,10 +652,17 @@ fn transport(proto: u8, p: &[u8], d: &mut Decoded) {
             };
             d.protocols.push("tcp");
             let (seq, ack, off, flags, win) = (r.u32_be(4), r.u32_be(8), r.u8(12), r.u8(13), r.u16_be(14));
-            if win.is_none() {
-                d.note = Some("TCP header cut short".into());
-            }
-            let payload = off.map_or(&[][..], |off| p.get(usize::from(off >> 4) * 4..).unwrap_or(&[]));
+            let payload = match off.map(|off| usize::from(off >> 4) * 4) {
+                Some(length) if length < 20 => {
+                    d.note = Some("TCP data offset is smaller than its header".into());
+                    &[][..]
+                }
+                Some(length) if length <= p.len() => p.get(length..).unwrap_or(&[]),
+                _ => {
+                    d.note = Some("TCP header cut short".into());
+                    &[][..]
+                }
+            };
             d.transport = Some(Transport {
                 protocol: "tcp",
                 src_port: Some(sp),
