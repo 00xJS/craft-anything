@@ -384,6 +384,9 @@ fn payload(code: &[u16], pc: usize) -> Option<(Payload, usize)> {
         }
         0x0300 => {
             let width = *code.get(pc + 1)?;
+            if !matches!(width, 1 | 2 | 4 | 8) {
+                return None;
+            }
             let count = u32_at(code, pc + 2)?;
             let bytes = usize::from(width).checked_mul(count as usize)?;
             let units = bytes.checked_add(1)? / 2 + 4;
