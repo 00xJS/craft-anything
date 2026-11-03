@@ -501,6 +501,8 @@ Gaps found while using the app for real projects.
       check against DNS rebinding), streams large files instead of reading them into memory,
       sends no body for HEAD on a missing file, and caps open connections and the time a
       request may take to arrive (#597, #598, #600, #601, by Afloat16)
+- [x] The command palette stays where the wheel scrolls it; it follows the selection only when the
+      arrow keys or typing move it (#584)
 
 ### R2.10 Pinned builds
 Owner: maintainers · Status: in progress
