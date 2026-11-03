@@ -359,6 +359,26 @@ Owner: maintainers · Status: in progress
 
 ### R2.2 More coding agents
 Owner: open · Status: in progress
+- [x] GitHub Copilot through its own CLI login and ACP, without credential import:
+      discovery, MCP-only tool restrictions, model selection and fresh read-only questions;
+      unit tests and CLI 1.0.105 with an isolated home and loopback model, all five access modes
+      — claimed: qu-gg, branch `feature/r2.2-copilot-integration` (recorded during PR preparation)
+- [x] Review hardening: cap target handoff at 128 while preserving the active target; propagate
+      context-discovery cancellation, normalize CLI-only efforts for Claude requests, and name
+      the configured agent in shared picker warnings, with focused regressions and translations
+- [x] Local agent chats share a saved investigation and open-target metadata with MCP; background
+      refresh makes recorded findings visible in the workbench Evidence pane. `core_finding_edit`
+      corrects a finding with checked evidence and an optional revision guard, preserving confidence
+      when omitted. Builder refresh failures warn instead of ending the turn; shared ACP errors
+      use the current agent and its sign-in guidance. Engine, process-level MCP and headless
+      rendering tests cover sharing, mode boundaries and finding ids; regressions cover confidence
+      preservation, explicit overrides and agent-specific errors
+- [x] Serialize project-backed investigation load, revision check, mutation and all rendered
+      writes under one bounded, cancellable interprocess lock. Refuse malformed state rather
+      than replacing it; separate-process regressions retain concurrent appends and reject one
+      of two updates based on the same revision
+- [ ] Refresh externally changed investigation/evidence records incrementally, avoiding repeated
+      full reloads under the session lock while retaining mid-turn findings visibility
 - [x] Offer OpenCode locally and over SSH with its own visible chat models and supported thinking
       depths (Low, Medium, High, Xhigh, Max) in settings and headless clients. Choices are validated
       before saving; explicit choices are refused at execution until native MCP support is available.

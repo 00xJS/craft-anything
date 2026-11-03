@@ -6,6 +6,11 @@ Keep entries short: what happened, then the rule.
 
 ## Git and pull requests
 
+**Work began before its roadmap claim, on a branch without the required prefix.** Renaming the
+branch and recording the claim during PR preparation fixes coordination going forward, not the
+missed order. Create and publish the claim on a correctly named branch before implementation;
+never describe a late claim as compliance with the claim-before-work rule.
+
 **A commit landed on `main` without a PR.** `git switch main && git pull` was run with uncommitted
 changes: the switch succeeded, the pull refused, and the failure was read as "still on my branch".
 The next commit and `git push --force-with-lease` went to `main`.
@@ -547,6 +552,41 @@ points to as well (`agent-session.jsonl`), tell "not here" apart from a failure 
 (`Conversation::session_lost`), and never retry what can't succeed.
 
 ## Agent tooling
+
+**Shared CLI efforts reached Claude unchanged.** Keep CLI-only levels available for agents, but
+normalize at the provider boundary; test serialized requests for known and unknown model families.
+
+**A sender could exceed its MCP receiver's target limit.** Bound the handoff to the receiver's
+accepted count and retain the active target; test the boundary, truncation order and remote mode.
+
+**A finding correction reset omitted confidence to inferred.** Edit defaults must preserve existing
+values unless explicitly changed; test omitted fields and every supplied confidence level.
+
+**Atomic replacements still lost concurrent investigation updates.** A process-local mutex and
+rename protect neither a cross-process revision check nor the whole read/modify/write sequence.
+Hold one OS file lock from load through every rendered write, use it for all writers, bound and
+cancel the wait, and test with separate processes. Never treat malformed state as an empty update.
+
+**An optional view refresh could fail the builder's turn.** Log cache-refresh errors and continue
+relaying agent events; only failures of the actual build belong on its fatal path.
+
+**Generic ACP errors named Copilot for every adapter.** Use the current agent's display name and
+the adapter's sign-in guidance; test an ACP-only adapter with and without that guidance.
+
+**An agent's findings existed only in its own session.** A separate MCP process started without
+the desktop's targets or a saved project, so its `fnd_*` records never reached the app. Local
+agent chats now attach a shared investigation, hand over target metadata and refresh snapshots
+after tool results. Test the child process's targets and the UI's finding ids, not only tool calls.
+
+**A headless egui check reached rendering and then failed in teardown.** The app's named fonts
+must be installed, and a test without a renderer must explicitly clear `output.textures_delta`.
+Use the repository's `run_ui` API and its font setup instead of assuming an older egui harness.
+
+**An ACP handshake passed while the tools were missing, and an empty tool list enabled them all.**
+Copilot CLI 1.0.105 initialized successfully but did not expose a server supplied only through
+ACP's `session/new`; explicit `--additional-mcp-config` made it available. An empty
+`--available-tools=` restored native tools instead of disabling them. Verify the tools actually
+sent to a fake local model, including the no-tools case, before trusting startup or argument tests.
 
 **Shell quoting breaks generated edits.** Heredocs carrying Python with quotes, `'''` or `\n` were
 mangled by the shell several times. Write multi-line edit scripts to a file and run the file.
