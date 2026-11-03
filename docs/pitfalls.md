@@ -192,6 +192,13 @@ Compile the `.java` against Ghidra's jars (`javac -proc:none -cp <Ghidra/**/lib/
 live run. Ghidra also rejects project paths with a folder starting with a dot, as
 `tempfile::tempdir()`'s do: give live-test temp folders a plain prefix.
 
+**A check that read another worktree.** A PR was tested in a worktree that shared the main
+`target/`; `xtask` finds the repository through `CARGO_MANIFEST_DIR`, fixed when it's built, so
+afterwards `cargo xtask` in the main tree reused that binary and read the worktree's files. Once the
+worktree was removed it said "can't read docs/ROADMAP.md"; while it existed, any check would have
+looked at the wrong tree. Give every worktree its own `CARGO_TARGET_DIR`, and rebuild `xtask` (or
+delete it from `target/`) after sharing one.
+
 **Stopping a long run leaves children behind** unless every program goes through
 `craft_anything_platform::process`. After stopping one, check that its child processes are gone.
 
