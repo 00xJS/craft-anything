@@ -233,6 +233,13 @@ observed (#251). A run that never started the thing it observes is a failure, no
 check the exit status before building evidence, and compile generated code (here, with Python)
 before trusting it. lldb itself was not run here.
 
+**A graphics default that drew on the other card.** egui-wgpu picks the discrete GPU unless told
+otherwise; on a Linux laptop whose integrated GPU drives the panel, every frame was copied across
+to it, the window took 20 s to open and the whole desktop lagged (#571). Forcing the low-power GPU
+instead breaks desktops whose monitors are on the discrete card. Draw on the GPU that drives the
+screen, read from the connected displays, and keep wgpu's environment variables as the override;
+when a window is slow to open, check which adapter `desktop.log` says it drew with.
+
 **A Mac app that couldn't find Claude Code, and offered a GitHub key instead.** An app opened from
 the Dock gets the system's short `PATH`, not the shell's, so `claude` in `~/.local/bin` wasn't
 found; "Built by" then fell back to "Claude Code on github.com-work", an `~/.ssh/config` alias
