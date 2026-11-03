@@ -811,7 +811,9 @@ impl Workspace {
     /// the person's pictures…), which the builder never changes, even when the app is the
     /// project folder itself. checks/ isn't one: the builder keeps its notes there.
     pub fn is_own_record(&self, p: &Path) -> bool {
-        OWN_NAMES.iter().filter(|n| **n != "checks").any(|n| inside(&self.root.join(n), p))
+        let own = |root: &Path, p: &Path| OWN_NAMES.iter().filter(|n| **n != "checks").any(|n| inside(&root.join(n), p));
+        // Also where a link would really take it.
+        own(&self.root, p) || matches!((real_path(&self.root), real_path(p)), (Some(root), Some(p)) if own(&root, &p))
     }
     /// Separate from capture/, which a website study replaces.
     pub fn reference_dir(&self) -> PathBuf {
@@ -949,6 +951,40 @@ pub fn inside(dir: &Path, p: &Path) -> bool {
     } else {
         p.starts_with(dir)
     }
+}
+
+/// Where `p` really is: its deepest part that exists, with every link in it followed, then the
+/// rest as written (parts that don't exist yet can't be links). `None` when an existing part
+/// can't be followed, such as a link to nothing, since writing there would follow it.
+pub fn real_path(p: &Path) -> Option<PathBuf> {
+    let mut existing = p;
+    let mut missing = Vec::new();
+    while existing.symlink_metadata().is_err() {
+        missing.push(existing.file_name()?);
+        existing = existing.parent()?;
+    }
+    let mut real = std::fs::canonicalize(existing).ok()?;
+    real.extend(missing.iter().rev());
+    Some(real)
+}
+
+/// [`inside`], after following links: `p` is inside `dir` where the file system really puts
+/// them both, so a link inside `dir` can't lead out of it. Only the real paths are compared: `p`
+/// may already be partly resolved (`..` after a link) while `dir` is as written, and a `dir`
+/// that sits behind a link (macOS's `/var` → `/private/var`) is still the same folder.
+pub fn really_inside(dir: &Path, p: &Path) -> bool {
+    matches!((real_path(dir), real_path(p)), (Some(d), Some(p)) if inside(&d, &p))
+}
+
+/// The other side of [`really_inside`], for places that must be kept out of: `p` may land in
+/// `dir` as written, once links are followed (also links in `dir`'s own path, such as macOS's
+/// `/etc` → `/private/etc`), or because a link in `p` can't be followed to tell.
+pub fn may_reach(dir: &Path, p: &Path) -> bool {
+    inside(dir, p)
+        || match real_path(p) {
+            Some(real) => inside(dir, &real) || real_path(dir).is_some_and(|d| inside(&d, &real)),
+            None => true,
+        }
 }
 
 /// How many of a picked folder's names are kept for the builder.
