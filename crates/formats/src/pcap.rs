@@ -916,7 +916,11 @@ fn tls(p: &[u8], d: &mut Decoded) {
         return;
     }
     d.protocols.push("tls");
-    if ct != 22 || r.u8(5) != Some(1) {
+    let Some(record_len) = r.u16_be(3) else { return };
+    let record_end = 5 + usize::from(record_len);
+    let record_end_available = record_end.min(p.len());
+    let record = Reader::new(p.get(..record_end_available).unwrap_or(&[]));
+    if ct != 22 || record.u8(5) != Some(1) {
         return;
     }
     let ver = |v: u16| match v {
@@ -928,70 +932,138 @@ fn tls(p: &[u8], d: &mut Decoded) {
         v if v & 0x0f0f == 0x0a0a => "GREASE".into(),
         v => format!("{v:#06x}"),
     };
-    let mut hello =
-        TlsHello { record_version: ver(u16::from_be_bytes([major, minor])), sni: None, alpn: Vec::new(), supported_versions: Vec::new(), partial: false };
-    // Record header (5) + handshake header (4) + client_version (2) + random (32).
-    let mut off = 5 + 4 + 2 + 32;
-    let skip8 = |off: usize| r.u8(off).map(|n| off + 1 + usize::from(n));
-    let skip16 = |off: usize| r.u16_be(off).map(|n| off + 2 + usize::from(n));
-    let Some(o) = skip8(off).and_then(skip16).and_then(skip8) else {
+    let mut hello = TlsHello {
+        record_version: ver(u16::from_be_bytes([major, minor])),
+        sni: None,
+        alpn: Vec::new(),
+        supported_versions: Vec::new(),
+        partial: record_end > p.len(),
+    };
+    let Some(handshake_header) = record.u32_be(5) else {
         hello.partial = true;
         d.tls = Some(hello);
         return;
     };
-    off = o;
+    let handshake_end = 9 + (handshake_header & 0x00ff_ffff) as usize;
+    hello.partial |= handshake_end > record_end_available;
+    let hello_end = handshake_end.min(record_end_available);
+    let r = Reader::new(p.get(..hello_end).unwrap_or(&[]));
+    // Every variable-length field must fit inside this handshake, not merely the packet.
+    let skip8 = |off: usize| {
+        let n = usize::from(r.u8(off)?);
+        r.slice(off + 1, n)?;
+        Some(off + 1 + n)
+    };
+    let skip16 = |off: usize| {
+        let n = usize::from(r.u16_be(off)?);
+        r.slice(off + 2, n)?;
+        Some(off + 2 + n)
+    };
+    // Record header (5) + handshake header (4) + client_version (2) + random (32).
+    let Some(off) = skip8(5 + 4 + 2 + 32).and_then(skip16).and_then(skip8) else {
+        hello.partial = true;
+        d.tls = Some(hello);
+        return;
+    };
+    // Extensions are optional in a complete ClientHello through TLS 1.2.
+    if off == handshake_end && hello_end == handshake_end {
+        d.tls = Some(hello);
+        return;
+    }
     let Some(ext_len) = r.u16_be(off) else {
         hello.partial = true;
         d.tls = Some(hello);
         return;
     };
-    let end = off + 2 + usize::from(ext_len);
-    hello.partial = end > p.len();
+    let declared_end = off + 2 + usize::from(ext_len);
+    hello.partial |= declared_end != handshake_end;
+    let end = declared_end.min(hello_end);
+    let extensions = Reader::new(p.get(..end).unwrap_or(&[]));
     let mut e = off + 2;
-    while e + 4 <= end.min(p.len()) {
-        let (Some(t), Some(l)) = (r.u16_be(e), r.u16_be(e + 2)) else { break };
+    while e + 4 <= end {
+        let (Some(t), Some(l)) = (extensions.u16_be(e), extensions.u16_be(e + 2)) else { break };
         let body = e + 4;
-        let Some(data) = r.slice(body, usize::from(l)) else {
+        let Some(data) = extensions.slice(body, usize::from(l)) else {
             hello.partial = true;
             break;
         };
         let dr = Reader::new(data);
         match t {
             0 => {
-                if dr.u8(2) == Some(0)
-                    && let Some(n) = dr.u16_be(3).and_then(|n| dr.slice(5, usize::from(n)))
-                {
-                    hello.sni = Some(n.iter().map(|&c| if c.is_ascii_graphic() { char::from(c) } else { '?' }).collect());
+                if let Some(len) = dr.u16_be(0) {
+                    let list_end = 2 + usize::from(len);
+                    hello.partial |= list_end != data.len();
+                    let names = Reader::new(data.get(..list_end.min(data.len())).unwrap_or(&[]));
+                    let mut a = 2;
+                    while a < list_end.min(data.len()) {
+                        let (Some(kind), Some(len)) = (names.u8(a), names.u16_be(a + 1)) else {
+                            hello.partial = true;
+                            break;
+                        };
+                        let Some(name) = names.slice(a + 3, usize::from(len)) else {
+                            hello.partial = true;
+                            break;
+                        };
+                        if kind == 0 {
+                            if name.is_empty() {
+                                hello.partial = true;
+                            } else if hello.sni.is_none() {
+                                hello.sni = Some(name.iter().map(|&c| if c.is_ascii_graphic() { char::from(c) } else { '?' }).collect());
+                            }
+                        }
+                        a += 3 + usize::from(len);
+                    }
+                } else {
+                    hello.partial = true;
                 }
             }
             16 => {
-                let mut a = 2usize;
-                while let Some(n) = dr.u8(a) {
-                    let Some(proto) = dr.slice(a + 1, usize::from(n)) else { break };
-                    hello.alpn.push(String::from_utf8_lossy(proto).into_owned());
-                    a += 1 + usize::from(n);
-                    if hello.alpn.len() >= 16 {
-                        break;
+                if let Some(len) = dr.u16_be(0) {
+                    let list_end = 2 + usize::from(len);
+                    hello.partial |= list_end != data.len();
+                    let protocols = Reader::new(data.get(..list_end.min(data.len())).unwrap_or(&[]));
+                    let mut a = 2usize;
+                    while a < list_end.min(data.len()) && hello.alpn.len() < 16 {
+                        let Some(n) = protocols.u8(a).filter(|&n| n > 0) else {
+                            hello.partial = true;
+                            break;
+                        };
+                        let Some(proto) = protocols.slice(a + 1, usize::from(n)) else {
+                            hello.partial = true;
+                            break;
+                        };
+                        hello.alpn.push(String::from_utf8_lossy(proto).into_owned());
+                        a += 1 + usize::from(n);
                     }
+                } else {
+                    hello.partial = true;
                 }
             }
             43 => {
-                let mut a = 1usize;
-                while let Some(v) = dr.u16_be(a) {
-                    let name = ver(v);
-                    if name != "GREASE" {
-                        hello.supported_versions.push(name);
+                if let Some(len) = dr.u8(0) {
+                    let list_end = 1 + usize::from(len);
+                    hello.partial |= list_end != data.len() || len % 2 != 0;
+                    let versions = Reader::new(data.get(..list_end.min(data.len())).unwrap_or(&[]));
+                    let mut a = 1usize;
+                    while let Some(v) = versions.u16_be(a) {
+                        let name = ver(v);
+                        if name != "GREASE" {
+                            hello.supported_versions.push(name);
+                        }
+                        a += 2;
+                        if hello.supported_versions.len() >= 16 {
+                            break;
+                        }
                     }
-                    a += 2;
-                    if hello.supported_versions.len() >= 16 {
-                        break;
-                    }
+                } else {
+                    hello.partial = true;
                 }
             }
             _ => {}
         }
         e = body + usize::from(l);
     }
+    hello.partial |= e != end;
     d.tls = Some(hello);
 }
 
