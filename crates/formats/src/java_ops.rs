@@ -387,13 +387,16 @@ pub fn decode_one(code: &[u8], pc: usize) -> Option<Insn> {
         }
         Operands::InvokeInterface => {
             insn.cp_index = Some(u16b(code, pc + 1)?);
-            // count byte at pc+3, zero byte at pc+4 (both present or we run off the end)
-            code.get(pc + 4)?;
+            if *code.get(pc + 3)? == 0 || *code.get(pc + 4)? != 0 {
+                return None;
+            }
             insn.len = 5;
         }
         Operands::InvokeDynamic => {
             insn.cp_index = Some(u16b(code, pc + 1)?);
-            code.get(pc + 4)?;
+            if *code.get(pc + 3)? != 0 || *code.get(pc + 4)? != 0 {
+                return None;
+            }
             insn.len = 5;
         }
         Operands::MultiANewArray => {
