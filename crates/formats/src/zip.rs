@@ -284,6 +284,9 @@ pub fn read_entry_unverified(data: &[u8], e: &ZipEntry, max_bytes: u64) -> Resul
         93 => crate::decompress::zstd(raw, max_bytes).map_err(|err| ZipError::Corrupt(format!("zstd stream for {} is damaged: {err}", e.name)))?,
         m => return Err(ZipError::Unsupported(format!("compression method {m} ({}) for {}", e.method_name(), e.name))),
     };
+    if out.len() as u64 != e.uncompressed_size {
+        return Err(ZipError::Corrupt(format!("decoded size for {} is {}, but its directory entry declares {}", e.name, out.len(), e.uncompressed_size)));
+    }
     Ok(out)
 }
 
