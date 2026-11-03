@@ -284,11 +284,27 @@ pub fn find_source_mapping_url(js: &str) -> Option<String> {
     None
 }
 
-/// Decode a `data:application/json;base64,…` URL (or a plain percent-free `data:` URL).
+/// Decode a `data:` URL, including percent escapes and optional base64 content.
 pub fn decode_data_url(url: &str) -> Option<Vec<u8>> {
     let rest = url.strip_prefix("data:")?;
     let (meta, payload) = rest.split_once(',')?;
-    if meta.ends_with(";base64") { base64_decode(payload) } else { Some(payload.as_bytes().to_vec()) }
+    let decoded: std::borrow::Cow<'_, [u8]> = if payload.contains('%') {
+        let hex = |b: u8| match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
+        };
+        let mut decoded = Vec::with_capacity(payload.len());
+        let mut bytes = payload.bytes();
+        while let Some(b) = bytes.next() {
+            decoded.push(if b == b'%' { (hex(bytes.next()?)? << 4) | hex(bytes.next()?)? } else { b });
+        }
+        std::borrow::Cow::Owned(decoded)
+    } else {
+        std::borrow::Cow::Borrowed(payload.as_bytes())
+    };
+    if meta.ends_with(";base64") { base64_decode(std::str::from_utf8(&decoded).ok()?) } else { Some(decoded.into_owned()) }
 }
 
 /// Standard or URL-safe base64, padding optional. `None` on any invalid character.
