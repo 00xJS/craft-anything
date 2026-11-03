@@ -134,8 +134,25 @@ fn handle(mut stream: TcpStream, root: &Path) -> std::io::Result<()> {
     reader.read_line(&mut line)?;
     // Drain the headers (bounded by `take`).
     let mut h = String::new();
+    let (mut hosts, mut origins) = (Vec::new(), Vec::new());
     while reader.read_line(&mut h)? > 2 {
+        if let Some((name, value)) = h.trim_end_matches(['\r', '\n']).split_once(':') {
+            if name.eq_ignore_ascii_case("host") {
+                hosts.push(value.trim().to_string());
+            }
+            if name.eq_ignore_ascii_case("origin") {
+                origins.push(value.trim().to_string());
+            }
+        }
         h.clear();
+    }
+    if hosts.len() != 1 || origins.len() > 1 {
+        return stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    }
+    if !hosts.first().is_some_and(|h| crate::standin_server::host_is_loopback(h, Some(stream.local_addr().map_or(0, |a| a.port()))))
+        || origins.first().is_some_and(|o| !crate::standin_server::origin_is_local(o))
+    {
+        return stream.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     }
     let mut parts = line.split_whitespace();
     let (method, target) = (parts.next().unwrap_or_default(), parts.next().unwrap_or("/"));
@@ -176,7 +193,7 @@ mod tests {
 
     fn get(port: u16, path: &str) -> String {
         let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        s.write_all(format!("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").as_bytes()).unwrap();
+        s.write_all(format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n").as_bytes()).unwrap();
         let mut out = String::new();
         s.read_to_string(&mut out).unwrap();
         out
