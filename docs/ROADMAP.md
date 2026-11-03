@@ -94,7 +94,8 @@ Issues are ranked by people affected and how badly, after leaving out what's alr
 
 ### R5.1 The next release
 Owner: maintainers · Status: todo
-Two reported failures are fixed on `main` and still broken for everyone on 0.3.0. This is the
+Two reported failures, the Windows start-up crash (#414) and a builder resuming another's
+session (#471), are fixed on `main` and still broken for everyone on 0.3.0. This is the
 cheapest help we can give anyone, so nothing below should hold it up for long.
 - [ ] #490 has changes requested: a JSON object given to `--left` or `--right` becomes text, and
       its new test passes without the fix. Merge it once that's fixed, or decline it; it doesn't
