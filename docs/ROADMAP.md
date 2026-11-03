@@ -406,7 +406,8 @@ Owner: maintainers · Status: in progress
 ### R2.9 Everyday use: typing, projects, settings
 Owner: maintainers · Status: in progress
 Gaps found while using the app for real projects.
-- [ ] A prompt brought back with Up keeps its pictures (only the text comes back now) — in PR #216
+- [x] A prompt brought back with Up keeps its pictures (their paths are absolute, so they don't
+      come back after the project is moved)
 - [ ] Change a project's builder from its page (a tool, so the CLI and MCP can too) — in PR #245
 - [ ] When the builder decides a question, show the question and its choice as an answered card
       in the feed (the run sees only the tool call today; the builder's words say what it chose)
