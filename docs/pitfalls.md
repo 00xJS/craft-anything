@@ -188,6 +188,12 @@ every one into "isn't installed or isn't on your PATH": #95, #130 and #152 reins
 had. When a spawn says not found, look the program up yourself; if it's there, name the file and
 what it needs (`spawn_error_for`). Not run on Windows here.
 
+**An answer with two parts, read as one.** An approval card has "Allow once" and "Always for this
+project": the answer carries `allow` and `always`. The consent card our MCP server shows for a tool
+that runs code read only `allow`, so "Always" was dropped and the same tool (a scripted web session)
+was asked about every time (#563). When a card offers a choice, whoever reads the answer handles
+every field of it, and a test answers it each way and asks again.
+
 **A Mac app that couldn't find Claude Code, and offered a GitHub key instead.** An app opened from
 the Dock gets the system's short `PATH`, not the shell's, so `claude` in `~/.local/bin` wasn't
 found; "Built by" then fell back to "Claude Code on github.com-work", an `~/.ssh/config` alias
