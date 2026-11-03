@@ -257,7 +257,10 @@ impl Bin<'_> {
         if m & 0xf0 != 0x10 {
             return Err(FormatError::Malformed("bad extended length marker".into()));
         }
-        let n = 1usize << (m & 0x0f).min(3);
+        if m & 0x0f > 3 {
+            return Err(FormatError::Malformed("extended length width exceeds 64 bits".into()));
+        }
+        let n = 1usize << (m & 0x0f);
         let v = read_be(&self.r, at + 2, n).ok_or_else(|| FormatError::Truncated("length".into()))?;
         let v = usize::try_from(v).map_err(|_| FormatError::Malformed("length".into()))?;
         Ok((v, at + 2 + n))
@@ -291,7 +294,10 @@ impl Bin<'_> {
                 _ => Value::Null,
             },
             0x1 => {
-                let n = 1usize << lo.min(4);
+                if lo > 4 {
+                    return Err(FormatError::Malformed("integer width exceeds 128 bits".into()));
+                }
+                let n = 1usize << lo;
                 let bytes = self.r.slice(at + 1, n).ok_or_else(|| FormatError::Truncated("integer".into()))?;
                 let v = match n {
                     8 => i128::from(i64::from_be_bytes(bytes.try_into().map_err(|_| FormatError::Truncated("integer".into()))?)),
@@ -327,6 +333,9 @@ impl Bin<'_> {
                 Value::String(String::from_utf16_lossy(&units))
             }
             0x8 => {
+                if lo > 7 {
+                    return Err(FormatError::Malformed("uid width exceeds 64 bits".into()));
+                }
                 let n = usize::from(lo) + 1;
                 Value::Uid(read_be(&self.r, at + 1, n).ok_or_else(|| FormatError::Truncated("uid".into()))?)
             }
