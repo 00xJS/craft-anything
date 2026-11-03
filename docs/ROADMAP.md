@@ -208,8 +208,8 @@ been run live.
 
 ### R5.5 API-key builds fail in words people can use
 Owner: open · Status: todo
-- [ ] Show the provider's own reason: #369 bought $10 of credit and got only "OpenRouter answered
-      400: Provider returned error". Find the reason in the response body and show it
+- [x] Show the provider's own reason: #369 bought $10 of credit and got only "OpenRouter answered
+      400: Provider returned error". Find the reason in the response body and show it — PR #542
 - [ ] A live API-key build (needs a key on the test machine)
 - [ ] Failure logs for the other ways an AI stops (API backends, MCP server start-up), like the
       ones agent CLIs write to `logs/` in the config folder

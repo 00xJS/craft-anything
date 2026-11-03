@@ -61,6 +61,18 @@ Checked with isolated registry and SDK fixtures and with a native Fedora install
 validation have not been run for this change. Windows and macOS detection retain their existing
 tests, without new live runs on those platforms.
 
+### Provider error messages
+
+HTTP failures include the provider's message from `error.metadata.raw`, when it contains a
+message, detail or string error. Object payloads, JSON-encoded strings and plain-text reasons
+are supported, with the provider's name when supplied. A repeated outer message does not hide a
+distinct nested detail. JSON-string wrappers are decoded to a bounded depth before reading message
+fields; arbitrary, malformed or excessively wrapped structured metadata is not dumped. HTTP status
+classification and remediation are retained, and displayed details are bounded by Unicode characters.
+Checked with synthetic response bodies, repeated messages, encoded payloads with adjacent headers,
+malformed metadata and Unicode length controls. The affected crate's 222 tests and all-target Clippy
+checks passed locally for PR #542. No live API-key build or account-specific diagnosis was performed.
+
 ### Fixed during the audit
 
 Web tools couldn't launch a browser on Windows/macOS (Chrome/Edge are off PATH) or be pointed at
