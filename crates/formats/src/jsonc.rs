@@ -314,14 +314,18 @@ impl Doc {
     pub fn set(&self, path: &[&str], value: &Value) -> Result<String, String> {
         let Some((last, parents)) = path.split_last() else { return Err("empty path".into()) };
         let Some(root) = &self.root else {
-            // Empty file: write a fresh document.
+            // No object yet: retain comments, whitespace and an optional BOM before the new one.
             let mut v = value.clone();
             for k in path.iter().rev() {
                 let mut m = Map::new();
                 m.insert((*k).to_string(), v);
                 v = Value::Object(m);
             }
-            let mut s = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+            let mut s = self.text.clone();
+            if !s.is_empty() && !s.ends_with('\n') {
+                s.push('\n');
+            }
+            s.push_str(&serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?);
             s.push('\n');
             return Ok(s);
         };
