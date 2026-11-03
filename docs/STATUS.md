@@ -238,3 +238,45 @@ was run; other text-call formats remain unsupported.
 ## Next
 
 See [ROADMAP.md](ROADMAP.md) for the ordered plan.
+
+## Build progress across runs
+
+When app files can be compared, a build stops after two consecutive completed builder turns leave them unchanged.
+The versioned `inbox/build-progress.json` record keeps that count when the project is reopened or
+Try again is pressed. File contents and executable permissions decide progress, so rewriting
+identical bytes does not reset it. An actual app edit or a new nonempty request starts another
+attempt, including notes queued during a turn or check and notes consumed by a builder hook.
+Empty notes and plain Try again keep the saved count. Dependency/build caches,
+git metadata and Craft's own records, including checks in a project edited in place, do not count.
+Symlinks are recorded without following their targets. A successful check may still finish the
+second unchanged turn, and a run waiting only for checks does not start the builder again.
+Within a run, file digests are reused while size, modification time and executable bits match;
+Unix file identity and change time also invalidate a cached read. The first scan reads content,
+but unchanged imported assets are not read again before and after every turn. The metadata is
+only a cache key: rewriting identical bytes still produces the same content fingerprint.
+The cache is isolated by project root, drops deleted or retyped paths, and is discarded after
+scan errors or cancellation. It is not persisted, and the version-1 fingerprint/schema is unchanged.
+Sockets, pipes and devices contribute their names and types without opening their contents.
+If a scan cannot finish because of limits, permissions or changing files, the feed says why the
+unchanged-turn limit is skipped for that run. The saved fingerprint and count are cleared so a
+later readable run starts a fresh comparison. Checks and the existing round limit still apply.
+Cancellation still stops the run; completed builder replies are saved as awaiting checks before
+the post-turn scan. Broken or newer progress records and record-write failures remain errors.
+
+Scripted API turns and executable CLI stand-ins cover the stop, persistence, fresh requests and
+check recovery. This change has not been verified with a paid model or a live provider. Copying a
+whole project keeps its progress record; Duplicate creates a new attempt with a fresh conversation
+and count, as it already does for usage.
+An existing root-level file or directory named `build-progress.json` remains app data: it is
+fingerprinted, copied by Duplicate and kept when Craft's project records are removed. Its JSON
+shape does not make it a Craft record, and it is never migrated into the inbox.
+
+Notes consumed by builder hooks now only queue a progress reset while the turn is running.
+The reset is saved after the successful turn and its `awaiting_check` recovery state are
+persisted. Multiple consumed notes coalesce into one reset; blank notes do not reset the count.
+A broken or inaccessible progress record still returns its actual error at that safe boundary,
+without starting another provider request or losing the finished builder reply.
+If the turn fails or is cancelled after consuming a note, its reset is saved before the run ends
+so reopening keeps the new request's full allowance. The original failure or cancellation remains
+the result; a reset that cannot be saved is reported separately and never overwrites a broken
+or newer record. Scripted turns cover both outcomes, blank notes and unreadable records.

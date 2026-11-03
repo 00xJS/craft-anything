@@ -165,11 +165,11 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 ### R5.3 A builder that can't make progress stops
 Owner: open · Status: todo
 Every round spends the person's money or quota. One that can't do anything shouldn't start.
-- [ ] A build stops and says why after two builder turns in a row that changed nothing in `app/`,
+- [x] A build stops and says why after two builder turns in a row that changed nothing in `app/`,
       on every backend (#44, #110, #417, #481). The count is saved in the project, so it holds
       across runs: a run ends at 7 checks (`max_rounds`) but check numbers carry on, so #44's check
       28 and #417's 35+ look like several runs (a guess: Try again is the only restart found, and
-      Auto mode doesn't start runs)
+      Auto mode doesn't start runs) — implementation: `2fc2970948315b64d47359543b458509da42ab3f`
 - [x] A builder whose tools didn't start isn't resumed. `turn` (`rebuild/mod.rs`) tries 3 more times
       ("Picking up where it left off", #377) because `worth_retrying` doesn't know this error. Give
       it a typed signal, as `Conversation::session_lost` does, not one more word in that function's

@@ -401,6 +401,11 @@ tool calls without matching results. The next model request then carried unpaire
 Every retained call needs a matching result, including an explicit non-execution result.
 Test the next serialized request as well as whether a tool ran.
 
+**A deferred request reset lost on failure.** Moving consumed-note bookkeeping out of the live
+builder loop saved the reset only after a successful turn. A failed or cancelled turn had already
+removed the note, so reopening kept the old unchanged-turn count. Persist deferred request state
+on terminal errors too, outside provider retries; keep the original outcome if that save also fails.
+
 **A filter written for one kind of text, run on another.** The stand-in's secret scan was written for
 API answers, then also ran on recorded scripts: `this.token=t` became `[dropped]` and the scripts
 broke, and "Basic Membership" lost a word. It also tested whole tokens, so a secret inside a URL or
