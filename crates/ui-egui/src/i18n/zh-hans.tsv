@@ -720,7 +720,7 @@ Not now	暂时不要
 Nothing allowed yet.	尚未允许任何操作。
 Nothing can build yet: install Claude Code (and sign in to it once), or add an AI with an API key below.	尚无可用的构建助手：请安装 Claude Code (并先登录一次)，或在下方添加配置了 API 密钥的 AI。
 Nothing found	未找到内容
-Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have.	尚未找到。我们会查找你已有的 API 密钥、本地模型服务器 (Ollama、LM Studio) 和智能体应用。
+Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have. One on another port or computer can be added by its address below.	尚未找到。我们会查找你已有的 API 密钥、本地模型服务器 (Ollama、LM Studio) 和智能体应用。其他端口或其他电脑上的服务器可以在下方按地址添加。
 Nothing inside it is read.	不会读取其内部内容。
 Nothing inside it is read; Craft Anything works from what you can see. Your version gets its own art.	不会读取其内部内容；Craft Anything 仅依据你能看到的内容工作。你的版本会使用自己的美术素材。
 Nothing inside the original is read: not its code, files or page source. Craft Anything works from what you can see: pictures, the page as a visitor sees it, and watching it run.	不会读取原作的内部内容，包括代码、文件和网页源码。Craft Anything 仅根据可见内容工作：图片、访客所见的网页以及运行时的表现。

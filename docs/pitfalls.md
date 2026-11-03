@@ -194,6 +194,45 @@ that runs code read only `allow`, so "Always" was dropped and the same tool (a s
 was asked about every time (#563). When a card offers a choice, whoever reads the answer handles
 every field of it, and a test answers it each way and asks again.
 
+**A loop that only ends at its step cap.** A builder on an API backend may take 400 steps in one
+step of the run, and each step sends the whole conversation again: one stage spent 9.4M tokens on
+code that never compiled (#399). A failed build command is an `Ok` tool result (`succeeded: false`),
+so counting tool errors misses it. Cap a loop on what it is stuck on (build commands failing in a
+row, read from the typed `succeeded` field), not only on its total steps.
+
+**A router that picks the provider for you.** OpenRouter sends each request to one of several
+upstream providers, and a provider without tool calling answered 400 "Provider returned error"
+(#369), which said nothing the person could act on. For a service that routes, say in the request
+what the provider must support (`provider.require_parameters` for tools), and show the provider's
+own reason when it still fails (#542).
+
+**A crash that no code can report.** Three Windows tickets (#33, #104, #74) said the app "does
+nothing": a graphics driver crashed natively as the window opened, so no dialog, panic hook or log
+line ever ran, and each fix only covered the driver already seen. When a failure can't be caught,
+leave a mark before the risky step and clear it after (`start_guard.rs`); a mark found at the next
+start is the report, and that start takes the safer path (WARP). Not run on Windows here.
+
+**A spinner that kept the window drawing at full speed.** egui's `Spinner` asks to be redrawn at
+once, every frame, while it's on screen. A build or a page capture can run for an hour, so the
+window was redrawn at the display's rate the whole time (a core busy, or every core when drawing in
+software), and a person reported "my CPU is fully used" (#579). Animations ask for their next frame
+at their own pace (`widgets::animate`, `widgets::Spinner`); check a library widget for
+`request_repaint` before using it for something long. Not measured on Windows here.
+
+**Every tool offered to a model that can only use a few.** The builder on an API backend was sent
+all 33-41 Core and Build tools, about 23,000-30,000 characters of descriptions. A local 14B model
+(#417) called the study tools (`core_session_show`, `core_journal_read`) 35 times and never
+`build_file_write`, and Ollama's default context is smaller than the list. Offer a model the tools
+the job needs (`LOCAL_BUILDER_CORE`), measure the list's size with the real registry, and run a
+small local model before saying it works. Not run live here.
+
+**A debugger failure reported as an observation.** `apple_calls_observe` built a Python callback
+with `\n` between statements in a Rust string, so lldb rejected it and exited 1 before launching
+anything; the tool ignored the exit status and returned "Observed 0 call(s)" with confidence
+observed (#251). A run that never started the thing it observes is a failure, not a count of zero:
+check the exit status before building evidence, and compile generated code (here, with Python)
+before trusting it. lldb itself was not run here.
+
 **A Mac app that couldn't find Claude Code, and offered a GitHub key instead.** An app opened from
 the Dock gets the system's short `PATH`, not the shell's, so `claude` in `~/.local/bin` wasn't
 found; "Built by" then fell back to "Claude Code on github.com-work", an `~/.ssh/config` alias

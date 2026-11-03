@@ -22,7 +22,7 @@ pub struct AgentModelPicker {
 pub fn agent_model_picker(ui: &mut Ui, picker: &mut AgentModelPicker) -> bool {
     let t = Tokens::get(ui.ctx());
     let Some(result) = &picker.result else {
-        ui.add(egui::Spinner::new().size(theme::CAPTION));
+        ui.add(crate::widgets::Spinner::new().size(theme::CAPTION));
         ui.label(tr("Asking for its models…"));
         return false;
     };

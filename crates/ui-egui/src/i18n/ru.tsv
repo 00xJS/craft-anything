@@ -712,7 +712,7 @@ Not now	Не сейчас
 Nothing allowed yet.	Пока ничего не разрешено.
 Nothing can build yet: install Claude Code (and sign in to it once), or add an AI with an API key below.	Пока ничего нельзя собрать: установите Claude Code (и один раз войдите в него) или добавьте ИИ с ключом API ниже.
 Nothing found	Ничего не найдено
-Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have.	Пока ничего не найдено. Мы ищем ключи API, локальные серверы моделей (Ollama, LM Studio) и приложения-агенты, которые у вас уже есть.
+Nothing found yet. We look for API keys, local model servers (Ollama, LM Studio) and agent apps you already have. One on another port or computer can be added by its address below.	Пока ничего не найдено. Мы ищем ключи API, локальные серверы моделей (Ollama, LM Studio) и приложения-агенты, которые у вас уже есть. Сервер на другом порту или другом компьютере можно добавить по адресу ниже.
 Nothing inside it is read.	Внутри ничего не читается.
 Nothing inside it is read; Craft Anything works from what you can see. Your version gets its own art.	Внутри ничего не читается; Craft Anything работает с тем, что вы можете увидеть. Ваша версия получит собственную графику.
 Nothing inside the original is read: not its code, files or page source. Craft Anything works from what you can see: pictures, the page as a visitor sees it, and watching it run.	Внутри оригинала ничего не читается: ни код, ни файлы, ни исходник страницы. Craft Anything работает с тем, что вы можете увидеть: изображениями, страницей глазами посетителя и наблюдением за её работой.
