@@ -288,12 +288,13 @@ fn body_outline(
     pointer: &str,
 ) -> Value {
     let mime_l = mime.unwrap_or("").to_ascii_lowercase();
-    let decoded: Option<String> = match (text, encoding) {
-        (Some(t), Some("base64")) => base64_decode(t).map(|b| String::from_utf8_lossy(&b).into_owned()),
-        (Some(t), _) => Some(t.to_string()),
+    let decoded_bytes = match (text, encoding) {
+        (Some(t), Some("base64")) => base64_decode(t),
+        (Some(t), _) => Some(t.as_bytes().to_vec()),
         _ => None,
     };
-    let bytes = decoded.as_ref().map_or(0, String::len);
+    let bytes = decoded_bytes.as_ref().map_or(0, Vec::len);
+    let decoded = decoded_bytes.as_deref().map(|b| String::from_utf8_lossy(b).into_owned());
     let json_like = mime_l.contains("json") || decoded.as_deref().is_some_and(|t| t.trim_start().starts_with('{') || t.trim_start().starts_with('['));
     if json_like && let Some(v) = decoded.as_deref().and_then(|t| serde_json::from_str::<Value>(t).ok()) {
         let mut sr = OutlineRedactions { needles: &red.needles, log: Vec::new() };
