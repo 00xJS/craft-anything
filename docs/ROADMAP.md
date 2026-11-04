@@ -220,6 +220,11 @@ Every round spends the person's money or quota. One that can't do anything shoul
       in `app/` ("The build stopped after two builder turns changed no files in app/…"); an
       API-key build is still owed
 
+- [ ] A build whose checks keep finding no working build stops after 10 in a row, across "Try again" presses,
+      until a new request starts the count again. "Try again" used to start six more rounds every time, so
+      #736's build was checked 40 and 49 times; a run that starts at the limit stops before a builder turn.
+      Also: a repeat of #736's "app/ is empty" note. — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
+
 ### R5.4 Local models can build
 Owner: open · Status: todo
 The built-in agent loop assumes a capable tool-calling model. Reports #24, #44, #110, #403, #417 and
