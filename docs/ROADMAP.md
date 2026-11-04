@@ -212,9 +212,10 @@ Every round spends the person's money or quota. One that can't do anything shoul
       9.4M tokens in 19 minutes of the first stage, never compiled). Try again carries on
 - [ ] **decision** Whether a build gets a token or cost limit of its own, beyond rounds and that
       stop (#399): a model that changes code without ever running a build isn't caught by it
-- [x] Check live that the stop fires on a real API-backend build and the message reads well:
-      it fired on a local Ollama build after two turns that changed nothing in `app/` ("The build
-      stopped after two builder turns changed no files in app/…")
+- [ ] Check live that the stop fires on a real API-backend build and the message reads well. It
+      fired on a local Ollama build (the same built-in loop) after two turns that changed nothing
+      in `app/` ("The build stopped after two builder turns changed no files in app/…"); an
+      API-key build is still owed
 
 ### R5.4 Local models can build
 Owner: open · Status: todo
