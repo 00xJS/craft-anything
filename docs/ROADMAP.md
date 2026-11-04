@@ -641,9 +641,12 @@ Gaps found while using the app for real projects.
 - [ ] A question's own cost: a forked Claude Code session reports the whole session's running
       total, so a forked answer shows none; count questions in the project's usage
 - [ ] "Make this change" on an answer that suggests one (sends it as a normal message)
-- [ ] #504: the builder's plan card can be dismissed (its data is kept, and a new checklist from a
-      later run shows again), and a plan from a run that's no longer going isn't pinned forever
-      — claimed: claude, branch bugfix/r2.9-plan-card-dismiss
+- [x] #504: the builder's plan card can be folded away with its X, or with `project_plan_fold`
+      (between builds: a fold during a build can be overwritten by its next save). The steps stay
+      in the conversation (`FEED_VERSION` 4, `FeedItem::PlanDismissed`), and a later run's
+      checklist shows again — claimed: claude, branch bugfix/r2.9-plan-card-dismiss
+- [ ] A run that ends with steps still open marks them as stopped on its card, instead of
+      showing "Doing" until someone folds it (#504: Claude's runs left the plan unticked)
 - [ ] **decision** A program started from the CLI (`project_play`) keeps the shell's output pipe
       open, so the command doesn't return until it closes (#207). Every fix found needs `unsafe` or
       an unstable API: an exception to rule 9, or a limit we document. Meanwhile a reproducing test
