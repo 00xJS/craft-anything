@@ -1,9 +1,8 @@
 //! The macOS menu bar: the app's own actions, with the shortcuts Mac apps use, beside the system's
-//! window and app items. Its labels are read when the window opens; a language picked later
-//! shows in the menu bar from the next start.
+//! window and app items. Every label is in the app's language, and follows it when it changes.
 
 use crate::CraftApp;
-use crate::i18n::tr;
+use crate::i18n::{self, tr};
 use crate::palette::{self, AppCommand};
 use crate::state::Screen;
 use craft_anything_engine::Mode;
@@ -25,10 +24,32 @@ enum Action {
     Url(&'static str),
 }
 
+/// A menu entry with a translated label, retitled when the language changes.
+enum Label {
+    Item(MenuItem),
+    Check(CheckMenuItem),
+    Sub(Submenu),
+    System(PredefinedMenuItem),
+}
+
+impl Label {
+    fn set(&self, text: &str) {
+        match self {
+            Label::Item(i) => i.set_text(text),
+            Label::Check(i) => i.set_text(text),
+            Label::Sub(i) => i.set_text(text),
+            Label::System(i) => i.set_text(text),
+        }
+    }
+}
+
 /// The menu bar, kept alive for as long as the app runs.
 pub struct MenuBar {
     _menu: Menu,
     actions: Vec<(MenuId, Action)>,
+    /// Each label with its English text, and the language they're shown in.
+    labels: Vec<(Label, &'static str)>,
+    language: String,
     /// What only makes sense once first run is done (the palette's rule).
     gated: Vec<MenuItem>,
     simple: CheckMenuItem,
@@ -47,9 +68,11 @@ impl MenuBar {
     /// thread once the window is open; `None` (logged) if the system refused it.
     pub fn install(ctx: &egui::Context) -> Option<Self> {
         let mut actions = Vec::new();
-        let mut item = |label: &str, key: Option<Accelerator>, action: Action| {
+        let mut labels = Vec::new();
+        let mut item = |label: &'static str, key: Option<Accelerator>, action: Action| {
             let i = MenuItem::new(tr(label), true, key);
             actions.push((i.id().clone(), action));
+            labels.push((Label::Item(i.clone()), label));
             i
         };
         let settings = item("Settings", cmd(Code::Comma), Action::App(AppCommand::Settings));
@@ -63,9 +86,10 @@ impl MenuBar {
         let theme = item("Switch light / dark theme", None, Action::App(AppCommand::ToggleTheme));
         let website = item("Craft Anything on GitHub", None, Action::Url(REPO));
         let report = item("Report a problem…", None, Action::Url(NEW_ISSUE));
-        let mut check = |label: &str, action: Action| {
+        let mut check = |label: &'static str, action: Action| {
             let i = CheckMenuItem::new(tr(label), true, false, None);
             actions.push((i.id().clone(), action));
+            labels.push((Label::Check(i.clone()), label));
             i
         };
         let simple = check("Simple", Action::Mode(Mode::Beginner));
@@ -73,41 +97,42 @@ impl MenuBar {
         let clean = check("Clean room", Action::Deep(false));
         let deep = check("Deep", Action::Deep(true));
 
-        let about = AboutMetadata { name: Some("Craft Anything".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default() };
-        let sep = PredefinedMenuItem::separator;
+        let mut sub = |label: &'static str| {
+            let s = Submenu::new(tr(label), true);
+            labels.push((Label::Sub(s.clone()), label));
+            s
+        };
         // The first submenu is the app menu; macOS titles it with the app's name.
         let app_menu = Submenu::new("Craft Anything", true);
-        let file = Submenu::new(tr("File"), true);
-        let view = Submenu::new(tr("View"), true);
-        let window = Submenu::new(tr("Window"), true);
-        let help = Submenu::new(tr("Help"), true);
+        let file = sub("File");
+        let view = sub("View");
+        let window = sub("Window");
+        let help = sub("Help");
+        // The system's own items, named in the app's language rather than the system's.
+        let mut system = |make: fn(Option<&str>) -> PredefinedMenuItem, label: &'static str| {
+            let i = make(Some(&tr(label)));
+            labels.push((Label::System(i.clone()), label));
+            i
+        };
+        let services = system(PredefinedMenuItem::services, "Services");
+        let hide = system(PredefinedMenuItem::hide, "Hide Craft Anything");
+        let hide_others = system(PredefinedMenuItem::hide_others, "Hide others");
+        let show_all = system(PredefinedMenuItem::show_all, "Show all");
+        let close_window = system(PredefinedMenuItem::close_window, "Close window");
+        let fullscreen = system(PredefinedMenuItem::fullscreen, "Full screen");
+        let minimise = system(PredefinedMenuItem::minimize, "Minimise");
+        let zoom = system(PredefinedMenuItem::maximize, "Zoom");
+        let to_front = system(PredefinedMenuItem::bring_all_to_front, "Bring all to front");
+        let about_metadata = AboutMetadata { name: Some("Craft Anything".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default() };
+        let about = PredefinedMenuItem::about(Some(&tr("About Craft Anything")), Some(about_metadata));
+        labels.push((Label::System(about.clone()), "About Craft Anything"));
+        let sep = PredefinedMenuItem::separator;
         let menu = Menu::new();
         let built = app_menu
-            .append_items(&[
-                &PredefinedMenuItem::about(None, Some(about)),
-                &sep(),
-                &settings,
-                &sep(),
-                &PredefinedMenuItem::services(None),
-                &sep(),
-                &PredefinedMenuItem::hide(None),
-                &PredefinedMenuItem::hide_others(None),
-                &PredefinedMenuItem::show_all(None),
-                &sep(),
-                &quit,
-            ])
-            .and_then(|()| file.append_items(&[&new_project, &open_file, &open_folder, &sep(), &export, &sep(), &PredefinedMenuItem::close_window(None)]))
-            .and_then(|()| {
-                view.append_items(&[&palette, &sep(), &simple, &advanced, &sep(), &clean, &deep, &sep(), &theme, &sep(), &PredefinedMenuItem::fullscreen(None)])
-            })
-            .and_then(|()| {
-                window.append_items(&[
-                    &PredefinedMenuItem::minimize(None),
-                    &PredefinedMenuItem::maximize(None),
-                    &sep(),
-                    &PredefinedMenuItem::bring_all_to_front(None),
-                ])
-            })
+            .append_items(&[&about, &sep(), &settings, &sep(), &services, &sep(), &hide, &hide_others, &show_all, &sep(), &quit])
+            .and_then(|()| file.append_items(&[&new_project, &open_file, &open_folder, &sep(), &export, &sep(), &close_window]))
+            .and_then(|()| view.append_items(&[&palette, &sep(), &simple, &advanced, &sep(), &clean, &deep, &sep(), &theme, &sep(), &fullscreen]))
+            .and_then(|()| window.append_items(&[&minimise, &zoom, &sep(), &to_front]))
             .and_then(|()| help.append_items(&[&website, &report]))
             .and_then(|()| menu.append_items(&[&app_menu, &file, &view, &window, &help]));
         if let Err(e) = built {
@@ -126,12 +151,21 @@ impl MenuBar {
             ctx.request_repaint();
         }));
         let gated = vec![settings, new_project, open_file, open_folder, export, palette, theme];
-        Some(Self { _menu: menu, actions, gated, simple, advanced, clean, deep, picked })
+        Some(Self { _menu: menu, actions, labels, language: i18n::language(), gated, simple, advanced, clean, deep, picked })
     }
 }
 
 /// Runs what was picked since the last frame and shows the current mode and switches.
 pub fn update(app: &mut CraftApp, ctx: &egui::Context) {
+    if let Some(bar) = app.menu_bar.as_mut() {
+        let language = i18n::language();
+        if bar.language != language {
+            for (label, text) in &bar.labels {
+                label.set(&tr(text));
+            }
+            bar.language = language;
+        }
+    }
     let Some(bar) = app.menu_bar.as_ref() else { return };
     let ready = app.settings.first_run_done;
     let picked: Vec<Action> = bar.picked.try_iter().filter_map(|id| bar.actions.iter().find(|(i, _)| *i == id).map(|(_, a)| *a)).collect();
