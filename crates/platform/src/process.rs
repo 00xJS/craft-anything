@@ -300,7 +300,7 @@ impl Process {
         // output is piped here, so it never needs one.
         #[cfg(windows)]
         wrap.wrap(process_wrap::std::JobObject).wrap(process_wrap::std::CreationFlags(windows::Win32::System::Threading::CREATE_NO_WINDOW));
-        let mut child = wrap.spawn().map_err(|e| spawn_error(&name, &self.program, self.cwd.as_deref(), e, self.remediation.as_deref()))?;
+        let mut child = spawn_retrying(|| wrap.spawn()).map_err(|e| spawn_error(&name, &self.program, self.cwd.as_deref(), e, self.remediation.as_deref()))?;
         let pid = child.id();
         let start = Instant::now();
         let activity = Arc::new(AtomicU64::new(0));
@@ -357,6 +357,21 @@ impl Process {
         }
         Ok(RunningProcess { pid, name, stdin: user_stdin, kill, rx, result: None, hands_off: self.hands_off })
     }
+}
+
+/// Start a program, trying again for about a third of a second while its file is busy. A program
+/// just written (an agent's update, a test's stand-in) can still be open for writing in a child
+/// another thread is starting, and Linux then refuses to run it ("Text file busy").
+fn spawn_retrying<T>(mut spawn: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut wait = Duration::from_millis(5);
+    for _ in 0..6 {
+        match spawn() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => std::thread::sleep(wait),
+            started => return started,
+        }
+        wait = wait.saturating_mul(2);
+    }
+    spawn()
 }
 
 /// The child gets [`search_path`](crate::which::search_path), which is also where a bare program
@@ -932,7 +947,7 @@ impl Launch {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
-        let child = cmd.spawn().map_err(|e| spawn_error(&name, &self.program, self.cwd.as_deref(), e, self.remediation.as_deref()))?;
+        let child = spawn_retrying(|| cmd.spawn()).map_err(|e| spawn_error(&name, &self.program, self.cwd.as_deref(), e, self.remediation.as_deref()))?;
         let launched = Launched { pid: child.id(), started: Instant::now(), state: Arc::new(Mutex::new(LaunchState { child: Some(child), ended: None })) };
         // Reap it when it closes. If no thread can be made the child still runs (and `ended`
         // stays unknown); on Unix it stays a zombie until we exit, which is harmless.
@@ -1283,6 +1298,30 @@ mod launch_tests {
 #[cfg(test)]
 mod error_tests {
     use super::*;
+
+    /// A busy program file is tried again; any other error, or a file that stays busy, is returned.
+    #[test]
+    fn a_busy_program_file_is_tried_again() {
+        let busy = || std::io::Error::from(std::io::ErrorKind::ExecutableFileBusy);
+        let mut tries = 0;
+        let started = spawn_retrying(|| {
+            tries += 1;
+            if tries < 3 { Err(busy()) } else { Ok(tries) }
+        });
+        assert_eq!(started.ok(), Some(3));
+        let mut tries = 0;
+        let missing = spawn_retrying(|| -> std::io::Result<()> {
+            tries += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+        });
+        assert_eq!((missing.map_err(|e| e.kind()), tries), (Err(std::io::ErrorKind::NotFound), 1));
+        let mut tries = 0;
+        let stays_busy = spawn_retrying(|| -> std::io::Result<()> {
+            tries += 1;
+            Err(busy())
+        });
+        assert_eq!((stays_busy.map_err(|e| e.kind()), tries), (Err(std::io::ErrorKind::ExecutableFileBusy), 7));
+    }
 
     #[test]
     fn a_crash_is_named_by_its_error_not_its_last_stack_frame() {
