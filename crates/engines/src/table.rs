@@ -148,6 +148,10 @@ const fn linux(dir: &'static str, rel: &'static str) -> KnownPath {
     KnownPath { os: "linux", base: Base::Dir(dir), rel }
 }
 
+const fn linux_home(rel: &'static str) -> KnownPath {
+    KnownPath { os: "linux", base: Base::Env("HOME"), rel }
+}
+
 const NO_PATHS: &[KnownPath] = &[];
 
 /// Linux packages put Ghidra in a folder of its own and only a start script on PATH (`/usr/bin/ghidra`):
@@ -176,6 +180,15 @@ const CHROMIUM_PATHS: &[KnownPath] = &[
     mac(Base::Env("HOME"), "Applications/Chromium.app/Contents/MacOS/Chromium"),
     mac(Base::Dir("/Applications"), "Brave Browser.app/Contents/MacOS/Brave Browser"),
     mac(Base::Env("HOME"), "Applications/Brave Browser.app/Contents/MacOS/Brave Browser"),
+    // Flatpak puts only a start script, named after the app, in its exports folder (#747).
+    linux("/var/lib/flatpak/exports/bin", "com.google.Chrome"),
+    linux("/var/lib/flatpak/exports/bin", "com.brave.Browser"),
+    linux("/var/lib/flatpak/exports/bin", "org.chromium.Chromium"),
+    linux("/var/lib/flatpak/exports/bin", "com.microsoft.Edge"),
+    linux_home(".local/share/flatpak/exports/bin/com.google.Chrome"),
+    linux_home(".local/share/flatpak/exports/bin/com.brave.Browser"),
+    linux_home(".local/share/flatpak/exports/bin/org.chromium.Chromium"),
+    linux_home(".local/share/flatpak/exports/bin/com.microsoft.Edge"),
 ];
 
 /// Android platform-tools r37.0.1. SHA-256 computed from Google's files, whose size and SHA-1
