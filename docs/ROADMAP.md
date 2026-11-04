@@ -574,8 +574,9 @@ Owner: open · Status: in progress
       Cause is not confirmed on the reporter's machine (needs their config.toml); the fix covers the
       switched-off case that the code leaves out (`is_on`, `leave_out_set_up`, `builder_backend`). — claimed: fabox-os,
       branch bugfix/423-disabled-agent-not-offered
-- [ ] Say plainly when what's found is the Claude desktop app rather than the `claude` program
+- [x] Say plainly when what's found is the Claude desktop app rather than the `claude` program
       (#259, a guess at its cause)
+- [ ] macOS: check that `Claude.app` is where the desktop app is found (#259's hint is untried there)
 - [x] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467). Found: the "Where is
       the program?" picker (`pick_file`) returns the bundle, and `set_command` saved any path. Refuse a
       folder or app bundle when it's saved (`set_command`), and don't run one that was saved before
