@@ -399,6 +399,9 @@ yet, and the quick start is how every new person begins.
 
 ### R1.5 External engine trait in L3
 Owner: open · Status: in progress
+- [x] Find Chrome, Brave, Chromium and Edge installed as Flatpaks on Linux (system and per-user
+      exports), and keep a Flatpak or Snap browser's private profile in the home folder its
+      sandbox shares, since its /tmp is its own (#747). Unit-tested; not run on a real Flatpak
 - [ ] More pins once their hashes are checked against the publisher: Chromium (no published
       checksums found yet), Rizin for Linux (the tar.xz unpacks to ~800 MB, so it needs streaming
       extraction) and macOS (a .pkg)
