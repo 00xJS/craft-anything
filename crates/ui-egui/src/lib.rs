@@ -1866,6 +1866,8 @@ impl CraftApp {
         painter.galley(inner.center() - g.size() / 2.0, g, t.text);
     }
 
+    /// Keys that work on every screen: Ctrl/⌘ K for the palette, and Esc to close what's on top
+    /// (the palette, a dialog, Settings) or go back home.
     fn shortcuts(&mut self, ctx: &egui::Context) {
         let (palette, esc) = ctx.input_mut(|i| (i.consume_key(egui::Modifiers::COMMAND, egui::Key::K), i.key_pressed(egui::Key::Escape)));
         if palette {

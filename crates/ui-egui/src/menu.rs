@@ -33,6 +33,7 @@ enum Label {
 }
 
 impl Label {
+    /// Shows `text` as the entry's label.
     fn set(&self, text: &str) {
         match self {
             Label::Item(i) => i.set_text(text),

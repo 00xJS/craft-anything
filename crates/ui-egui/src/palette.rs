@@ -217,6 +217,7 @@ pub(crate) fn toggle(app: &mut CraftApp) {
     }
 }
 
+/// Runs one of the app's own commands, from the palette or the macOS menu bar.
 pub(crate) fn run_app_command(app: &mut CraftApp, c: AppCommand) {
     match c {
         AppCommand::OpenFile => app.pick(Pick::OpenFile),
