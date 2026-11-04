@@ -1418,3 +1418,8 @@ Harnesses	Agenti
 Nothing of this kind was found.	Nic takového nebylo nalezeno.
 Another model	Jiný model
 The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.	Desktopová aplikace Claude je nainstalovaná, ale k sestavení je potřeba Claude Code, její samostatný nástroj pro příkazový řádek. Nainstalujte Claude Code, jednou se do něj přihlaste v terminálu a pak hledejte znovu.
+Unreal is here, but its bundled Clang C++ toolchain wasn't found.	Unreal je nainstalovaný, ale jeho přibalený nástrojový řetězec Clang C++ nebyl nalezen.
+Add Unreal's Linux C++ toolchain	Přidat linuxový nástrojový řetězec C++ pro Unreal
+Run Engine/Build/BatchFiles/Linux/SetupToolchain.sh in the engine folder to install its bundled Clang toolchain. If you built Unreal from source, Setup.sh downloads the native toolchain instead. A system Clang may not match the engine's version.	Ve složce enginu spusťte Engine/Build/BatchFiles/Linux/SetupToolchain.sh a nainstaluje se přibalený nástrojový řetězec Clang. Při sestavení ze zdrojů Setup.sh místo toho stáhne nativní nástrojový řetězec. Systémový Clang nemusí odpovídat verzi enginu.
+Unreal is here, but it also needs Xcode.	Unreal je dostupný, ale potřebuje také Xcode.
+About 60 GB, an Epic Games account, and Xcode.	Přibližně 60 GB, účet Epic Games a Xcode.

@@ -117,15 +117,18 @@ validation. Hub and headless tool selections share a strict disk-based save that
 settings changes and refuses damaged files or changed backends. Regression tests cover both entry
 points. Rejected or cancelled model validation emits a terminal turn event so headless chat exits.
 
-### Linux Unreal setup
+### Unreal setup
 
 Unreal installations registered in `~/.config/Epic/UnrealEngine/Install.ini` are found on Linux.
 A valid absolute `UE_ROOT` selects an installation explicitly; an invalid override falls back to
 registered installations. The version comes from `Engine/Build/Build.version`, and C++ readiness
 checks for the selected engine's bundled Clang, not an unrelated system compiler or another
 installation's SDK. The Linux requirements summary (`Builder::needs` for Unreal) now describes
-the bundled Clang toolchain. The guided installer still shows Visual Studio instructions when
-Clang is missing; platform-specific guidance in that flow remains a follow-up.
+the bundled Clang toolchain. The guided installer now gives Linux-specific guidance: it names the
+bundled Clang and points at the engine's `Engine/Build/BatchFiles/Linux/SetupToolchain.sh` (or `Setup.sh`
+for a source build) when Clang is missing. On macOS, the status line and requirements summary now
+name Xcode, matching the guided step. The guidance strings are unit-tested; no live Unreal
+install or macOS run was performed for this copy change.
 
 Checked with isolated registry and SDK fixtures and with a native Fedora install of Unreal
 5.8.4. On Windows, Visual Studio C++ readiness also checks instances registered in
