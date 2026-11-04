@@ -731,6 +731,10 @@ Gaps found while using the app for real projects.
 - [ ] Keep the builder-availability smoke regression independent of live agent discovery.
       — claimed: Afloat16, branch test/r2.9-builder-discovery-fixture-20261104
       Test fixture implemented with controlled discovery; automated validation remains pending.
+- [ ] macOS: a menu bar with the app's own actions (open a file or folder, new project, settings,
+      Simple / Advanced, Clean room / Deep, the command palette, help); the system's menu bar
+      shows only the app menu today
+      — claimed: sanketdofe, branch feature/r2.9-macos-menu-bar
 
 ### R2.10 Pinned builds
 Owner: maintainers · Status: in progress
