@@ -300,6 +300,12 @@ at the wrong tree (the cargo commands `ci` runs use the folder they're started i
 worktree its own `CARGO_TARGET_DIR`, and rebuild `xtask` (or delete it from `target/`) after
 sharing one.
 
+**A helper stopped only by a destructor.** The keep-awake helper was stopped when its guard was
+dropped; closing the desktop app during a build ended the process without dropping it, and the
+PowerShell loop kept the computer awake (its time limit was a week). A helper that outlives a
+crash is a leak: have it watch the process it serves and end by itself (`caffeinate -w`, a loop
+that checks the PID), and test by killing the owner, not by dropping the guard.
+
 **Stopping a long run leaves children behind** unless every program goes through
 `craft_anything_platform::process`. After stopping one, check that its child processes are gone.
 
