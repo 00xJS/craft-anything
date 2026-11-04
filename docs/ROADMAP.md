@@ -229,6 +229,16 @@ Every round spends the person's money or quota. One that can't do anything shoul
       empty-folder wording to the build check (it failed first, before #749's website check) and
       to the stop message — claimed: claude, branch bugfix/r5.3-empty-app-loop
 
+- [x] A build whose checks keep finding no working build stops after 10 in a row, across "Try again"
+      presses, until a new request starts the count again (`NOT_WORKING_CHECK_LIMIT`, kept in craft.json as
+      `not_working_checks`). "Try again" used to start six more rounds every time with nothing counted across
+      runs, so #736's build went on to check 40 and 49 times. A run at the limit stops before a builder turn.
+      The unchanged-turn guard already stops a builder that writes nothing; #736's exact Windows run (gemini-cli)
+      is not reproduced here. An empty `app/` is named as having no files yet (#771's wording) and the builder is asked to
+      write the project and show its build's output, not to fix a build (`NO_PROJECT_PROMPT`). — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
+- [ ] Live-check #736 on Windows with gemini-cli: an empty app/ and a builder that claims `npm run build`
+      stops after two turns (or 10 checks) with the "no files yet" note, and Try again doesn't restart it
+
 ### R5.4 Local models can build
 Owner: open · Status: todo
 The built-in agent loop assumes a capable tool-calling model. Reports #24, #44, #110, #403, #417 and
