@@ -167,6 +167,10 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 - [ ] **decision** Replies don't reach people who file through the ticket relay (each such ticket
       says so), yet the bot asks them for details. About half the open issues came that way. Get
       replies back to them, or stop asking
+- [ ] `which::tests::usual_windows_dirs_come_after_path` (platform) fails on a Windows machine
+      whose environment adds a folder (10 found, 9 expected, "nothing twice"), on `main` too; and
+      `capture::console_tests::reads_what_the_program_drew_and_stops_at_the_deadline` failed once
+      with the whole platform suite running and passes alone. Find what each depends on
 - [ ] `a_helper_is_judged_by_whether_it_runs` (ai crate) sometimes fails when several crates'
       tests run at once and passes alone: it writes a script and runs it straight away, which a
       busy machine can refuse while another test's child still holds the file open
@@ -644,9 +648,13 @@ Gaps found while using the app for real projects.
 - [x] Release the keep-awake helper before a rebuild reports `Finished`, waiting up to five seconds
       for its supervised cleanup and logging a timeout. Real subprocess stand-ins checked on Linux (#541)
       — claimed: Afloat16, branch bugfix/r2.9-keep-awake-cleanup-20261103
-- [ ] Recheck keep-awake cleanup with a real Windows CLI `rebuild`: the helper once outlived it by
-      more than 9 minutes and held the caller's output pipe; not reproduced in 8 more runs. The
-      bounded cleanup change has been checked with Linux stand-ins, not this Windows incident
+- [x] Recheck keep-awake cleanup with a real Windows CLI `rebuild`: the helper once outlived it by
+      more than 9 minutes and held the caller's output pipe; not reproduced in 8 more runs. Found:
+      closing the desktop app during a build ends it without dropping the guard, and the helper
+      (an endless PowerShell loop, started with a week's time limit) carried on. It now ends by
+      itself once the process it serves is gone: the Windows loop checks that process every 30 s,
+      and macOS uses `caffeinate -w`. Live on Windows: a CLI build killed outright, its helper
+      ended 30 s later. Not run on a Mac
 - [ ] Find why a site capture lost its browser ("the WebSocket is closed", 419 ms into
       `web_site_capture` for a second page, seen once; the same capture passed 41 s earlier)
 - [ ] Claude Code's Ultracode switch (a setting, not an effort level; the effort environment
