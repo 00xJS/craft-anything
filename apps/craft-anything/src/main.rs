@@ -102,6 +102,7 @@ fn main() -> eframe::Result {
                     shown_by_app.store(true, std::sync::atomic::Ordering::Relaxed);
                 });
                 app.load_prefs(cc.storage);
+                app.install_menu_bar(&cc.egui_ctx);
                 if let Some(p) = open {
                     app.open_path(p);
                 }
