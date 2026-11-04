@@ -574,8 +574,9 @@ Owner: open · Status: in progress
       Cause is not confirmed on the reporter's machine (needs their config.toml); the fix covers the
       switched-off case that the code leaves out (`is_on`, `leave_out_set_up`, `builder_backend`). — claimed: fabox-os,
       branch bugfix/423-disabled-agent-not-offered
-- [ ] Say plainly when what's found is the Claude desktop app rather than the `claude` program
+- [x] Say plainly when what's found is the Claude desktop app rather than the `claude` program
       (#259, a guess at its cause)
+- [ ] macOS: check that `Claude.app` is where the desktop app is found (#259's hint is untried there)
 - [x] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467). Found: the "Where is
       the program?" picker (`pick_file`) returns the bundle, and `set_command` saved any path. Refuse a
       folder or app bundle when it's saved (`set_command`), and don't run one that was saved before
@@ -666,6 +667,12 @@ Gaps found while using the app for real projects.
 - [ ] A question's own cost: a forked Claude Code session reports the whole session's running
       total, so a forked answer shows none; count questions in the project's usage
 - [ ] "Make this change" on an answer that suggests one (sends it as a normal message)
+- [x] #504: the builder's plan card can be folded away with its X, or with `project_plan_fold`
+      (between builds: a fold during a build can be overwritten by its next save). The steps stay
+      in the conversation (`FEED_VERSION` 4, `FeedItem::PlanDismissed`), and a later run's
+      checklist shows again — claimed: claude, branch bugfix/r2.9-plan-card-dismiss
+- [ ] A run that ends with steps still open marks them as stopped on its card, instead of
+      showing "Doing" until someone folds it (#504: Claude's runs left the plan unticked)
 - [x] #666: a long line in a feed's tool-work row (a Deep-mode decompile, a status note) ran off
       the window and pushed the feed left; the header title can't wrap in egui, so it's the note's
       first line now, cut at 90 characters, and the full note wraps in the body — claimed: claude,

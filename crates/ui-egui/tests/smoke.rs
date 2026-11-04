@@ -2295,6 +2295,29 @@ fn with_nothing_to_build_with_start_offers_what_was_found_instead_of_a_dead_end(
     h.get_by_label("Build with Claude Code");
 }
 
+/// #259: with only the Claude desktop app installed, the dialog says that building needs Claude
+/// Code apart from it, instead of only "No coding agent was found".
+#[test]
+fn only_the_claude_desktop_app_is_named_when_nothing_can_build() {
+    use craft_anything_ai::detect::DetectHint;
+    let mut h = harness(|| {
+        let mut a = demo::app(demo::engine(Mode::Beginner, true));
+        a.backends.clear();
+        a.detected = Some(Vec::new());
+        a
+    });
+    h.run_steps(3);
+    h.state_mut().state.make.request = "A notes app".into();
+    h.state_mut().start_make();
+    // The dialog looks on this computer when it opens; let that finish before standing in for it.
+    assert!(wait(&mut h, |a| !a.detecting));
+    h.state_mut().detected = Some(Vec::new());
+    h.state_mut().detect_hints = vec![DetectHint::ClaudeDesktopWithoutCli { app: "Claude".into() }];
+    h.run_steps(2);
+    h.get_by_label("No coding agent was found on this computer yet.");
+    h.get_by_label("The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.");
+}
+
 #[test]
 fn an_ai_can_be_turned_off_and_removed_in_settings() {
     use craft_anything_ai::rebuild::StandIns;
