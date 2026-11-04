@@ -71,9 +71,11 @@ pub fn rebuild(cli: &Cli, a: &RebuildArgs) -> u8 {
     }
 }
 
-/// Use the configured agent app, or add the first one found on this computer.
+/// Add the first agent app found on this computer when no enabled AI can build at all.
 fn ensure_agent(hub: &AiHub) -> Result<(), ToolError> {
-    if hub.backends().iter().any(|b| b.kind == BackendKind::AgentCli && b.enabled) {
+    // An enabled API backend builds with our own agent loop, so this run needs no agent app. Only a
+    // computer with no AI set up needs one found for it.
+    if hub.backends().iter().any(|b| b.enabled) {
         return Ok(());
     }
     if let Some(d) = hub.detect().into_iter().find(|d| d.suggestion.kind == BackendKind::AgentCli) {
@@ -86,7 +88,6 @@ fn ensure_agent(hub: &AiHub) -> Result<(), ToolError> {
 fn run(cli: &Cli, a: &RebuildArgs) -> Result<bool, ToolError> {
     let engine = make_engine(None, cli.deep_for_run())?;
     let hub = AiHub::new(engine.clone());
-    ensure_agent(&hub)?;
     if a.build_with.is_some() && a.continue_in.is_some() {
         return Err(ToolError::invalid("--build-with is for new projects; a project keeps the stack it was built with.")
             .with_remediation("Leave out --build-with, or start a new project."));
@@ -94,6 +95,7 @@ fn run(cli: &Cli, a: &RebuildArgs) -> Result<bool, ToolError> {
     if a.generate_assets && a.continue_in.is_some() {
         return Err(ToolError::invalid("--generate-assets is for new projects.").with_remediation("Use project-assets-allow for an existing project."));
     }
+    ensure_agent(&hub)?;
     let (ws, message) = match &a.continue_in {
         Some(dir) => (Workspace::open(&std::path::absolute(dir).map_err(|e| ToolError::io(dir.display(), e))?)?, (!a.resume).then(|| a.request.clone())),
         None => {
