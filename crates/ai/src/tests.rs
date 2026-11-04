@@ -304,6 +304,27 @@ fn an_agent_apps_program_is_set_and_cleared() {
     assert_eq!(program(&h), None, "blank finds it by its usual name again");
 }
 
+/// #467: a folder or app bundle can't be an agent's program (the file picker returns
+/// `Antigravity.app` on a Mac); it's refused and the saved program stays as it was.
+#[test]
+fn an_app_bundle_is_refused_as_an_agents_program() {
+    let (h, d) = hub();
+    add(&h, "OpenCode", BackendKind::AgentCli, "http://127.0.0.1:9", None);
+    let program = |h: &AiHub| h.options().get("OpenCode").and_then(|o| o.command.clone());
+    let bundle = d.path().join("Antigravity.app");
+    std::fs::create_dir_all(bundle.join("Contents")).unwrap();
+    let err = h.set_command("OpenCode", Some(&bundle.display().to_string())).unwrap_err();
+    assert_eq!(err.code, ErrorCode::BadInput, "{err:?}");
+    assert!(err.message.contains("is a folder"), "{}", err.message);
+    assert_eq!(program(&h), None, "nothing is saved for a refused folder");
+    // A file, and a bare name, are still accepted.
+    let file = d.path().join("agy");
+    std::fs::write(&file, "#!/bin/sh\n").unwrap();
+    assert!(h.set_command("OpenCode", Some(&file.display().to_string())).unwrap());
+    assert!(h.set_command("OpenCode", Some("agy")).unwrap());
+    assert_eq!(program(&h).as_deref(), Some("agy"));
+}
+
 /// #423: a saved AI that is switched off isn't set up, so a copy found on the computer is offered
 /// again (to be turned on); one that is on is left out.
 #[test]
