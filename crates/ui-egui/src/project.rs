@@ -618,11 +618,41 @@ fn plan(feed: &[FeedItem]) -> Option<&[PlanStep]> {
     craft_anything_engine::feed::visible_plan(feed)
 }
 
+/// How tall the plan's steps get before they scroll, unless the person dragged the divider above
+/// the plan to another height (#826), and the least they can be dragged to.
+const PLAN_HEIGHT: f32 = 240.0;
+const PLAN_MIN: f32 = 48.0;
+
+/// The divider between the feed and the plan. Dragging it (or Up and Down while it has focus)
+/// sets how tall the plan's steps are, kept across restarts; a double-click goes back to the usual
+/// height. `shown` is the height the steps had on the last frame.
+fn plan_divider(ui: &mut Ui, t: &Tokens, height: &mut Option<f32>, shown: f32) {
+    let hint = tr("Drag to give the plan more or less room; double-click to reset");
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 10.0), egui::Sense::click_and_drag());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &hint));
+    let resp = resp.on_hover_cursor(egui::CursorIcon::ResizeVertical).on_hover_text(&hint);
+    let active = resp.hovered() || resp.dragged() || resp.has_focus();
+    ui.painter().rect_filled(egui::Rect::from_center_size(rect.center(), Vec2::new(36.0, 3.0)), 2.0, if active { t.text_faint } else { t.card_border });
+    widgets::focus_ring(ui, &resp, rect);
+    let mut by = -resp.drag_delta().y;
+    if resp.has_focus() {
+        ui.memory_mut(|m| m.set_focus_lock_filter(resp.id, egui::EventFilter { vertical_arrows: true, ..Default::default() }));
+        by += ui.input(|i| f32::from(i8::from(i.key_pressed(egui::Key::ArrowUp)) - i8::from(i.key_pressed(egui::Key::ArrowDown)))) * 24.0;
+    }
+    if resp.double_clicked() {
+        *height = None;
+    } else if by != 0.0 {
+        let most = (ui.ctx().content_rect().height() * 0.6).max(PLAN_MIN);
+        *height = Some((height.unwrap_or(shown) + by).clamp(PLAN_MIN, most));
+    }
+}
+
 /// The builder's checklist, pinned above the prompt box: what's done, what it's on now, what's
 /// next, and while it works how long it has been at it. Shown while it works, and afterwards only
 /// if something was left undone. `fold` offers a control to fold it away (between runs); the
-/// returned flag says the person pressed it.
-fn checklist(ui: &mut Ui, steps: &[PlanStep], t: &Tokens, began: Option<std::time::Instant>, fold: bool) -> bool {
+/// returned flag says the person pressed it. Its steps scroll past `height`; the height they
+/// were shown at is kept under `shown_id` for the divider above.
+fn checklist(ui: &mut Ui, steps: &[PlanStep], t: &Tokens, began: Option<std::time::Instant>, fold: bool, height: f32, shown_id: egui::Id) -> bool {
     let done = steps.iter().filter(|s| s.status == PlanStatus::Done).count();
     let mut folded = false;
     widgets::card(t).inner_margin(Margin::symmetric(16, 12)).show(ui, |ui| {
@@ -646,31 +676,35 @@ fn checklist(ui: &mut Ui, steps: &[PlanStep], t: &Tokens, began: Option<std::tim
             });
         });
         ui.add_space(6.0);
-        for s in steps {
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), egui::Sense::hover());
-                match s.status {
-                    PlanStatus::Done => {
-                        ui.painter().circle_filled(r.center(), 7.0, t.success);
-                        icons::paint(ui, r.shrink(4.0), "check", 10.0, t.canvas);
-                    }
-                    PlanStatus::Doing => {
-                        ui.painter().circle_stroke(r.center(), 6.5, egui::Stroke::new(1.5, t.accent));
-                        ui.painter().circle_filled(r.center(), 3.0, t.accent);
-                    }
-                    PlanStatus::Todo => {
-                        ui.painter().circle_stroke(r.center(), 6.5, egui::Stroke::new(1.0, t.field_border));
-                    }
+        let list =
+            egui::ScrollArea::vertical().id_salt("plan-steps").max_height(height).min_scrolled_height(height).auto_shrink([false, true]).show(ui, |ui| {
+                for s in steps {
+                    ui.horizontal(|ui| {
+                        let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), egui::Sense::hover());
+                        match s.status {
+                            PlanStatus::Done => {
+                                ui.painter().circle_filled(r.center(), 7.0, t.success);
+                                icons::paint(ui, r.shrink(4.0), "check", 10.0, t.canvas);
+                            }
+                            PlanStatus::Doing => {
+                                ui.painter().circle_stroke(r.center(), 6.5, egui::Stroke::new(1.5, t.accent));
+                                ui.painter().circle_filled(r.center(), 3.0, t.accent);
+                            }
+                            PlanStatus::Todo => {
+                                ui.painter().circle_stroke(r.center(), 6.5, egui::Stroke::new(1.0, t.field_border));
+                            }
+                        }
+                        let text = RichText::new(&s.text).size(theme::BODY);
+                        let text = match s.status {
+                            PlanStatus::Done => text.color(t.text_faint).strikethrough(),
+                            PlanStatus::Doing => text.color(t.text).strong(),
+                            PlanStatus::Todo => text.color(t.text_dim),
+                        };
+                        ui.add(egui::Label::new(text).wrap());
+                    });
                 }
-                let text = RichText::new(&s.text).size(theme::BODY);
-                let text = match s.status {
-                    PlanStatus::Done => text.color(t.text_faint).strikethrough(),
-                    PlanStatus::Doing => text.color(t.text).strong(),
-                    PlanStatus::Todo => text.color(t.text_dim),
-                };
-                ui.add(egui::Label::new(text).wrap());
             });
-        }
+        ui.data_mut(|d| d.insert_temp(shown_id, list.inner_rect.height()));
     });
     folded
 }
@@ -1683,7 +1717,14 @@ fn composer(app: &mut CraftApp, ui: &mut Ui, width: f32, t: &Tokens) {
     if let Some(steps) = plan(&app.state.feed).filter(|p| running || p.iter().any(|s| s.status != PlanStatus::Done)) {
         let began = app.open_run().filter(|_| running).map(RebuildRun::started);
         let mut fold = false;
-        ui.allocate_ui(Vec2::new(width, 0.0), |ui| fold = checklist(ui, steps, t, began, !running));
+        let shown_id = egui::Id::new("plan-steps-shown");
+        let mut height = app.state.plan_height;
+        ui.allocate_ui(Vec2::new(width, 0.0), |ui| {
+            let shown = ui.data(|d| d.get_temp::<f32>(shown_id)).unwrap_or(PLAN_HEIGHT);
+            plan_divider(ui, t, &mut height, shown);
+            fold = checklist(ui, steps, t, began, !running, height.unwrap_or(PLAN_HEIGHT), shown_id);
+        });
+        app.state.plan_height = height;
         if fold {
             app.fold_plan();
         }
