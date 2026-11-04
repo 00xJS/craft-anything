@@ -1321,8 +1321,7 @@ fn draw_items(
             FeedItem::Step { text, .. } => chat::activity_row(ui, RichText::new(text).color(t.text_dim).size(theme::SMALL)),
             FeedItem::Paused => chat::activity_row(ui, RichText::new(tr("Paused.")).color(t.text_dim).size(theme::SMALL)),
             FeedItem::Agent { text, streaming } => {
-                chat::bubble(&t, false, false).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
+                chat::answer_bubble(ui, false, text.trim(), |ui| {
                     chat::rich_text(ui, text.trim(), !advanced);
                     if *streaming {
                         widgets::thinking(ui);
