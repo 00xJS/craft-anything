@@ -12,6 +12,7 @@ use muda::{AboutMetadata, CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, Pred
 use std::sync::mpsc::{Receiver, channel};
 
 const REPO: &str = env!("CARGO_PKG_REPOSITORY");
+const NEW_ISSUE: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/issues/new/choose");
 
 #[derive(Debug, Clone, Copy)]
 enum Action {
@@ -61,7 +62,7 @@ impl MenuBar {
         let palette = item("Command palette", cmd(Code::KeyK), Action::Palette);
         let theme = item("Switch light / dark theme", None, Action::App(AppCommand::ToggleTheme));
         let website = item("Craft Anything on GitHub", None, Action::Url(REPO));
-        let report = item("Report a problem…", None, Action::Url(concat!(env!("CARGO_PKG_REPOSITORY"), "/issues/new/choose")));
+        let report = item("Report a problem…", None, Action::Url(NEW_ISSUE));
         let mut check = |label: &str, action: Action| {
             let i = CheckMenuItem::new(tr(label), true, false, None);
             actions.push((i.id().clone(), action));
@@ -159,6 +160,17 @@ pub fn update(app: &mut CraftApp, ctx: &egui::Context) {
             Action::Palette => palette::toggle(app),
             Action::Mode(m) => app.set_mode(m),
             Action::Deep(on) => app.set_deep(on),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// An empty repository field made Help open a local folder instead of the web page.
+    #[test]
+    fn help_links_are_web_pages() {
+        for url in [super::REPO, super::NEW_ISSUE] {
+            assert!(url.starts_with("https://github.com/"), "{url}");
         }
     }
 }
