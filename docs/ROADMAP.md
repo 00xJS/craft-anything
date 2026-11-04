@@ -235,9 +235,10 @@ been run live.
       text, not on a model; Ollama's default context (4k) was too small for the old list alone
 - [x] Run #417's case live (Ollama, `qwen2.5-coder:14b`, "a scientific calculator") before and
       after this: does it call `build_file_write` now? If it still doesn't, the model can't build.
-      Yes, with the three fixes below: it wrote and edited `app/Cargo.toml` and `app/src/main.rs`
-      over about 50 calls, fixed two compile errors the checks reported, and check 3 said "Build
-      succeeded". It stopped at the round limit without the `--screenshot` option (#753)
+      Yes, with the three fixes below: over about 50 calls it wrote `app/Cargo.toml` (eframe), fixed
+      the two errors the checks reported, and check 3 said "Build succeeded". But `src/main.rs` was
+      still cargo's "Hello, world!": no calculator was written, and the screenshot check rightly
+      failed it at the round limit (#753)
 - [x] The system prompt told every model to call `core_brief_write` and `core_plan_update` first and
       `core_handoff_write` last, tools a lean local builder isn't offered, so the model asked only
       for `core_brief_write` and did nothing else for three checks. A lean builder's prompt leaves
@@ -248,9 +249,10 @@ been run live.
       tool, with only words before or between them, now runs them all (`fenced_calls`, ids
       `react_N` as other text calls); words after the last fence, other code, an unclosed fence or
       a tool that wasn't offered keep it text (#753)
-- [ ] A local builder doesn't add the `--screenshot` option the check needs before the round limit:
-      run 4 compiled at check 3, its last. See whether more rounds get there, or whether a small
-      model needs the option written for it (a template in the Rust steps)
+- [ ] A local builder spends its rounds on the project file and never writes the app: run 4 had a
+      compiling `Cargo.toml` by check 3, its last, with `main.rs` still "Hello, world!". See whether
+      more rounds get there, or whether a small model needs the window and the `--screenshot`
+      option written for it (a template in the Rust steps)
 - [x] The model ran `cargo new app` in `app/` (commands run there), so the project landed in
       `app/app/` and every check said "No project to build found in app/ yet". The check now says
       where a cargo or npm project one folder down is, and the Rust steps say `app/Cargo.toml`,
