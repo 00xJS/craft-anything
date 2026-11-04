@@ -220,10 +220,14 @@ Every round spends the person's money or quota. One that can't do anything shoul
       in `app/` ("The build stopped after two builder turns changed no files in app/…"); an
       API-key build is still owed
 
-- [ ] A build whose checks keep finding no working build stops after 10 in a row, across "Try again" presses,
-      until a new request starts the count again. "Try again" used to start six more rounds every time, so
-      #736's build was checked 40 and 49 times; a run that starts at the limit stops before a builder turn.
-      Also: a repeat of #736's "app/ is empty" note. — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
+- [x] A build whose checks keep finding no working build stops after 10 in a row, across "Try again"
+      presses, until a new request starts the count again (`NOT_WORKING_CHECK_LIMIT`, kept in craft.json as
+      `not_working_checks`). "Try again" used to start six more rounds every time with nothing counted across
+      runs, so #736's build went on to check 40 and 49 times. A run at the limit stops before a builder turn.
+      The unchanged-turn guard already stops a builder that writes nothing; #736's exact Windows run (gemini-cli)
+      is not reproduced here, so: — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
+- [ ] Live-check #736 on Windows with gemini-cli: an empty app/ and a builder that claims `npm run build`
+      stops after two turns (or 10 checks) with the "no files yet" note, and Try again doesn't restart it
 
 ### R5.4 Local models can build
 Owner: open · Status: todo

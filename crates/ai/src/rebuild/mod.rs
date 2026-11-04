@@ -694,6 +694,16 @@ impl Worker {
             resumed_elsewhere(&brief(kind, &cx, opts.message.as_deref()), &ws.manifest.last_reply, handoff.as_deref())
         });
         let mut round = ws.manifest.checks.iter().map(|c| c.round).max().unwrap_or(0);
+        // A new request starts the count of checks that found no working build again. "Try again" on
+        // a build that already reached the limit stops before another builder turn is paid for (#736).
+        if opts.message.is_some() {
+            if ws.manifest.not_working_checks != 0 {
+                ws.manifest.not_working_checks = 0;
+                ws.save()?;
+            }
+        } else if ws.manifest.not_working_checks >= NOT_WORKING_CHECK_LIMIT {
+            return Err(not_working(ws));
+        }
         let mut refinements = 0;
         // Deep mode on a program: decompiling is required, so a build turn without any gets one reminder.
         let must_decompile = !self.engine.session().clean_room() && matches!(ws.manifest.target, TargetRef::Local { .. });
@@ -766,6 +776,7 @@ impl Worker {
                 if let Some(p) = self.added(ws) {
                     progress.reset();
                     progress.save(&ws.root)?;
+                    ws.manifest.not_working_checks = 0;
                     prompt = p;
                     continue;
                 }
@@ -780,6 +791,9 @@ impl Worker {
             let checks = self.checks_with_a_retry(ws, kind, round)?;
             ws.manifest.checks.extend(checks.iter().cloned());
             ws.manifest.awaiting_check = false;
+            // A round in which every check works (built and served) ends the streak; any other
+            // round adds to it, across runs, until the limit stops the build.
+            ws.manifest.not_working_checks = if checks.iter().all(|c| c.passed) { 0 } else { ws.manifest.not_working_checks.saturating_add(1) };
             ws.save()?;
             for c in &checks {
                 self.emit(RunEvent::Checked(c.clone()));
@@ -787,6 +801,7 @@ impl Worker {
             if let Some(p) = self.added(ws) {
                 progress.reset();
                 progress.save(&ws.root)?;
+                ws.manifest.not_working_checks = 0;
                 prompt = p;
                 continue;
             }
@@ -803,6 +818,9 @@ impl Worker {
                 }
             }
             let Some(check) = not_good else { break };
+            if ws.manifest.not_working_checks >= NOT_WORKING_CHECK_LIMIT {
+                return Err(not_working(ws));
+            }
             if refinements >= opts.max_rounds {
                 break;
             }
@@ -1126,6 +1144,16 @@ impl Worker {
             }
         }
     }
+}
+
+/// Checks in a row that may find the build not working before the run stops and asks for a new
+/// request. Each "Try again" used to start another `max_rounds` of checks, with nothing counting
+/// across runs, so a build that never came up was checked 40 and 49 times (#736).
+pub const NOT_WORKING_CHECK_LIMIT: u32 = 10;
+
+fn not_working(ws: &Workspace) -> ToolError {
+    ToolError::new(ErrorCode::OverLimit, format!("The build still isn't working after {} checks in a row, so it stopped.", ws.manifest.not_working_checks))
+        .with_remediation("Send a new request with a concrete correction to start again. The last check's note in the feed says what it found.")
 }
 
 fn no_build_progress(ws: &Workspace) -> ToolError {

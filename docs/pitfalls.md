@@ -500,6 +500,11 @@ and run `cargo xtask secrets` before every commit (the `.githooks/pre-commit` ho
 **An empty float sum is `-0.0`.** `iter().map(..).sum::<f64>()` over nothing gives `-0.0`, which
 `{:.2}` shows as "$-0.00". Sum money with `fold(0.0, ..)`.
 
+**A per-run budget that a retry resets.** The build's refinement cap (`max_rounds`) counted from zero on every
+run, while the round numbers carried over, so "Try again" bought six more checks each press and a build that never
+worked reached check 40 and 49 (#736). A limit that must hold across runs is a count saved with the project, and
+it's reset only by a new request. Test it with several runs in a row, not one.
+
 **Docs that drift.** `STATUS.md` described a branch 25 commits old and the tool count was stale.
 Update STATUS, the roadmap and generated docs (`cargo xtask tools`, `cargo xtask schemas`) in the
 same PR as the change.
