@@ -58,6 +58,11 @@ whenever a `Cargo.toml` changed.
 on a new branch, open a new PR that says it supersedes the old one, and comment on the old one.
 Don't close or rewrite other people's work without asking.
 
+**Review fixes pushed to a PR that had already merged.** #686 was merged hours before its review
+comments were acted on; the fixes went to its branch and the threads were answered "Fixed", while
+`main` had the code without them. Read `gh pr view --json state,headRefOid` before pushing to a PR's
+branch, and land anything late in a new PR from `main`.
+
 ## Tests
 
 **A test started a real download on a contributor's machine.** A test called `engines_install` for
@@ -252,6 +257,13 @@ to it, the window took 20 s to open and the whole desktop lagged (#571). Forcing
 instead breaks desktops whose monitors are on the discrete card. Draw on the GPU that drives the
 screen, read from the connected displays, and keep wgpu's environment variables as the override;
 when a window is slow to open, check which adapter `desktop.log` says it drew with.
+
+**A Metal version taken from the OS, not from the compiler.** wgpu-hal picks the Metal shading
+language from the macOS version alone; on a 2012 iMac under OpenCore Legacy Patcher, macOS 15 asked
+for `metal3.2`, the compiler stopped at 3.1, every shader failed and the window never opened (#742,
+upstream #10687). Our `[patch]` of wgpu-hal probes the compiler (`vendor/wgpu-hal/CRAFT_ANYTHING.md`).
+The advice on a lost device named `CRAFT_ANYTHING_RENDERER`, which only Windows reads: check that
+advice names only settings the platform actually reads. Not run on the reporter's Mac.
 
 **A Mac app that couldn't find Claude Code, and offered a GitHub key instead.** An app opened from
 the Dock gets the system's short `PATH`, not the shell's, so `claude` in `~/.local/bin` wasn't
@@ -558,6 +570,13 @@ computer (and under the folder) that started it; a project synced to another com
 three more times. Anything a project keeps must still work where the folder goes: keep what the id
 points to as well (`agent-session.jsonl`), tell "not here" apart from a failure by a typed signal
 (`Conversation::session_lost`), and never retry what can't succeed.
+
+**An installer that downloaded what was already there.** Ghidra was found only on PATH and at two
+Linux folders, so an unzipped copy in Downloads, Program Files or a Homebrew cask was missed, and
+the install then downloaded the same release again (#740). Install folders are a search, not a
+list: scan the folders people keep such things in (`KnownRoot`, by folder name, a set number of
+levels down), and make an install use a copy already found outside our store. Test each layout
+(unzipped, cask, capitalised name) with temp folders, not the machine the test runs on.
 
 ## Agent tooling
 

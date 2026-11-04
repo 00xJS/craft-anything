@@ -21,9 +21,17 @@ pub struct Stack {
     /// the generic instruction.
     #[serde(default)]
     pub steps: Option<String>,
-    /// package.json dependencies that show a build uses this stack (`next`, `vite`).
+    /// package.json dependencies that show a build uses this stack (`next`, `vite`); in a
+    /// person's own project, Cargo.toml's too (`eframe`).
     #[serde(default)]
     pub uses: Vec<String>,
+    /// What a person's own project must depend on as well to count as this stack (`react`).
+    #[serde(default)]
+    pub needs: Vec<String>,
+    /// Files, relative to a folder, that show a person's own project is built with this stack
+    /// (`project.godot`); a leading `*` matches by the name's ending (`*.uproject`).
+    #[serde(default)]
+    pub found_by: Vec<String>,
 }
 
 /// The stack that leaves the choice to the builder (a website's default); [`used_in`] then
@@ -97,6 +105,23 @@ pub fn used_in(app: &std::path::Path) -> Option<&'static Stack> {
     catalogue().iter().find(|s| s.uses.iter().any(|d| deps.contains(d)))
 }
 
+/// The stack a folder of the person's own files is built with: an engine's project file says
+/// most, then the dependencies, then the other files that name a stack. None when nothing does.
+pub fn found_in(dir: &std::path::Path) -> Option<&'static Stack> {
+    let by_file = |engine: bool| catalogue().iter().filter(|s| s.engine.is_some() == engine).find(|s| s.found_by.iter().any(|f| has_file(dir, f)));
+    let mut deps = craft_anything_engine::outputs::npm_dependencies(dir);
+    deps.extend(craft_anything_engine::outputs::cargo_dependencies(dir));
+    let by_deps = || catalogue().iter().find(|s| s.uses.iter().any(|d| deps.contains(d)) && s.needs.iter().all(|d| deps.contains(d)));
+    by_file(true).or_else(by_deps).or_else(|| by_file(false))
+}
+
+fn has_file(dir: &std::path::Path, name: &str) -> bool {
+    match name.strip_prefix('*') {
+        Some(ending) => std::fs::read_dir(dir).into_iter().flatten().flatten().any(|e| e.file_name().to_string_lossy().ends_with(ending)),
+        None => dir.join(name).is_file(),
+    }
+}
+
 /// The libraries `request` asks for that work with `stack`, in table order.
 pub fn libraries_for(request: &str, stack: &str) -> Vec<&'static Library> {
     let w = words(request);
@@ -128,6 +153,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_folder_says_what_it_is_built_with() {
+        // Each case in a folder of its own.
+        let found = |files: &[(&str, &str)]| {
+            let d = tempfile::tempdir().unwrap();
+            for (name, text) in files {
+                let path = d.path().join(name);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, text).unwrap();
+            }
+            found_in(d.path()).map(|s| s.name.as_str())
+        };
+        let vite = r#"{"dependencies":{"react":"19"},"devDependencies":{"vite":"7"}}"#;
+        assert_eq!(found(&[("project.godot", "")]), Some("Godot"));
+        assert_eq!(found(&[("ProjectSettings/ProjectVersion.txt", "")]), Some("Unity"));
+        assert_eq!(found(&[("Game.uproject", "{}")]), Some("Unreal Engine"));
+        assert_eq!(found(&[("project.godot", ""), ("package.json", vite)]), Some("Godot"), "an engine's file says most");
+        assert_eq!(found(&[("package.json", vite), ("index.html", "")]), Some("React + TypeScript (Vite)"));
+        assert_eq!(
+            found(&[("package.json", r#"{"dependencies":{"vue":"3"},"devDependencies":{"vite":"7"}}"#)]),
+            Some(BUILDERS_CHOICE),
+            "Vite alone isn't React"
+        );
+        assert_eq!(found(&[("package.json", r#"{"dependencies":{"svelte":"5"}}"#), ("index.html", "")]), Some(BUILDERS_CHOICE));
+        assert_eq!(found(&[("Cargo.toml", "[dependencies]\neframe = \"0.30\"\n")]), Some("Rust + egui (eframe)"));
+        assert_eq!(found(&[("Cargo.toml", "[dependencies]\nmacroquad = \"0.4\"\n")]), Some("Rust + macroquad"));
+        assert_eq!(found(&[("Cargo.toml", "[dependencies]\nmacroquad = \"0.4\"\negui = \"0.30\"\n")]), Some("Rust + macroquad"), "a game with an egui overlay");
+        assert_eq!(found(&[("Cargo.toml", "[dependencies]\niced = \"0.13\"\n")]), Some(BUILDERS_CHOICE));
+        assert_eq!(found(&[("Cargo.toml", "not [ toml")]), Some(BUILDERS_CHOICE));
+        assert_eq!(found(&[("pyproject.toml", "")]), Some("Python"));
+        assert_eq!(found(&[("requirements.txt", "")]), Some("Python"));
+        assert_eq!(found(&[("go.mod", "")]), Some(BUILDERS_CHOICE));
+        assert_eq!(found(&[("App.csproj", "")]), Some(BUILDERS_CHOICE));
+        assert_eq!(found(&[("index.html", "")]), Some("Plain HTML and CSS"));
+        assert_eq!(found(&[("notes.md", "")]), None);
+    }
+
+    #[test]
     fn the_table_parses_and_covers_every_engine() {
         let names: Vec<&str> = catalogue().iter().map(|s| s.name.as_str()).collect();
         assert!(names.len() >= 7, "{names:?}");
@@ -150,6 +212,8 @@ mod tests {
                 .is_some_and(|s| s.steps.as_deref().is_some_and(|t| t.starts_with("Use what their request names; otherwise choose the stack yourself")))
         );
         assert!(used_in(d.path()).is_none(), "no package.json");
+        std::fs::write(d.path().join("Cargo.toml"), "[dependencies]\neframe = \"0.30\"\n").unwrap();
+        assert!(used_in(d.path()).is_none(), "Cargo.toml never replaces a stack the request named");
         std::fs::write(d.path().join("package.json"), "not json").unwrap();
         assert!(used_in(d.path()).is_none(), "a broken package.json is no stack, not a crash");
         std::fs::write(d.path().join("package.json"), r#"{"dependencies": {"next": "16", "react": "19"}, "devDependencies": {"vite": "7"}}"#).unwrap();

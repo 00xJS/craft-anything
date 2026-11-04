@@ -170,6 +170,9 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 - [ ] `a_helper_is_judged_by_whether_it_runs` (ai crate) sometimes fails when several crates'
       tests run at once and passes alone: it writes a script and runs it straight away, which a
       busy machine can refuse while another test's child still holds the file open
+- [ ] `a_remote_query_expands_only_the_remote_working_directory` (ai crate) fails on a Mac: the
+      temp folder is `/var/…`, a link to `/private/var/…`, and the shell's `$PWD` gives the second.
+      Compare with the folder's canonical path
 - [ ] Revisit the two advisory exceptions in `deny.toml`: `rsa` (no fix; we only verify with public
       keys) when rsa 0.10 lands, and unmaintained `zbus_names`/`zvariant` (Linux-only via keyring
       and accesskit) when those move on. `deny.toml`'s comments say this is tracked in R0.3: point
@@ -230,22 +233,33 @@ been run live.
       instead of 33-41 (23,000-30,000): the Build tools and the Core tools the brief names, not the
       study set a model explores with instead of writing (#417, `LOCAL_BUILDER_CORE`). Measured as
       text, not on a model; Ollama's default context (4k) was too small for the old list alone
-- [ ] Run #417's case live (Ollama, `qwen2.5-coder:14b`, "a scientific calculator") before and
+- [x] Run #417's case live (Ollama, `qwen2.5-coder:14b`, "a scientific calculator") before and
       after this: does it call `build_file_write` now? If it still doesn't, the model can't build.
-      Run so far: with the lean list it calls `build_checklist`, `build_command_run` and
-      `build_file_edit` (as JSON text, which #554 runs), but not `build_file_write` yet; the two
-      lines below stop it first
+      Yes, with the three fixes below: it wrote and edited `app/Cargo.toml` and `app/src/main.rs`
+      over about 50 calls, fixed two compile errors the checks reported, and check 3 said "Build
+      succeeded". It stopped at the round limit without the `--screenshot` option (#753)
 - [x] The system prompt told every model to call `core_brief_write` and `core_plan_update` first and
       `core_handoff_write` last, tools a lean local builder isn't offered, so the model asked only
       for `core_brief_write` and did nothing else for three checks. A lean builder's prompt leaves
       the memory steps out; live, the same model then used the Build tools
-- [ ] A call written after a sentence ("Let's list the files.\n```json {…}```") isn't run: #554
+- [x] A call written after a sentence ("Let's list the files.\n```json {…}```") isn't run: #554
       reads a reply that is only the JSON. Half the model's calls came this way and the turn ended
-      with nothing done. Run a reply that ends in one fenced call to an offered tool, and say in
-      the transcript that it was read from text
-- [ ] The model ran `cargo new app` in `app/` (commands run there), so the project landed in
-      `app/app/` and every check said "No project to build found in app/ yet". Say in that check
-      where a project was found one folder down, and have the Rust brief say `cargo init`
+      with nothing done. A reply that ends in complete `json` fences, each a call to an offered
+      tool, with only words before or between them, now runs them all (`fenced_calls`, ids
+      `react_N` as other text calls); words after the last fence, other code, an unclosed fence or
+      a tool that wasn't offered keep it text (#753)
+- [ ] A local builder doesn't add the `--screenshot` option the check needs before the round limit:
+      run 4 compiled at check 3, its last. See whether more rounds get there, or whether a small
+      model needs the option written for it (a template in the Rust steps)
+- [x] The model ran `cargo new app` in `app/` (commands run there), so the project landed in
+      `app/app/` and every check said "No project to build found in app/ yet". The check now says
+      where a cargo or npm project one folder down is, and the Rust steps say `app/Cargo.toml`,
+      not a folder inside `app/` (a brief can't say `cargo init`: not every builder's commands
+      start in `app/`). Live, with calls after a sentence run too, the model then made
+      `app/Cargo.toml` and the build compiled (#751)
+- [ ] The model reads file paths from the project folder and commands from `app/` as one base:
+      it ran `cargo init app` and `cd app && cargo build` after writing `app/Cargo.toml`. Say the
+      folder in `build_command_run`'s result (or its description) so the two can't be mixed up
 - [ ] `usage.json` after a local build says about 4,200 input tokens and 6.5 s of work, while
       Ollama logged about six requests of 4,000-5,000 tokens each: find what it leaves out
 - [x] An assistant turn with no text sends an empty string, not `content: null`, which Ollama
@@ -272,6 +286,11 @@ been run live.
 - [x] Do not select an embedding, ranking or transcription model as a chat backend when a local server has no chat models — claimed: Afloat16, branch bugfix/r5.4-nonchat-model-detection-20261103
 - [x] Recognize specialised model file paths and numeric task-name versions during local chat setup
       — claimed: Afloat16, branch bugfix/r5.4-model-task-identifiers-20261103
+- [x] The first run's AI step can add a model server on another computer by its address (llama.cpp,
+      Ollama or LM Studio on a home server), the same form as Settings → AI
+- [ ] A chat sent while a llama.cpp router is still loading the model ended after 31 s with "The
+      answer stream ended early." and no next step (seen once live, 27B model); say the server may
+      still be loading it and to try again in a minute
 
 ### R5.5 API-key builds fail in words people can use
 Owner: open · Status: todo
@@ -380,6 +399,10 @@ Owner: open · Status: in progress
 Owner: maintainers · Status: in progress
 - [ ] Give Linux-specific Clang guidance in Unreal's guided installer when the bundled compiler
       is missing (the requirements summary is already platform-specific).
+- [x] Find Visual Studio's C++ tools on Windows when Visual Studio is installed outside Program
+      Files (through the Visual Studio Installer's `ProgramData` instance state or developer
+      environment variables, #669, [PR #726](https://github.com/storytold/craft-anything/pull/726))
+      — claimed: riyaz, branch `bugfix/r1.6-windows-vs-cpp-tools`
 
 ---
 
@@ -387,6 +410,12 @@ Owner: maintainers · Status: in progress
 
 ### R2.2 More coding agents
 Owner: open · Status: in progress
+- [x] A saved agent program path that no longer exists (Codex desktop moves its CLI to a new
+      build folder on every update) says so and names the path, instead of "isn't installed or
+      isn't on your PATH" (#721); it stays a missing program, so a builder turn isn't retried
+- [ ] When a saved Codex desktop path is gone, offer the CLI found in its newest build folder
+      (asking first, never replacing a custom program silently), and let Detect/Test check the
+      configured program itself (#721)
 - [x] GitHub Copilot through its own CLI login and ACP, without credential import:
       discovery, MCP-only tool restrictions, model selection and fresh read-only questions;
       unit tests and CLI 1.0.105 with an isolated home and loopback model, all five access modes
@@ -551,12 +580,16 @@ Owner: open · Status: in progress
 - [x] The website check's missing-site note names every place `site_dir` accepts (dist/, build/,
       out/, or a plain index.html with no package.json) and the app's real place, "app/" or "the
       project folder" (#494)
-- [ ] A project edited in place (Work on my project, or `rebuild --existing edit`) gets its stack
-      from the request's words, as a new one does: a request that reads as a game asks for Unity
-      unless it names another engine, even when the folder is a Godot project, and a run with no
-      stack picks the kind's default (`kinds.choose`); `stacks::used_in` reads only package.json,
-      after the first turn. Read the stack from the folder's own files first (`project.godot`,
-      `Cargo.toml`, `pyproject.toml`, `package.json`…)
+- [x] A project edited in place (Work on my project, or `rebuild --existing edit`) keeps what its
+      files are built with, unless the request names another stack: an engine's project file, then
+      package.json and Cargo.toml dependencies, then `found_by` in `stacks.toml`, and a project
+      whose dependencies name no stack there is left to the builder. A request that read as a game
+      used to ask for Unity even in a Godot project, and an app got the kind's default
+      — claimed: xerenon, branch bugfix/r2.7-stack-from-files; PR #755
+- [ ] What a project edited in place is checked by: its kind still comes from the request's words,
+      so a website or a Python tool whose request doesn't say so is an app, and the app check then
+      fails with "There's no built program to start yet" (read in the code, not run). Let the
+      folder's stack decide the kind too, and say what "ready" means for a person's own project
 
 ### R2.8 Clean room means clean room
 Owner: maintainers · Status: in progress
@@ -599,9 +632,10 @@ Gaps found while using the app for real projects.
       bounded cleanup change has been checked with Linux stand-ins, not this Windows incident
 - [ ] Find why a site capture lost its browser ("the WebSocket is closed", 419 ms into
       `web_site_capture` for a second page, seen once; the same capture passed 41 s earlier)
-- [ ] Claude Code's own extras: its Ultracode switch (a setting, not an effort level; the
-      effort environment variable we use can't turn it on) and its model names beyond the list
-      (`opusplan`, `[1m]` variants) offered in Settings → AI; `ai model` already takes any name
+- [ ] Claude Code's Ultracode switch (a setting, not an effort level; the effort environment
+      variable we use can't turn it on)
+- [x] A model the list doesn't offer (`opusplan`, `[1m]` variants, one another harness serves) can
+      be typed in beside the model list in Settings → AI, as `ai model` already allowed (#470)
 - [x] The preview server answers only requests addressed to this computer (a Host and Origin
       check against DNS rebinding), streams large files instead of reading them into memory,
       sends no body for HEAD on a missing file, and caps open connections and the time a
@@ -622,6 +656,9 @@ Gaps found while using the app for real projects.
       refused and a folder that's already a project opens. Until now that was only reachable
       through "Choose a folder…" under Make's Start, on a screen that asks what to recreate
       — claimed: xerenon, branch feature/r2.9-work-on-my-project; PR #686
+- [x] Leaving "Work on my project" forgets a folder it would edit in place and drops a folder
+      dialog that ends later, so a version made on Make can't edit that project, and an address
+      in its request isn't read as an original to recreate (review of #686) — claimed: xerenon, branch bugfix/r2.9-own-project-review; PR #750
 - [x] Choose Claude Code's folder (`CLAUDE_CONFIG_DIR`) per AI, so one computer can build with
       two Claude accounts; an app opened from the Dock never sees the shell's variable. Settings →
       AI (a typed folder, and Add another) and `ai folder`; live-checked from the CLI with an empty

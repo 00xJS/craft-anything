@@ -613,7 +613,7 @@ impl Worker {
         if !remote && api.is_none() {
             let adapter = opts.adapters.for_backend(&entry.config.model, &entry.options);
             crate::cli_agents::check_builder_tools(adapter.as_ref(), &entry.config.model, &entry.options, &self.stop)?;
-            let program = entry.options.command.clone().unwrap_or_else(|| crate::cli_agents::program_for(&entry.config.model));
+            let program = crate::cli_agents::program_of(&entry.config, &entry.options);
             if adapter.signed_in(&program) == Some(false) {
                 return Err(ToolError::new(ErrorCode::BadSettings, not_signed_in(&entry.config.model, adapter.signed_in_before()))
                     .with_remediation(adapter.sign_in_fix().unwrap_or_default()));
@@ -627,8 +627,7 @@ impl Worker {
         };
         if ws.manifest.stack.is_empty() {
             let deep = !self.engine.session().clean_room();
-            let (_, stack) = opts.kinds.choose(&ws.manifest.request, &ws.manifest.target, deep).ok_or_else(no_kind)?;
-            ws.manifest.stack = stack.to_string();
+            ws.manifest.stack = project::first_stack(&opts.kinds, ws, deep).ok_or_else(no_kind)?.to_string();
             ws.save()?;
         }
         let kind = opts.kinds.detect(&ws.manifest.request, &ws.manifest.target, &ws.manifest.stack).ok_or_else(no_kind)?;
