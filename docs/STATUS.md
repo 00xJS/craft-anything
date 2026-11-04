@@ -50,6 +50,7 @@ workspace clippy, layers, fmt and the secret scan of all history were clean. Chi
 | CLI | Every tool, `--deep` or `--clean-room` for one run (never saved), `rebuild` (including `--continue-in`, and `--resume` to carry on a stopped build), `mcp --inbox`, `ai`, `setup`, `doctor`, `report` | CLI integration tests |
 | SQLite database files (`db_sqlite_show`) | A rowid alias column (`INTEGER PRIMARY KEY`, including the table-constraint form) shows the rowid; `DESC`, non-`INTEGER` and composite keys keep their stored values | Hand-built fixtures; generated files compared with the official SQLite library |
 | SQLite WITHOUT ROWID tables | Read from the index b-tree, interior records and overflow included; rows in primary-key order, values in declaration order, `rowid` null | Hand-built fixtures; generated files compared with the official SQLite library |
+| Builder discovery smoke fixture | The missing-builder smoke fixture controls discovery state and supplies a synthetic result. | All original warning, modal, action and build-availability assertions are retained. Source inspection only; automated validation has not yet run for this change. |
 
 ### Builder retry policy
 

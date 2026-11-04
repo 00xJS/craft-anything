@@ -677,6 +677,10 @@ Gaps found while using the app for real projects.
 - [ ] A live build with two Claude Code AIs signed in to two accounts, and one over SSH with a
       `~/` folder (the remote line is unit-tested, not run on another computer)
 
+- [ ] Keep the builder-availability smoke regression independent of live agent discovery.
+      — claimed: Afloat16, branch test/r2.9-builder-discovery-fixture-20261104
+      Test fixture implemented with controlled discovery; automated validation remains pending.
+
 ### R2.10 Pinned builds
 Owner: maintainers · Status: in progress
 Keep a build that works at hand: pin it, and open it from the sidebar whatever the builder does
