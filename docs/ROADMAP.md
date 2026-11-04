@@ -229,6 +229,16 @@ Every round spends the person's money or quota. One that can't do anything shoul
       empty-folder wording to the build check (it failed first, before #749's website check) and
       to the stop message — claimed: claude, branch bugfix/r5.3-empty-app-loop
 
+- [x] A build whose checks keep finding no working build stops after 10 in a row, across "Try again"
+      presses, until a new request starts the count again (`NOT_WORKING_CHECK_LIMIT`, kept in craft.json as
+      `not_working_checks`). "Try again" used to start six more rounds every time with nothing counted across
+      runs, so #736's build went on to check 40 and 49 times. A run at the limit stops before a builder turn.
+      The unchanged-turn guard already stops a builder that writes nothing; #736's exact Windows run (gemini-cli)
+      is not reproduced here. An empty `app/` is named as having no files yet (#771's wording) and the builder is asked to
+      write the project and show its build's output, not to fix a build (`NO_PROJECT_PROMPT`). — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
+- [ ] Live-check #736 on Windows with gemini-cli: an empty app/ and a builder that claims `npm run build`
+      stops after two turns (or 10 checks) with the "no files yet" note, and Try again doesn't restart it
+
 ### R5.4 Local models can build
 Owner: open · Status: todo
 The built-in agent loop assumes a capable tool-calling model. Reports #24, #44, #110, #403, #417 and
@@ -399,6 +409,9 @@ yet, and the quick start is how every new person begins.
 
 ### R1.5 External engine trait in L3
 Owner: open · Status: in progress
+- [x] Find Chrome, Brave, Chromium and Edge installed as Flatpaks on Linux (system and per-user
+      exports), and keep a Flatpak or Snap browser's private profile in the home folder its
+      sandbox shares, since its /tmp is its own (#747). Unit-tested; not run on a real Flatpak
 - [ ] More pins once their hashes are checked against the publisher: Chromium (no published
       checksums found yet), Rizin for Linux (the tar.xz unpacks to ~800 MB, so it needs streaming
       extraction) and macOS (a .pkg)
@@ -552,6 +565,12 @@ Owner: open · Status: in progress
 - [ ] #105, #135, #259, #385 and #423 predate 0.3.0, which looks in more places, and came through
       the ticket relay, so nobody can ask them for `doctor` output. Close them pointing at 0.3.0,
       and add search paths only for a new report that has that output
+- [x] #423: an agent that is set up but switched off is never offered again, so "No coding agent was
+      found" stays on screen with Claude installed: the setup card and "Look again" leave out every saved
+      AI by name, on or off. Offer a switched-off agent as found and turn it on, keeping its options.
+      Cause is not confirmed on the reporter's machine (needs their config.toml); the fix covers the
+      switched-off case that the code leaves out (`is_on`, `leave_out_set_up`, `builder_backend`). — claimed: fabox-os,
+      branch bugfix/423-disabled-agent-not-offered
 - [x] Say plainly when what's found is the Claude desktop app rather than the `claude` program
       (#259, a guess at its cause)
 - [ ] macOS: check that `Claude.app` is where the desktop app is found (#259's hint is untried there)
@@ -642,6 +661,10 @@ Gaps found while using the app for real projects.
 - [ ] A question's own cost: a forked Claude Code session reports the whole session's running
       total, so a forked answer shows none; count questions in the project's usage
 - [ ] "Make this change" on an answer that suggests one (sends it as a normal message)
+- [x] #666: a long line in a feed's tool-work row (a Deep-mode decompile, a status note) ran off
+      the window and pushed the feed left; the header title can't wrap in egui, so it's the note's
+      first line now, cut at 90 characters, and the full note wraps in the body — claimed: claude,
+      branch bugfix/r2.9-feed-text-overflow
 - [ ] **decision** A program started from the CLI (`project_play`) keeps the shell's output pipe
       open, so the command doesn't return until it closes (#207). Every fix found needs `unsafe` or
       an unstable API: an exception to rule 9, or a limit we document. Meanwhile a reproducing test
@@ -778,6 +801,14 @@ Owner: open · Status: in progress
       ROMFS dot roots, cramfs, ext and JFFS2 sizes and holes, PyInstaller modules outside their
       PYZ, JSON config edits (comments kept, every duplicate key removed), and UDP, TCP, DNS over
       TCP, pcapng and TLS lengths (#688–#715, by Afloat16)
+
+- [x] Address the combined parser review: preserve partial Java reference coverage,
+      enforce DEX signed 32-bit LEB128 limits, recover legacy AAPT UTF-8 lengths within
+      their pool with a shared recovery probe limit, and distinguish missing ext indirect
+      metadata from sparse holes.
+      — claimed: Afloat16, branch bugfix/r3.12-parser-review-followups-main-20261104
+      Shared-budget revision `29c48e03` passed [full Linux CI](https://github.com/storytold/craft-anything/actions/runs/41762780268).
+      The merge with main `41d2175e` awaits a new CI run.
 
 ### R3.13 Web inspection correctness
 Owner: open · Status: in progress
