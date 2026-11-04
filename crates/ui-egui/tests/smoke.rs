@@ -505,7 +505,8 @@ fn pictures_of_the_original_go_with_the_draft_then_into_the_project() {
     // "Nothing — start fresh" is picked: the request box offers pictures (not for websites).
     h.get_by_label("Add pictures of the original (optional: screenshots help it look right)");
     h.state_mut().add_pictures(vec![pic.clone(), notes, pic.clone()]);
-    h.run_steps(3);
+    // Their sizes are checked on a worker first (#720).
+    assert!(wait(&mut h, |a| !a.state.make.pictures.is_empty()), "checked on a worker, then added");
     assert_eq!(h.state().state.make.pictures, vec![pic.clone()], "pictures only, once each");
     h.get_by_label("original.webp");
     h.get_by_label("Remove original.webp").click();
@@ -1236,7 +1237,9 @@ fn claude_codes_account_folder_is_set_in_settings() {
     // Emptied, it's the usual folder again.
     h.state_mut().set_agent_folder("Claude Code", Some(String::new()));
     assert!(wait(&mut h, |a| chosen(a).is_none()));
-    // Added already, so it's offered again under the next free name.
+    // Added already, so it's offered again under the next free name, on the coding agents' tab.
+    h.state_mut().state.detect_tab = Some(craft_anything_ui_egui::detect_tabs::DetectTab::Harnesses);
+    h.run_steps(2);
     h.get_by_label("Add another").click();
     assert!(wait(&mut h, |a| a.backends.iter().any(|b| b.name == "Claude Code 2" && b.model == "claude-code")));
 }
