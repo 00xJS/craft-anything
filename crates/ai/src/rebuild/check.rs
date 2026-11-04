@@ -1,26 +1,110 @@
 //! Building a project with its own tools (cargo, npm, or the game engine's), for [`BuildCheck`].
-//! A plain static site has no build, and passes as it is.
+//! A plain static site has no build, and passes as it is. A person's own project builds and tests
+//! itself the way its toolchain says.
 
 use super::*;
+
+/// Run a step of a project's build in `app`: whether it succeeded, and what it printed.
+fn run_in(app: &Path, prog: &Path, args: &[String], minutes: u64, stop: &CancelToken) -> Result<(bool, String), String> {
+    let s = stop.clone();
+    craft_anything_platform::Process::new(prog)
+        .args(args)
+        .cwd(app)
+        .timeout(Duration::from_secs(minutes * 60))
+        // Engines go quiet for long stretches (shader compiles, cooking, a cold cargo build).
+        .idle_timeout(Duration::from_secs(60 * 60))
+        .stdout_cap(8 << 20)
+        .cancel_when(move || s.is_cancelled())
+        .run()
+        .map(|o| (o.success, format!("{}{}", o.stdout_text(), o.stderr_text())))
+        .map_err(|e| e.message)
+}
+
+/// Run one of a toolchain's commands in `app`.
+fn run_tool(app: &Path, tool: &stacks::Toolchain, command: &[String], minutes: u64, stop: &CancelToken) -> Result<(bool, String), String> {
+    let Some((program, args)) = command.split_first() else { return Err(format!("{} has no such command.", tool.name)) };
+    let here = |p: &&String| cfg!(windows) == [".bat", ".cmd", ".exe"].iter().any(|e| p.ends_with(e));
+    let local = tool.local_programs.iter().filter(here).map(|p| app.join(p)).find(|p| p.is_file());
+    let system = tool.windows_program.as_ref().filter(|_| cfg!(windows)).unwrap_or(program);
+    run_in(app, local.as_deref().unwrap_or(Path::new(system)), args, minutes, stop)
+}
+
+/// What a Unity without a licence prints, and what to tell the person.
+const UNITY_NO_LICENCE: &str = "No valid Unity Editor license";
+const UNITY_LICENCE_FIX: &str = "Unity needs its free licence first: open Unity Hub, sign in and accept the Personal licence, then try again.";
+
+/// A person's own project: its engine's build, else its toolchain's, else a static site. One we
+/// know no way to build isn't a failure, and the note says nothing ran.
+pub(super) fn own_build_check(app: &Path, place: &str, stack: &str, editor: Option<&Path>, stop: &CancelToken) -> (bool, String) {
+    let engine = engine_for(stack, app);
+    if let (Some(game::Builder::Unity), Some(ed)) = (engine, editor) {
+        return own_unity_check(app, ed, stop);
+    }
+    match stacks::toolchain_in(app).filter(|_| engine.is_none()) {
+        Some(tool) => own_build(app, tool, stop),
+        None if engine.is_some() || static_site(app) => build_check(app, place, stack, editor, stop),
+        None => (true, "Nothing was built: Craft Anything doesn't know how to build this kind of project.".into()),
+    }
+}
+
+/// How a Unity project we didn't make is opened: in batch mode, which compiles its scripts. There's
+/// no `CraftBuild.Build` to call, as there is in one we made ([`build_check`]).
+fn own_unity_args(app: &Path) -> Vec<String> {
+    ["-batchmode", "-quit", "-nographics", "-projectPath", &app.display().to_string(), "-logFile", "-"].map(String::from).to_vec()
+}
+
+fn own_unity_check(app: &Path, editor: &Path, stop: &CancelToken) -> (bool, String) {
+    match run_in(app, editor, &own_unity_args(app), 4 * 60, stop) {
+        Ok((_, out)) if out.contains(UNITY_NO_LICENCE) => (false, UNITY_LICENCE_FIX.into()),
+        Ok((true, _)) => (true, "The Unity project opened and its scripts compiled.".into()),
+        Ok((false, out)) => (false, format!("Build failed: {}", error_lines(&out))),
+        Err(e) => (false, format!("Couldn't run the build: {e}")),
+    }
+}
+
+fn own_build(app: &Path, tool: &stacks::Toolchain, stop: &CancelToken) -> (bool, String) {
+    match run_tool(app, tool, &tool.build, 2 * 60, stop) {
+        Ok((true, _)) => (true, format!("`{}` passed.", tool.build.join(" "))),
+        Ok((false, out)) => (false, format!("Build failed: {}", error_lines(&out))),
+        Err(e) => (false, format!("Couldn't run the build: {e}")),
+    }
+}
+
+/// A person's own project: run its tests. Output that says none ran isn't a failure, and neither
+/// is a project we know no way to test, and the note says so.
+pub(super) fn own_tests_check(app: &Path, tool: Option<&stacks::Toolchain>, stop: &CancelToken) -> (bool, String) {
+    let Some(tool) = tool else { return (true, "No tests ran: Craft Anything doesn't know how to test this kind of project.".into()) };
+    let says_none = |text: &str| tool.no_tests.iter().find(|n| text.contains(n.as_str())).cloned();
+    if let Some(name) = &tool.test_script {
+        // shortcut: `workspaces=true` in .npmrc can give a root with no script tests; they aren't
+        // run, and the note says so. Read .npmrc if that turns up.
+        let script = craft_anything_engine::outputs::npm_script(app, name).unwrap_or_default();
+        if script.is_empty() || tool.no_tests.iter().any(|n| n == script.trim()) {
+            return (true, format!("No tests ran: package.json has no `{name}` script to run."));
+        }
+    }
+    match run_tool(app, tool, &tool.test, 30, stop) {
+        Ok((true, _)) => (true, format!("`{}` passed.", tool.test.join(" "))),
+        Ok((false, out)) => match says_none(&out).filter(|_| tool.test_script.is_none()) {
+            Some(why) => (true, format!("No tests ran: {}.", why.trim_end_matches('.'))),
+            None => (false, format!("The project's tests failed:\n{}", last_lines(&out, 20))),
+        },
+        Err(e) => (false, format!("Couldn't run the tests: {e}")),
+    }
+}
+
+/// The last `n` lines with something on them: where a test run sums up what failed.
+fn last_lines(out: &str, n: usize) -> String {
+    let mut lines: Vec<&str> = out.lines().rev().filter(|l| !l.trim().is_empty()).take(n).collect();
+    lines.reverse();
+    lines.join("\n")
+}
 
 /// For non-website builds: run the project's build (its engine's own, for Unity, Unreal and
 /// Godot) and report whether it succeeded, with a note (the first error lines when it didn't).
 /// `place` says where `app` is, for messages (`Workspace::app_place`).
 pub(super) fn build_check(app: &Path, place: &str, stack: &str, editor: Option<&Path>, stop: &CancelToken) -> (bool, String) {
-    let run = |prog: &Path, args: &[String], minutes: u64| {
-        let s = stop.clone();
-        craft_anything_platform::Process::new(prog)
-            .args(args)
-            .cwd(app)
-            .timeout(Duration::from_secs(minutes * 60))
-            // Engines go quiet for long stretches (shader compiles, cooking, a cold cargo build).
-            .idle_timeout(Duration::from_secs(60 * 60))
-            .stdout_cap(8 << 20)
-            .cancel_when(move || s.is_cancelled())
-            .run()
-            .map(|o| (o.success, format!("{}{}", o.stdout_text(), o.stderr_text())))
-            .map_err(|e| format!("Couldn't run the build: {}", e.message))
-    };
+    let run = |prog: &Path, args: &[String], minutes: u64| run_in(app, prog, args, minutes, stop).map_err(|e| format!("Couldn't run the build: {e}"));
     let app_s = app.display().to_string();
     let built = || packaged_program(&app.join("Build")).is_some();
     let result: Result<(bool, String), String> = match (engine_for(stack, app), editor) {
@@ -29,13 +113,7 @@ pub(super) fn build_check(app: &Path, place: &str, stack: &str, editor: Option<&
                 return (false, missing(app, place, format!("No Unity project found in {place} yet.")));
             }
             let args = ["-batchmode", "-quit", "-nographics", "-projectPath", &app_s, "-executeMethod", "CraftBuild.Build", "-logFile", "-"].map(String::from);
-            run(ed, &args, 4 * 60).map(|(ok, out)| {
-                if out.contains("No valid Unity Editor license") {
-                    (false, "Unity needs its free licence first: open Unity Hub, sign in and accept the Personal licence, then try again.".into())
-                } else {
-                    (ok && built(), out)
-                }
-            })
+            run(ed, &args, 4 * 60).map(|(ok, out)| if out.contains(UNITY_NO_LICENCE) { (false, UNITY_LICENCE_FIX.into()) } else { (ok && built(), out) })
         }
         (Some(game::Builder::Unreal), Some(ed)) => {
             let Some(uproject) = uproject(app) else {
@@ -163,6 +241,113 @@ pub(super) fn error_lines(out: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stand-in toolchain whose build and tests are this shell line.
+    #[cfg(unix)]
+    fn stand_in(line: &str, no_tests: &[&str]) -> stacks::Toolchain {
+        let command = ["sh", "-c", line].map(String::from).to_vec();
+        stacks::Toolchain { build: command.clone(), test: command, no_tests: no_tests.iter().map(|s| s.to_string()).collect(), ..Default::default() }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_persons_own_tests_decide_and_no_tests_is_no_failure() {
+        let (d, stop) = (tempfile::tempdir().unwrap(), CancelToken::default());
+        let tests = |tool: &stacks::Toolchain| own_tests_check(d.path(), Some(tool), &stop);
+        assert!(tests(&stand_in("exit 0", &[])).0);
+        let (passed, note) = tests(&stand_in("echo 'adds: 4 is not 5'; echo; echo '1 failed'; exit 1", &[]));
+        assert!(!passed && note.ends_with("adds: 4 is not 5\n1 failed"), "the summary, not only lines saying error: {note}");
+        let (passed, note) = tests(&stand_in("echo no tests here; exit 5", &["no tests here"]));
+        assert!(passed && note.starts_with("No tests ran"), "{note}");
+        let missing = stacks::Toolchain { test: vec!["no-such-program-here".into()], ..Default::default() };
+        let (passed, note) = tests(&missing);
+        assert!(!passed && note.starts_with("Couldn't run the tests"), "{note}");
+        let (passed, note) = own_tests_check(d.path(), None, &stop);
+        assert!(passed && note.starts_with("No tests ran"), "{note}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_projects_own_copy_of_the_program_comes_first() {
+        let (d, stop) = (tempfile::tempdir().unwrap(), CancelToken::default());
+        std::os::unix::fs::symlink("/bin/sh", d.path().join("own-sh")).unwrap();
+        std::fs::write(d.path().join("own-sh.bat"), "not for this system").unwrap();
+        let test = ["no-such-program-here", "-c", "echo 'error: from its own copy'; exit 1"].map(String::from).to_vec();
+        let tool = stacks::Toolchain { test, local_programs: vec!["not-here".into(), "own-sh.bat".into(), "own-sh".into()], ..Default::default() };
+        let (passed, note) = own_tests_check(d.path(), Some(&tool), &stop);
+        assert!(!passed && note.contains("from its own copy"), "{note}");
+    }
+
+    /// The table's own words, on what the real make (3.81; 4.x quotes alike) and npm (11) print.
+    #[cfg(unix)]
+    #[test]
+    fn only_the_tests_own_absence_means_no_tests() {
+        let (d, stop) = (tempfile::tempdir().unwrap(), CancelToken::default());
+        let named_by = |file: &str| {
+            let f = tempfile::tempdir().unwrap();
+            std::fs::write(f.path().join(file), "").unwrap();
+            stacks::toolchain_in(f.path()).expect("the table has it")
+        };
+        let printing = |tool: &stacks::Toolchain, line: &str| {
+            let test = ["sh", "-c", "printf '%s\\n' \"$1\"; exit 2", "sh", line].map(String::from).to_vec();
+            own_tests_check(d.path(), Some(&stacks::Toolchain { test, ..tool.clone() }), &stop).0
+        };
+        let (make, node) = (named_by("Makefile"), named_by("package.json"));
+        assert!(printing(make, "make: *** No rule to make target `test'.  Stop."));
+        assert!(printing(make, "make: *** No rule to make target 'test'.  Stop."));
+        assert!(!printing(make, "make: *** No rule to make target `fixture.txt', needed by `test'.  Stop."), "a prerequisite is a failure");
+        assert!(!printing(make, "make: *** No rule to make target 'fixture.txt', needed by 'test'.  Stop."));
+        assert!(!printing(make, "make[1]: *** No rule to make target `test'.  Stop."), "a make it runs is a failure");
+        std::fs::write(d.path().join("package.json"), r#"{"scripts":{"test":"npm test --workspaces"}}"#).unwrap();
+        assert!(!printing(node, "npm error Missing script: \"test\""), "one package of several, maybe beside a real failure");
+        assert!(!printing(node, "npm error Missing script: \"verify\""), "a script its tests call is a failure");
+    }
+
+    #[test]
+    fn a_node_project_says_in_its_package_json_whether_it_has_tests() {
+        let (d, stop) = (tempfile::tempdir().unwrap(), CancelToken::default());
+        std::fs::write(d.path().join("package.json"), "").unwrap();
+        let table = stacks::toolchain_in(d.path()).expect("the table has Node.js");
+        let node = stacks::Toolchain { test: vec!["no-such-program-here".into()], ..table.clone() };
+        for json in [r#"{"name":"x"}"#, r#"{"scripts":{"test":"echo \"Error: no test specified\" && exit 1"}}"#] {
+            std::fs::write(d.path().join("package.json"), json).unwrap();
+            let (passed, note) = own_tests_check(d.path(), Some(&node), &stop);
+            assert!(passed && note.starts_with("No tests ran"), "nothing is started: {note}");
+        }
+        let real = r#"{"scripts":{"test":"jest && echo 'no test specified for integration'"}}"#;
+        std::fs::write(d.path().join("package.json"), real).unwrap();
+        let (passed, note) = own_tests_check(d.path(), Some(&node), &stop);
+        assert!(!passed && note.starts_with("Couldn't run the tests"), "it's started: {note}");
+    }
+
+    #[test]
+    fn a_persons_own_unity_project_is_opened_not_built_with_our_script() {
+        let args = own_unity_args(Path::new("/x/game"));
+        assert!(args.iter().any(|a| a == "-batchmode") && args.iter().any(|a| a == "/x/game"), "{args:?}");
+        assert!(!args.iter().any(|a| a == "-executeMethod" || a.contains("CraftBuild")), "{args:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_persons_own_build_is_judged_by_its_toolchain() {
+        let (d, stop) = (tempfile::tempdir().unwrap(), CancelToken::default());
+        assert!(own_build(d.path(), &stand_in("exit 0", &[]), &stop).0);
+        let (passed, note) = own_build(d.path(), &stand_in("echo 'error: no such file'; exit 2", &[]), &stop);
+        assert!(!passed && note.contains("no such file"), "{note}");
+    }
+
+    #[test]
+    fn a_persons_own_project_with_nothing_to_build_says_so() {
+        let stop = CancelToken::default();
+        let notes = tempfile::tempdir().unwrap();
+        std::fs::write(notes.path().join("notes.md"), "ideas").unwrap();
+        let (passed, note) = own_build_check(notes.path(), "the project folder", stacks::BUILDERS_CHOICE, None, &stop);
+        assert!(passed && note.starts_with("Nothing was built"), "{note}");
+        let site = tempfile::tempdir().unwrap();
+        std::fs::write(site.path().join("index.html"), "<p>hi</p>").unwrap();
+        let (passed, note) = own_build_check(site.path(), "the project folder", "Plain HTML and CSS", None, &stop);
+        assert!(passed && note.contains("static site"), "{note}");
+    }
 
     #[test]
     fn the_build_follows_what_was_built_not_the_stack_picked_first() {
