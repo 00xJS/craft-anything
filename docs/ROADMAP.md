@@ -248,7 +248,7 @@ been run live.
       where a cargo or npm project one folder down is, and the Rust steps say `app/Cargo.toml`,
       not a folder inside `app/` (a brief can't say `cargo init`: not every builder's commands
       start in `app/`). Live, with calls after a sentence run too, the model then made
-      `app/Cargo.toml` and the build compiled
+      `app/Cargo.toml` and the build compiled (#751)
 - [ ] The model reads file paths from the project folder and commands from `app/` as one base:
       it ran `cargo init app` and `cd app && cargo build` after writing `app/Cargo.toml`. Say the
       folder in `build_command_run`'s result (or its description) so the two can't be mixed up
