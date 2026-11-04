@@ -1419,3 +1419,8 @@ Nothing of this kind was found.	Ничего такого не найдено.
 Another model	Другая модель
 Fold a project's plan	Свернуть план проекта
 Fold the plan	Свернуть план
+Unreal is here, but its bundled Clang C++ toolchain wasn't found.	Unreal установлен, но встроенная цепочка инструментов Clang C++ не найдена.
+Add Unreal's Linux C++ toolchain	Добавить цепочку инструментов C++ для Linux в Unreal
+Run Engine/Build/BatchFiles/Linux/SetupToolchain.sh in the engine folder to install its bundled Clang toolchain. If you built Unreal from source, Setup.sh downloads the native toolchain instead. A system Clang may not match the engine's version.	Запустите Engine/Build/BatchFiles/Linux/SetupToolchain.sh в папке движка, чтобы установить встроенную цепочку инструментов Clang. При сборке из исходников Setup.sh вместо этого скачивает нативную цепочку инструментов. Системный Clang может не подходить к версии движка.
+Unreal is here, but it also needs Xcode.	Unreal установлен, но также требует Xcode.
+About 60 GB, an Epic Games account, and Xcode.	Около 60 ГБ, аккаунт Epic Games и Xcode.

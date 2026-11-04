@@ -50,7 +50,7 @@ The project should be easy to fork and bend. New features land behind a seam, no
 | Milestone | Goal | Owner | Where it stands (2026-11-02) |
 |---|---|---|---|
 | M0 Foundations | Docs match the code, licences checked, one live end-to-end run | maintainers | Done |
-| M1 Extensibility | Seams for target kinds, checks, builders, asset providers, engines, plugins | maintainers | Done, except engine pins (R1.5) and Unreal's Linux guidance (R1.6) |
+| M1 Extensibility | Seams for target kinds, checks, builders, asset providers, engines, plugins | maintainers | Done, except engine pins (R1.5) |
 | M2 Product completeness | Every kind of target gets study → build → check → refine with a real check | maintainers | Websites complete; apps and games build and run; API-key builds have never run live (R5.5); agents other than Claude Code are only partly wired (R2.2) |
 | M3 Engine depth | More tools, and the known partial ones | open | 314 tools; the open lane |
 | M4 Release | Packaging, signing, a managed tier | maintainers | v0.3.0 released, signed, on every platform; a macOS CLI question and the managed tier remain |
@@ -84,7 +84,7 @@ Issues are ranked by people affected and how badly, after leaving out what's alr
 | 3 | R2.4 Runtime study, R2.5 Behaviour checks | scripted input (R2.4) before R2.5's sheet check | Makes "ready" mean more for apps and games |
 | 3 | R2.7, R2.8 | — | Small gaps left in finished work |
 | 3 | R2.9 Everyday use, R2.10 Pinned builds | — | Open to anyone at any time; most lines stand alone |
-| 3 | R1.5, R1.6 | — | Small leftovers |
+| 3 | R1.5 | — | Small leftovers |
 | Any | M3: R3.3, R3.9, R3.11 | — | Open lane |
 | Later | R4.1 macOS CLI, R4.2 Managed tier | **decision** | Not before M5 |
 
@@ -418,8 +418,11 @@ Owner: open · Status: in progress
 
 ### R1.6 Headless first
 Owner: maintainers · Status: in progress
-- [ ] Give Linux-specific Clang guidance in Unreal's guided installer when the bundled compiler
+- [x] Give Linux-specific Clang guidance in Unreal's guided installer when the bundled compiler
       is missing (the requirements summary is already platform-specific).
+      — claimed: AlexJoaquimPereira, branch `bugfix/r1.6-linux-unreal-clang`
+- [x] Give macOS the right C++ guidance when Xcode is missing: the status line and
+      requirements summary now name Xcode, matching the guided step.
 - [x] Find Visual Studio's C++ tools on Windows when Visual Studio is installed outside Program
       Files (through the Visual Studio Installer's `ProgramData` instance state or developer
       environment variables, #669, [PR #726](https://github.com/storytold/craft-anything/pull/726))
@@ -573,8 +576,11 @@ Owner: open · Status: in progress
       branch bugfix/423-disabled-agent-not-offered
 - [ ] Say plainly when what's found is the Claude desktop app rather than the `claude` program
       (#259, a guess at its cause)
-- [ ] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467); find what
-      writes it (no code for it was found; maybe the file picker)
+- [x] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467). Found: the "Where is
+      the program?" picker (`pick_file`) returns the bundle, and `set_command` saved any path. Refuse a
+      folder or app bundle when it's saved (`set_command`), and don't run one that was saved before
+      (`program_of` uses the usual name). Tests: `an_app_bundle_is_refused_as_an_agents_program`, `program_of`
+      cases. — claimed: fabox-os, branch bugfix/467-agent-program-app-bundle
 - [x] Windows: look in `%LOCALAPPDATA%\agy\bin` too (#62) — claimed: Afloat16, branch bugfix/r2.2-antigravity-search-20261103
 - [x] Windows: `usual_windows_dirs_come_after_path` counts Antigravity's second folder (#748
       added it; the test runs only on Windows, which CI doesn't)

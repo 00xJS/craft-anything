@@ -532,9 +532,20 @@ impl AiHub {
     /// The program an agent app runs (`None` or empty: found by its usual name, on PATH and in the
     /// usual install folders). Returns false when there was no such backend.
     pub fn set_command(&self, name: &str, command: Option<&str>) -> Result<bool, ToolError> {
+        let command = command.map(str::trim).filter(|c| !c.is_empty());
         let mut cfg = self.config_to_change()?;
         let Some(b) = cfg.backends.iter_mut().find(|b| b.config.name == name) else { return Ok(false) };
-        b.options.command = command.map(str::trim).filter(|c| !c.is_empty()).map(str::to_string);
+        // A folder can't be started, and on a Mac an app is one (#467: the file picker returned
+        // `Antigravity.app`). Another computer's path isn't looked at here.
+        let local = b.config.ssh_host.as_deref().is_none_or(|h| h.trim().is_empty());
+        if let Some(c) = command
+            && local
+            && std::path::Path::new(c).is_dir()
+        {
+            return Err(ToolError::invalid(format!("{c} is a folder, so it can't be the agent's program. On a Mac an app is a folder."))
+                .with_remediation("Pick the agent's command-line program instead, such as `agy`, or clear the program to use the usual one."));
+        }
+        b.options.command = command.map(str::to_string);
         self.save_config(&cfg)?;
         Ok(true)
     }

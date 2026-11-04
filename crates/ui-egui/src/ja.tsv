@@ -856,3 +856,8 @@ Nothing of this kind was found.	この種類のものは見つかりませんで
 Another model	別のモデル
 Fold a project's plan	プロジェクトのプランを畳む
 Fold the plan	プランを畳む
+Unreal is here, but its bundled Clang C++ toolchain wasn't found.	Unreal はインストールされていますが、同梱の Clang C++ ツールチェーンが見つかりません。
+Add Unreal's Linux C++ toolchain	Unreal の Linux C++ ツールチェーンを追加
+Run Engine/Build/BatchFiles/Linux/SetupToolchain.sh in the engine folder to install its bundled Clang toolchain. If you built Unreal from source, Setup.sh downloads the native toolchain instead. A system Clang may not match the engine's version.	エンジンのフォルダーで Engine/Build/BatchFiles/Linux/SetupToolchain.sh を実行し、同梱の Clang ツールチェーンをインストールします。ソースからビルドした場合は、代わりに Setup.sh がネイティブツールチェーンをダウンロードします。システムの Clang はエンジンのバージョンと一致しない場合があります。
+Unreal is here, but it also needs Xcode.	Unreal はありますが、Xcode も必要です。
+About 60 GB, an Epic Games account, and Xcode.	約 60 GB、Epic Games アカウント、Xcode が必要です。
