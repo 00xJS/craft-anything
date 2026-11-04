@@ -497,7 +497,8 @@ fn json_action(text: &str) -> Option<ReactStep> {
 /// Every fence must be a complete `json` (or unlabelled) call, and nothing but blank lines may
 /// follow the last one; anything else (other code, a `~~~` fence, a fence inside a fence, an
 /// unclosed fence, words after the call, a JSON object quoted inline) means the reply is text,
-/// as before.
+/// as before. So do the text protocol's own markers in the words (a final answer that ends in an
+/// example is still the answer); inside a call's arguments they're only content.
 fn fenced_calls(text: &str) -> Option<Vec<(String, Value)>> {
     let mut calls = Vec::new();
     let mut lines = text.lines();
@@ -510,6 +511,9 @@ fn fenced_calls(text: &str) -> Option<Vec<(String, Value)>> {
         }
         let length = opening.bytes().take_while(|byte| *byte == b'`').count();
         if length < 3 {
+            if ["Final Answer:", "Action:"].into_iter().any(|marker| line.contains(marker)) {
+                return None;
+            }
             words_after |= !opening.is_empty() && !calls.is_empty();
             continue;
         }
@@ -579,15 +583,9 @@ fn react_postprocess(r: &mut TurnResult, tools: &[ToolDef], react: bool) {
     let text = r.message.text();
     let json_call = json_action(&text);
     let from_json = json_call.is_some();
-    // Calls after a sentence run only when every one names a tool the model was offered, and
-    // never in a reply that uses the text protocol's own markers (a final answer that ends in an
-    // example is still the answer).
+    // Calls after a sentence run only when every one names a tool the model was offered.
     let offered = |tool: &str| tools.iter().any(|definition| definition.name == tool);
-    let protocol = ["Final Answer:", "Action:"].into_iter().any(|marker| text.contains(marker));
-    if !from_json
-        && !protocol
-        && let Some(calls) = fenced_calls(&text).filter(|calls| calls.iter().all(|(tool, _)| offered(tool)))
-    {
+    if !from_json && let Some(calls) = fenced_calls(&text).filter(|calls| calls.iter().all(|(tool, _)| offered(tool))) {
         for (tool, input) in calls {
             let n = REACT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             r.message.blocks.push(Block::ToolUse { id: format!("react_{n}"), name: tool, input });
@@ -653,6 +651,11 @@ mod tests {
         let mut r = turn(&several);
         react_postprocess(&mut r, &[tool("look")], false);
         assert!(r.message.tool_uses().is_empty() && r.stop == StopReason::EndTurn, "one isn't offered: none run");
+        // The markers inside a call's arguments are only what it writes.
+        let notes = "Writing the notes.\n```json\n{\"name\":\"write\",\"arguments\":{\"content\":\"Action: save\\nFinal Answer: done\"}}\n```";
+        let mut r = turn(notes);
+        react_postprocess(&mut r, &[tool("write")], false);
+        assert_eq!(r.message.tool_uses().len(), 1, "{notes}");
         // A final answer that ends in an example stays the answer.
         let answer = format!("Final Answer: it's built. To list the files again:\n{}", call("look"));
         for react in [false, true] {
