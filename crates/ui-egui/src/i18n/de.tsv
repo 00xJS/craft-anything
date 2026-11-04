@@ -1417,6 +1417,8 @@ Providers	Anbieter
 Harnesses	Agenten
 Nothing of this kind was found.	Nichts dieser Art wurde gefunden.
 Another model	Anderes Modell
+Fold a project's plan	Den Plan eines Projekts einklappen
+Fold the plan	Den Plan einklappen
 The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.	Die Claude-Desktop-App ist installiert, aber zum Bauen wird Claude Code gebraucht, ihr eigenes Kommandozeilen-Tool. Installiere Claude Code, melde dich einmal in einem Terminal dort an und suche dann erneut.
 Unreal is here, but its bundled Clang C++ toolchain wasn't found.	Unreal ist da, aber die mitgelieferte Clang-C++-Toolchain wurde nicht gefunden.
 Add Unreal's Linux C++ toolchain	Unreals Linux-C++-Toolchain hinzufügen

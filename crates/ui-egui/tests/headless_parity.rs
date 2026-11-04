@@ -55,6 +55,7 @@ const ACTIONS: &[Action] = &[
     a("add_project_folder",  "list projects from another folder too",          Tool(&["settings_set"])),
     a("remove_project_folder", "stop listing a folder's projects",             Tool(&["settings_set"])),
     a("open_workspace",      "show one project, its feed and checks",          Tool(&["project_show"])),
+    a("fold_plan",           "fold the builder's plan card away (between builds)", Tool(&["project_plan_fold"])),
     a("rename_project",      "give a project a new name",                      Tool(&["project_rename"])),
     a("duplicate_project",   "copy a project to try something else",           Tool(&["project_duplicate"])),
     a("delete_project",      "delete a project, keeping the person's files",   Tool(&["project_delete"])),

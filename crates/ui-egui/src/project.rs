@@ -35,6 +35,18 @@ impl CraftApp {
         self.workspace.as_ref().and_then(|ws| self.runs.get(&ws.root))
     }
 
+    /// Fold the open project's plan card (#504). Only between runs: the saved conversation keeps
+    /// the steps, and a later run's checklist shows again.
+    fn fold_plan(&mut self) {
+        let Some(ws) = &self.workspace else { return };
+        match craft_anything_engine::feed::dismiss_plan_saved(ws) {
+            Ok(_) => {
+                craft_anything_engine::feed::dismiss_plan(&mut self.state.feed);
+            }
+            Err(e) => self.toast(e.message, true),
+        }
+    }
+
     /// The open project's place in the queue (1 starts next).
     pub fn queue_position(&self) -> Option<usize> {
         self.workspace.as_ref().and_then(|ws| self.runs.position(&ws.root))
@@ -601,21 +613,26 @@ pub enum Thumb {
     Missing,
 }
 
-/// The open project's checklist, if the builder made one.
+/// The open project's checklist, if the builder made one and the person hasn't folded it (#504).
 fn plan(feed: &[FeedItem]) -> Option<&[PlanStep]> {
-    feed.iter().find_map(|i| if let FeedItem::Plan(p) = i { Some(p.as_slice()) } else { None })
+    craft_anything_engine::feed::visible_plan(feed)
 }
 
 /// The builder's checklist, pinned above the prompt box: what's done, what it's on now, what's
 /// next, and while it works how long it has been at it. Shown while it works, and afterwards only
-/// if something was left undone.
-fn checklist(ui: &mut Ui, steps: &[PlanStep], t: &Tokens, began: Option<std::time::Instant>) {
+/// if something was left undone. `fold` offers a control to fold it away (between runs); the
+/// returned flag says the person pressed it.
+fn checklist(ui: &mut Ui, steps: &[PlanStep], t: &Tokens, began: Option<std::time::Instant>, fold: bool) -> bool {
     let done = steps.iter().filter(|s| s.status == PlanStatus::Done).count();
+    let mut folded = false;
     widgets::card(t).inner_margin(Margin::symmetric(16, 12)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             widgets::caption(ui, "Plan");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if fold && icons::button(ui, "x", 18.0, false, &tr("Fold the plan")).clicked() {
+                    folded = true;
+                }
                 if let Some(b) = began {
                     ui.label(RichText::new(crate::usage::duration_words(b.elapsed())).font(theme::mono(12.0)).color(t.text_faint));
                     ui.add(crate::widgets::Spinner::new().size(12.0).color(t.accent));
@@ -655,6 +672,7 @@ fn checklist(ui: &mut Ui, steps: &[PlanStep], t: &Tokens, began: Option<std::tim
             });
         }
     });
+    folded
 }
 
 /// What the Project screen shows from the project's files, read on a worker when the project
@@ -1315,7 +1333,7 @@ fn draw_items(
             FeedItem::Work { tools, notes } if advanced => work(ui, tools, notes, advanced, &t),
             FeedItem::Work { .. } => {}
             // Pinned above the prompt box instead (see `checklist`).
-            FeedItem::Plan(_) => {}
+            FeedItem::Plan(_) | FeedItem::PlanDismissed => {}
             FeedItem::Ask { request, answer } => {
                 if let Some(a) = ask_card(app, ui, request, answer.as_deref()) {
                     answers.push(a);
@@ -1665,7 +1683,11 @@ fn composer(app: &mut CraftApp, ui: &mut Ui, width: f32, t: &Tokens) {
     let running = app.running();
     if let Some(steps) = plan(&app.state.feed).filter(|p| running || p.iter().any(|s| s.status != PlanStatus::Done)) {
         let began = app.open_run().filter(|_| running).map(RebuildRun::started);
-        ui.allocate_ui(Vec2::new(width, 0.0), |ui| checklist(ui, steps, t, began));
+        let mut fold = false;
+        ui.allocate_ui(Vec2::new(width, 0.0), |ui| fold = checklist(ui, steps, t, began, !running));
+        if fold {
+            app.fold_plan();
+        }
         ui.add_space(8.0);
     }
     if let Some(n) = app.queue_position() {
