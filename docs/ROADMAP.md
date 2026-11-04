@@ -543,8 +543,10 @@ Owner: open · Status: in progress
       and add search paths only for a new report that has that output
 - [ ] Say plainly when what's found is the Claude desktop app rather than the `claude` program
       (#259, a guess at its cause)
-- [ ] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467); find what
-      writes it (no code for it was found; maybe the file picker)
+- [ ] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467). Found: the "Where is
+      the program?" picker (`pick_file`) returns the bundle, and `set_command` saved any path. Refuse a
+      folder or app bundle when it's saved, and don't run one that was saved before — claimed: fabox-os,
+      branch bugfix/467-agent-program-app-bundle
 - [x] Windows: look in `%LOCALAPPDATA%\agy\bin` too (#62) — claimed: Afloat16, branch bugfix/r2.2-antigravity-search-20261103
 - [x] Windows: `usual_windows_dirs_come_after_path` counts Antigravity's second folder (#748
       added it; the test runs only on Windows, which CI doesn't)
