@@ -391,6 +391,41 @@ fn the_builders_checklist_is_pinned_above_the_prompt_box() {
     h.get_by_label("Keep score");
 }
 
+/// #826: a long plan scrolls instead of pushing the feed away, and the divider above it sets how
+/// tall it is, with the keyboard too; a double-click goes back to the usual height.
+#[test]
+fn a_long_plan_scrolls_and_its_divider_sets_its_height() {
+    use craft_anything_ui_egui::state::{FeedItem, PlanStatus, PlanStep};
+    const DIVIDER: &str = "Drag to give the plan more or less room; double-click to reset";
+    let mut h = harness(move || {
+        let mut a = demo::app(demo::engine(Mode::Beginner, true));
+        demo::fill_project(&mut a);
+        let steps = (1..=40).map(|n| PlanStep { text: format!("Step {n}"), doing: String::new(), status: PlanStatus::Todo }).collect();
+        a.state.feed.push(FeedItem::Plan(steps));
+        a
+    });
+    h.run_steps(3);
+    let top = |h: &Harness<'static, CraftApp>| h.get_by_label(DIVIDER).rect().top();
+    let usual = top(&h);
+    assert!(usual > 820.0 / 3.0, "the feed keeps room above a long plan: the plan starts at {usual}");
+    h.get_by_label(DIVIDER).focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::ArrowUp);
+    h.run_steps(3);
+    let taller = h.state().state.plan_height.expect("Up gives the plan more room");
+    assert!((top(&h) - (usual - 24.0)).abs() < 1.0, "the plan grew upwards by a step: {} from {usual}", top(&h));
+    // Both clicks in one frame, so they're a double-click.
+    let at = h.get_by_label(DIVIDER).rect().center();
+    h.hover_at(at);
+    h.step();
+    for pressed in [true, false, true, false] {
+        h.input_mut().events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE });
+    }
+    h.run_steps(3);
+    assert_eq!(h.state().state.plan_height, None, "a double-click resets {taller}");
+    assert!((top(&h) - usual).abs() < 1.0);
+}
+
 #[test]
 fn the_sidebar_lists_projects_and_moves_between_them() {
     let mut h = harness(|| {
