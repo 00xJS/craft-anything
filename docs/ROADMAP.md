@@ -167,6 +167,10 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 - [ ] **decision** Replies don't reach people who file through the ticket relay (each such ticket
       says so), yet the bot asks them for details. About half the open issues came that way. Get
       replies back to them, or stop asking
+- [ ] `which::tests::usual_windows_dirs_come_after_path` (platform) fails on a Windows machine
+      whose environment adds a folder (10 found, 9 expected, "nothing twice"), on `main` too; and
+      `capture::console_tests::reads_what_the_program_drew_and_stops_at_the_deadline` failed once
+      with the whole platform suite running and passes alone. Find what each depends on
 - [ ] `a_helper_is_judged_by_whether_it_runs` (ai crate) sometimes fails when several crates'
       tests run at once and passes alone: it writes a script and runs it straight away, which a
       busy machine can refuse while another test's child still holds the file open
@@ -219,6 +223,21 @@ Every round spends the person's money or quota. One that can't do anything shoul
       fired on a local Ollama build (the same built-in loop) after two turns that changed nothing
       in `app/` ("The build stopped after two builder turns changed no files in app/…"); an
       API-key build is still owed
+- [x] #736: the build check and the stop message say when `app/` is empty, so a builder that
+      claims a build can't hide that nothing was written. v0.3.0 (the reporter's release) had no
+      stop after two unchanged turns (#557, merged after it); main stops, and this adds the
+      empty-folder wording to the build check (it failed first, before #749's website check) and
+      to the stop message — claimed: claude, branch bugfix/r5.3-empty-app-loop
+
+- [x] A build whose checks keep finding no working build stops after 10 in a row, across "Try again"
+      presses, until a new request starts the count again (`NOT_WORKING_CHECK_LIMIT`, kept in craft.json as
+      `not_working_checks`). "Try again" used to start six more rounds every time with nothing counted across
+      runs, so #736's build went on to check 40 and 49 times. A run at the limit stops before a builder turn.
+      The unchanged-turn guard already stops a builder that writes nothing; #736's exact Windows run (gemini-cli)
+      is not reproduced here. An empty `app/` is named as having no files yet (#771's wording) and the builder is asked to
+      write the project and show its build's output, not to fix a build (`NO_PROJECT_PROMPT`). — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
+- [ ] Live-check #736 on Windows with gemini-cli: an empty app/ and a builder that claims `npm run build`
+      stops after two turns (or 10 checks) with the "no files yet" note, and Try again doesn't restart it
 
 ### R5.4 Local models can build
 Owner: open · Status: todo
@@ -235,9 +254,10 @@ been run live.
       text, not on a model; Ollama's default context (4k) was too small for the old list alone
 - [x] Run #417's case live (Ollama, `qwen2.5-coder:14b`, "a scientific calculator") before and
       after this: does it call `build_file_write` now? If it still doesn't, the model can't build.
-      Yes, with the three fixes below: it wrote and edited `app/Cargo.toml` and `app/src/main.rs`
-      over about 50 calls, fixed two compile errors the checks reported, and check 3 said "Build
-      succeeded". It stopped at the round limit without the `--screenshot` option (#753)
+      Yes, with the three fixes below: over about 50 calls it wrote `app/Cargo.toml` (eframe), fixed
+      the two errors the checks reported, and check 3 said "Build succeeded". But `src/main.rs` was
+      still cargo's "Hello, world!": no calculator was written, and the screenshot check rightly
+      failed it at the round limit (#753)
 - [x] The system prompt told every model to call `core_brief_write` and `core_plan_update` first and
       `core_handoff_write` last, tools a lean local builder isn't offered, so the model asked only
       for `core_brief_write` and did nothing else for three checks. A lean builder's prompt leaves
@@ -248,9 +268,10 @@ been run live.
       tool, with only words before or between them, now runs them all (`fenced_calls`, ids
       `react_N` as other text calls); words after the last fence, other code, an unclosed fence or
       a tool that wasn't offered keep it text (#753)
-- [ ] A local builder doesn't add the `--screenshot` option the check needs before the round limit:
-      run 4 compiled at check 3, its last. See whether more rounds get there, or whether a small
-      model needs the option written for it (a template in the Rust steps)
+- [ ] A local builder spends its rounds on the project file and never writes the app: run 4 had a
+      compiling `Cargo.toml` by check 3, its last, with `main.rs` still "Hello, world!". See whether
+      more rounds get there, or whether a small model needs the window and the `--screenshot`
+      option written for it (a template in the Rust steps)
 - [x] The model ran `cargo new app` in `app/` (commands run there), so the project landed in
       `app/app/` and every check said "No project to build found in app/ yet". The check now says
       where a cargo or npm project one folder down is, and the Rust steps say `app/Cargo.toml`,
@@ -388,6 +409,9 @@ yet, and the quick start is how every new person begins.
 
 ### R1.5 External engine trait in L3
 Owner: open · Status: in progress
+- [x] Find Chrome, Brave, Chromium and Edge installed as Flatpaks on Linux (system and per-user
+      exports), and keep a Flatpak or Snap browser's private profile in the home folder its
+      sandbox shares, since its /tmp is its own (#747). Unit-tested; not run on a real Flatpak
 - [ ] More pins once their hashes are checked against the publisher: Chromium (no published
       checksums found yet), Rizin for Linux (the tar.xz unpacks to ~800 MB, so it needs streaming
       extraction) and macOS (a .pkg)
@@ -541,6 +565,12 @@ Owner: open · Status: in progress
 - [ ] #105, #135, #259, #385 and #423 predate 0.3.0, which looks in more places, and came through
       the ticket relay, so nobody can ask them for `doctor` output. Close them pointing at 0.3.0,
       and add search paths only for a new report that has that output
+- [x] #423: an agent that is set up but switched off is never offered again, so "No coding agent was
+      found" stays on screen with Claude installed: the setup card and "Look again" leave out every saved
+      AI by name, on or off. Offer a switched-off agent as found and turn it on, keeping its options.
+      Cause is not confirmed on the reporter's machine (needs their config.toml); the fix covers the
+      switched-off case that the code leaves out (`is_on`, `leave_out_set_up`, `builder_backend`). — claimed: fabox-os,
+      branch bugfix/423-disabled-agent-not-offered
 - [ ] Say plainly when what's found is the Claude desktop app rather than the `claude` program
       (#259, a guess at its cause)
 - [x] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467). Found: the "Where is
@@ -633,6 +663,10 @@ Gaps found while using the app for real projects.
 - [ ] A question's own cost: a forked Claude Code session reports the whole session's running
       total, so a forked answer shows none; count questions in the project's usage
 - [ ] "Make this change" on an answer that suggests one (sends it as a normal message)
+- [x] #666: a long line in a feed's tool-work row (a Deep-mode decompile, a status note) ran off
+      the window and pushed the feed left; the header title can't wrap in egui, so it's the note's
+      first line now, cut at 90 characters, and the full note wraps in the body — claimed: claude,
+      branch bugfix/r2.9-feed-text-overflow
 - [ ] **decision** A program started from the CLI (`project_play`) keeps the shell's output pipe
       open, so the command doesn't return until it closes (#207). Every fix found needs `unsafe` or
       an unstable API: an exception to rule 9, or a limit we document. Meanwhile a reproducing test
@@ -645,9 +679,13 @@ Gaps found while using the app for real projects.
 - [x] Release the keep-awake helper before a rebuild reports `Finished`, waiting up to five seconds
       for its supervised cleanup and logging a timeout. Real subprocess stand-ins checked on Linux (#541)
       — claimed: Afloat16, branch bugfix/r2.9-keep-awake-cleanup-20261103
-- [ ] Recheck keep-awake cleanup with a real Windows CLI `rebuild`: the helper once outlived it by
-      more than 9 minutes and held the caller's output pipe; not reproduced in 8 more runs. The
-      bounded cleanup change has been checked with Linux stand-ins, not this Windows incident
+- [x] Recheck keep-awake cleanup with a real Windows CLI `rebuild`: the helper once outlived it by
+      more than 9 minutes and held the caller's output pipe; not reproduced in 8 more runs. Found:
+      closing the desktop app during a build ends it without dropping the guard, and the helper
+      (an endless PowerShell loop, started with a week's time limit) carried on. It now ends by
+      itself once the process it serves is gone: the Windows loop checks that process every 30 s,
+      and macOS uses `caffeinate -w`. Live on Windows: a CLI build killed outright, its helper
+      ended 30 s later. Not run on a Mac
 - [ ] Find why a site capture lost its browser ("the WebSocket is closed", 419 ms into
       `web_site_capture` for a second page, seen once; the same capture passed 41 s earlier)
 - [ ] Claude Code's Ultracode switch (a setting, not an effort level; the effort environment
@@ -765,6 +803,14 @@ Owner: open · Status: in progress
       ROMFS dot roots, cramfs, ext and JFFS2 sizes and holes, PyInstaller modules outside their
       PYZ, JSON config edits (comments kept, every duplicate key removed), and UDP, TCP, DNS over
       TCP, pcapng and TLS lengths (#688–#715, by Afloat16)
+
+- [x] Address the combined parser review: preserve partial Java reference coverage,
+      enforce DEX signed 32-bit LEB128 limits, recover legacy AAPT UTF-8 lengths within
+      their pool with a shared recovery probe limit, and distinguish missing ext indirect
+      metadata from sparse holes.
+      — claimed: Afloat16, branch bugfix/r3.12-parser-review-followups-main-20261104
+      Shared-budget revision `29c48e03` passed [full Linux CI](https://github.com/storytold/craft-anything/actions/runs/41762780268).
+      The merge with main `41d2175e` awaits a new CI run.
 
 ### R3.13 Web inspection correctness
 Owner: open · Status: in progress

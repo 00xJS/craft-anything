@@ -63,6 +63,12 @@ comments were acted on; the fixes went to its branch and the threads were answer
 `main` had the code without them. Read `gh pr view --json state,headRefOid` before pushing to a PR's
 branch, and land anything late in a new PR from `main`.
 
+**A report checked against main, not the release it ran.** #736 (a build looping on an empty `app/`)
+was read against main, where the stop after two unchanged turns already existed, so it looked fixed.
+The reporter ran v0.3.0, which had neither that stop (#557) nor the empty-folder note (#749); both
+merged the day after it shipped. Before calling a report fixed or still open, find the release it
+names (`git merge-base --is-ancestor <fix> <release tag>`), and check the message text it quotes.
+
 ## Tests
 
 **A test started a real download on a contributor's machine.** A test called `engines_install` for
@@ -103,6 +109,12 @@ CI the banner moved the layout under another test running beside it, and its cli
 **Fixtures that leak into each other.** A "nothing here" path sat beside a fake game folder in the
 same temp directory, and game detection walked up and found the game. Give each case its own
 `tempfile::tempdir()`.
+
+**A script written and run at once.** Tests that write a stand-in program and start it failed now
+and then on Linux with "Text file busy": another test thread was starting a child at that moment,
+and the child still held the new file open for writing. Starting a program goes through
+`process::spawn_retrying`, which tries a busy file again for a moment; don't add a sleep to a test
+instead.
 
 **Proving a refactor changed nothing.** Unit tests that check substrings can miss changed prompts.
 For a refactor that must keep output identical, dump the outputs for every combination before and
@@ -306,6 +318,12 @@ at the wrong tree (the cargo commands `ci` runs use the folder they're started i
 worktree its own `CARGO_TARGET_DIR`, and rebuild `xtask` (or delete it from `target/`) after
 sharing one.
 
+**A helper stopped only by a destructor.** The keep-awake helper was stopped when its guard was
+dropped; closing the desktop app during a build ended the process without dropping it, and the
+PowerShell loop kept the computer awake (its time limit was a week). A helper that outlives a
+crash is a leak: have it watch the process it serves and end by itself (`caffeinate -w`, a loop
+that checks the PID), and test by killing the owner, not by dropping the guard.
+
 **Stopping a long run leaves children behind** unless every program goes through
 `craft_anything_platform::process`. After stopping one, check that its child processes are gone.
 
@@ -505,6 +523,11 @@ and run `cargo xtask secrets` before every commit (the `.githooks/pre-commit` ho
 
 **An empty float sum is `-0.0`.** `iter().map(..).sum::<f64>()` over nothing gives `-0.0`, which
 `{:.2}` shows as "$-0.00". Sum money with `fold(0.0, ..)`.
+
+**A per-run budget that a retry resets.** The build's refinement cap (`max_rounds`) counted from zero on every
+run, while the round numbers carried over, so "Try again" bought six more checks each press and a build that never
+worked reached check 40 and 49 (#736). A limit that must hold across runs is a count saved with the project, and
+it's reset only by a new request. Test it with several runs in a row, not one.
 
 **Docs that drift.** `STATUS.md` described a branch 25 commits old and the tool count was stale.
 Update STATUS, the roadmap and generated docs (`cargo xtask tools`, `cargo xtask schemas`) in the
