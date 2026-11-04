@@ -787,7 +787,8 @@ impl Worker {
                 }
             }
             round += 1;
-            self.step(ws, Step::Check, Status::Checking, "Checking the build against the original…")?;
+            let checking = if ws.manifest.target == TargetRef::None { "Checking the build…" } else { "Checking the build against the original…" };
+            self.step(ws, Step::Check, Status::Checking, checking)?;
             let checks = self.checks_with_a_retry(ws, kind, round)?;
             ws.manifest.checks.extend(checks.iter().cloned());
             ws.manifest.awaiting_check = false;
@@ -1163,21 +1164,33 @@ fn not_working(ws: &Workspace) -> ToolError {
 /// build printed. The reporter's agent claimed `npm run build` had passed while app/ was empty (#736).
 const NO_PROJECT_PROMPT: &str = "The check found no project: app/ has no files, so nothing has been written yet and nothing can be built. Create the project's files in app/ now (for a website, a package.json and an index.html or the source files), then build it. Reply with the exact command you ran and the last lines of its output. Say something is built only when that output says so.";
 
-/// Whether app/ holds no files or folders at all, so the builder has written no project.
-fn app_is_empty(ws: &Workspace) -> bool {
-    std::fs::read_dir(ws.app_dir()).map(|mut entries| entries.next().is_none()).unwrap_or(true)
+fn no_build_progress(ws: &Workspace) -> ToolError {
+    let stop = format!("The build stopped after two builder turns changed no files in {}.", ws.app_place());
+    // #736: an empty app/ means the builder never wrote the project, whatever its replies said.
+    if app_is_empty(ws) {
+        ToolError::new(ErrorCode::OverLimit, format!("{stop} {}", no_files_yet(ws)))
+            .with_remediation("Send a new request that asks for the project's files in app/ (such as package.json and index.html), or try another builder.")
+    } else {
+        ToolError::new(ErrorCode::OverLimit, stop)
+            .with_remediation("Send a new request with a concrete correction, or edit the app's files before trying again.")
+    }
 }
 
-fn no_build_progress(ws: &Workspace) -> ToolError {
-    if app_is_empty(ws) {
-        return ToolError::new(
-            ErrorCode::OverLimit,
-            format!("The build stopped: after two builder turns, {} still has no files, so no project was written.", ws.app_place()),
-        )
-        .with_remediation("Send a new request that names the project's files and where to put them, or check which folder the agent writes to.");
-    }
-    ToolError::new(ErrorCode::OverLimit, format!("The build stopped after two builder turns changed no files in {}.", ws.app_place()))
-        .with_remediation("Send a new request with a concrete correction, or edit the app's files before trying again.")
+/// Whether the builder has written nothing into app/ (#736). A project folder always holds the
+/// workspace's own files, so only app/ can be empty.
+fn app_is_empty(ws: &Workspace) -> bool {
+    !ws.manifest.app_in_root && folder_is_empty(&ws.app_dir())
+}
+
+/// Whether a folder holds nothing: no files or folders, or no folder at all.
+fn folder_is_empty(dir: &Path) -> bool {
+    std::fs::read_dir(dir).map(|mut entries| entries.next().is_none()).unwrap_or(true)
+}
+
+/// Said when app/ is empty, so a builder that claims it built the project can't hide that nothing
+/// was written (#736).
+fn no_files_yet(ws: &Workspace) -> String {
+    format!("{} has no files yet, so the builder hasn't written the project.", ws.app_place())
 }
 
 /// Why a coding agent can't build: never signed in, or signed in `before` with a sign-in that no

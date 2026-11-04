@@ -78,7 +78,7 @@ fn run_idle_builder(create_app_dir: bool) -> (ToolError, Vec<Vec<Msg>>) {
 fn an_idle_builder_with_an_empty_app_stops_after_two_turns() {
     for create_app_dir in [true, false] {
         let (error, requests) = run_idle_builder(create_app_dir);
-        assert!(error.message.contains("no project was written"), "app dir {create_app_dir}: {error:?}");
+        assert!(error.message.contains("has no files yet"), "app dir {create_app_dir}: {error:?}");
         assert!(
             requests.len() <= 3,
             "app dir {create_app_dir}: the builder was asked {} times; it should stop after two turns that changed nothing",
@@ -87,13 +87,13 @@ fn an_idle_builder_with_an_empty_app_stops_after_two_turns() {
     }
 }
 
-/// #736: with app/ empty, the stop says no project was written, and the builder is told to write
+/// #736: with app/ empty, the stop says app/ has no files yet, and the builder is told to write
 /// the project's files (not to fix a build) and to show the build's output.
 #[test]
 fn an_empty_app_is_said_to_have_no_project() {
     let (error, requests) = run_idle_builder(true);
-    assert!(error.message.contains("no project was written"), "{error:?}");
-    assert!(error.remediation.as_deref().unwrap_or_default().contains("names the project's files"), "{error:?}");
+    assert!(error.message.contains("has no files yet"), "{error:?}");
+    assert!(error.remediation.as_deref().unwrap_or_default().contains("asks for the project's files"), "{error:?}");
     let second = requests.get(1).map(|m| m.iter().map(Msg::text).collect::<String>()).unwrap_or_default();
     assert!(second.contains("app/ has no files"), "the next prompt says so: {second}");
     assert!(second.contains("exact command you ran"), "and asks for the build's output: {second}");

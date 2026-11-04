@@ -429,6 +429,11 @@ fn is_zero(n: &u32) -> bool {
 }
 
 impl Manifest {
+    /// The person's own project: their files are the app, edited in place, with nothing to recreate.
+    pub fn own_project(&self) -> bool {
+        self.app_in_root && self.target == TargetRef::None
+    }
+
     fn new(name: &str, request: &str, target: TargetRef) -> Manifest {
         let now = now_ms();
         Manifest {

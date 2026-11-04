@@ -63,6 +63,12 @@ comments were acted on; the fixes went to its branch and the threads were answer
 `main` had the code without them. Read `gh pr view --json state,headRefOid` before pushing to a PR's
 branch, and land anything late in a new PR from `main`.
 
+**A report checked against main, not the release it ran.** #736 (a build looping on an empty `app/`)
+was read against main, where the stop after two unchanged turns already existed, so it looked fixed.
+The reporter ran v0.3.0, which had neither that stop (#557) nor the empty-folder note (#749); both
+merged the day after it shipped. Before calling a report fixed or still open, find the release it
+names (`git merge-base --is-ancestor <fix> <release tag>`), and check the message text it quotes.
+
 ## Tests
 
 **A test started a real download on a contributor's machine.** A test called `engines_install` for
@@ -107,6 +113,12 @@ same temp directory, and game detection walked up and found the game. Give each 
 **Proving a refactor changed nothing.** Unit tests that check substrings can miss changed prompts.
 For a refactor that must keep output identical, dump the outputs for every combination before and
 after and compare them byte for byte (done for every brief across 162 combinations in R1.1).
+
+**A Windows-only test that no check ran.** #748 added a second Antigravity folder to the search
+path; the Windows test that counts those folders wasn't updated, and `main` stayed green because CI
+runs on Ubuntu, where `cfg(windows)` tests don't compile. When a change touches a list a
+`cfg(windows)` (or macOS) test checks, grep for it and run it on that system, or say in the PR that
+you couldn't.
 
 **A step moved to a worker, its test still counting frames.** #720 moved the picture size check
 off the UI thread; a UI test that added pictures, ran three frames and then looked kept passing on
@@ -299,6 +311,12 @@ reads files itself (`pending`, `secrets`, `layers`, `locks`, `tools --check`…)
 at the wrong tree (the cargo commands `ci` runs use the folder they're started in). Give every
 worktree its own `CARGO_TARGET_DIR`, and rebuild `xtask` (or delete it from `target/`) after
 sharing one.
+
+**A helper stopped only by a destructor.** The keep-awake helper was stopped when its guard was
+dropped; closing the desktop app during a build ended the process without dropping it, and the
+PowerShell loop kept the computer awake (its time limit was a week). A helper that outlives a
+crash is a leak: have it watch the process it serves and end by itself (`caffeinate -w`, a loop
+that checks the PID), and test by killing the owner, not by dropping the guard.
 
 **Stopping a long run leaves children behind** unless every program goes through
 `craft_anything_platform::process`. After stopping one, check that its child processes are gone.

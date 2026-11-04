@@ -2280,10 +2280,12 @@ fn with_nothing_to_build_with_start_offers_what_was_found_instead_of_a_dead_end(
     h.run_steps(3);
     h.get_by_label("Building needs a coding agent such as Claude Code, or an AI with an API key.");
     h.state_mut().state.make.request = "A notes app".into();
+    // The fixture supplies discovery results; keep host detection out of this UI test.
+    h.state_mut().detecting = true;
     h.state_mut().start_make();
     h.run_steps(2);
     assert_eq!(h.state().state.modal, Some(Modal::NeedBuilder { start: true }));
-    // Found on this computer meanwhile (detection runs when the dialog opens).
+    // The simulated discovery has now found an agent.
     h.state_mut().detecting = false;
     h.state_mut().detected = Some(demo::detected());
     h.run_steps(2);
