@@ -110,6 +110,12 @@ CI the banner moved the layout under another test running beside it, and its cli
 same temp directory, and game detection walked up and found the game. Give each case its own
 `tempfile::tempdir()`.
 
+**A script written and run at once.** Tests that write a stand-in program and start it failed now
+and then on Linux with "Text file busy": another test thread was starting a child at that moment,
+and the child still held the new file open for writing. Starting a program goes through
+`process::spawn_retrying`, which tries a busy file again for a moment; don't add a sleep to a test
+instead.
+
 **Proving a refactor changed nothing.** Unit tests that check substrings can miss changed prompts.
 For a refactor that must keep output identical, dump the outputs for every combination before and
 after and compare them byte for byte (done for every brief across 162 combinations in R1.1).
