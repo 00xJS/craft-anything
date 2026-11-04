@@ -49,9 +49,10 @@ pub fn keep_awake() -> Option<KeepAwake> {
 fn keep_awake_while(owner: u32, every: std::time::Duration) -> Option<KeepAwake> {
     // ES_CONTINUOUS | ES_SYSTEM_REQUIRED (0x80000001, in decimal: Windows PowerShell reads the hex
     // literal as a negative Int32), held by the helper's thread until it's stopped. Any failure
-    // ends the helper, so it never runs without doing its job.
+    // ends the helper, so it never runs without doing its job. The owner is opened once and its
+    // handle kept, so Windows can't give its id to another process the helper would then serve.
     let windows = format!(
-        "$ErrorActionPreference = 'Stop'; $k = Add-Type -Name P -Namespace CraftAnything -PassThru -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern uint SetThreadExecutionState(uint f);'; while (Get-Process -Id {owner} -ErrorAction SilentlyContinue) {{ if ($k::SetThreadExecutionState(2147483649) -eq 0) {{ exit 1 }}; Start-Sleep -Seconds {} }}",
+        "$ErrorActionPreference = 'Stop'; $k = Add-Type -Name P -Namespace CraftAnything -PassThru -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern uint SetThreadExecutionState(uint f);'; $o = Get-Process -Id {owner}; $null = $o.Handle; while (-not $o.HasExited) {{ if ($k::SetThreadExecutionState(2147483649) -eq 0) {{ exit 1 }}; Start-Sleep -Seconds {} }}",
         every.as_secs().max(1)
     );
     let p = if cfg!(windows) {
