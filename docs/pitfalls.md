@@ -742,3 +742,8 @@ arrived as fragments that never parsed and the plugin failed as a `tools/list` t
 same server answered a direct probe in under a second. A cap protects memory, but a JSON-RPC line
 must arrive whole to parse at all: keep the cap at the size the MCP client already allows, and test
 with a multi-megabyte line, not a short one.
+
+**A capture budget checked before deduplication changed the replay.** Redaction expanded a repeated
+body, so its second copy was rejected before it could be discarded as a duplicate. Apply aggregate
+budgets only to distinct bodies actually retained. When a budget removes a body, preserve unavailable
+cached 304 responses and deduplicate identical omitted samples.
