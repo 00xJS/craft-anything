@@ -412,6 +412,11 @@ impl AiHub {
         detect::detect_all().into_iter().filter(|d| !have.contains(&d.suggestion.name)).collect()
     }
 
+    /// Why a coding agent people expect may not be found (only the Claude desktop app, say).
+    pub fn detect_hints(&self) -> Vec<detect::DetectHint> {
+        detect::hints()
+    }
+
     /// Host aliases from `~/.ssh/config`, for the "run on another machine" picker.
     pub fn ssh_hosts(&self) -> Vec<String> {
         ssh::ssh_hosts()

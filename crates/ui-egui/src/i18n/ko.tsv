@@ -1417,3 +1417,4 @@ Providers	제공자
 Harnesses	에이전트
 Nothing of this kind was found.	이런 종류는 찾지 못했습니다.
 Another model	다른 모델
+The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.	Claude 데스크톱 앱은 설치되어 있지만, 빌드에는 별도의 명령줄 도구인 Claude Code가 필요합니다. Claude Code를 설치하고 터미널에서 한 번 로그인한 다음 다시 찾아보세요.

@@ -397,6 +397,16 @@ pub fn need_builder_modal(app: &mut CraftApp, ui: &mut Ui, start: bool, close: &
         });
     } else if found.is_empty() {
         ui.label(RichText::new(tr("No coding agent was found on this computer yet.")).color(t.text_dim));
+        for hint in &app.detect_hints {
+            match hint {
+                craft_anything_ai::detect::DetectHint::ClaudeDesktopWithoutCli { .. } => ui.add(
+                    egui::Label::new(
+                        RichText::new(tr("The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.")).color(t.text_dim),
+                    )
+                    .wrap(),
+                ),
+            };
+        }
     }
     for b in found {
         widgets::panel(&t).show(ui, |ui| {

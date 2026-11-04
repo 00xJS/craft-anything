@@ -1417,3 +1417,4 @@ Providers	供應商
 Harnesses	代理
 Nothing of this kind was found.	沒有找到這類項目。
 Another model	其他模型
+The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.	已安裝 Claude 桌面應用程式，但建置需要 Claude Code，也就是它獨立的命令列工具。請安裝 Claude Code，在終端機中登入一次，然後重新尋找。

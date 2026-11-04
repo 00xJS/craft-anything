@@ -552,8 +552,9 @@ Owner: open · Status: in progress
 - [ ] #105, #135, #259, #385 and #423 predate 0.3.0, which looks in more places, and came through
       the ticket relay, so nobody can ask them for `doctor` output. Close them pointing at 0.3.0,
       and add search paths only for a new report that has that output
-- [ ] Say plainly when what's found is the Claude desktop app rather than the `claude` program
-      (#259, a guess at its cause) — claimed: FuryNocturn, branch bugfix/r2.2-claude-desktop-app
+- [x] Say plainly when what's found is the Claude desktop app rather than the `claude` program
+      (#259, a guess at its cause)
+- [ ] macOS: check that `Claude.app` is where the desktop app is found (#259's hint is untried there)
 - [ ] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467); find what
       writes it (no code for it was found; maybe the file picker)
 - [x] Windows: look in `%LOCALAPPDATA%\agy\bin` too (#62) — claimed: Afloat16, branch bugfix/r2.2-antigravity-search-20261103

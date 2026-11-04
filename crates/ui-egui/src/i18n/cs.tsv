@@ -1417,3 +1417,4 @@ Providers	Poskytovatelé
 Harnesses	Agenti
 Nothing of this kind was found.	Nic takového nebylo nalezeno.
 Another model	Jiný model
+The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.	Desktopová aplikace Claude je nainstalovaná, ale k sestavení je potřeba Claude Code, její samostatný nástroj pro příkazový řádek. Nainstalujte Claude Code, jednou se do něj přihlaste v terminálu a pak hledejte znovu.

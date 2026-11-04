@@ -1417,3 +1417,4 @@ Providers	Провайдеры
 Harnesses	Агенты
 Nothing of this kind was found.	Ничего такого не найдено.
 Another model	Другая модель
+The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.	Приложение Claude для компьютера установлено, но для сборки нужен Claude Code — отдельный инструмент командной строки. Установите Claude Code, один раз войдите в него в терминале и выполните поиск снова.

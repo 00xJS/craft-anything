@@ -152,7 +152,7 @@ pub enum Done {
         path: PathBuf,
         result: Result<Value, ToolError>,
     },
-    Detected(Vec<Detected>),
+    /// What a scan found, and why an expected coding agent may be missing.
     /// The configured backends, the ones chosen to build with and to extract with, and each one's
     /// options.
     Backends(Vec<BackendConfig>, Option<String>, Option<String>, std::collections::BTreeMap<String, craft_anything_ai::BackendOptions>),
@@ -1182,7 +1182,7 @@ impl CraftApp {
         }
         self.detecting = true;
         let hub = self.hub.clone();
-        self.jobs.spawn("Look for AI on this computer", true, move |_| Ok(Done::Detected(hub.detect())));
+        self.jobs.spawn("Look for AI on this computer", true, move |_| Ok(Done::Detected(hub.detect(), hub.detect_hints())));
     }
 
     pub fn add_backend(&mut self, config: BackendConfig, key: Option<String>) {
@@ -1433,7 +1433,7 @@ impl CraftApp {
                     self.toast(e.for_people(), true);
                 }
             },
-            Done::Detected(d) => {
+            Done::Detected(d, hints) => {
                 self.detecting = false;
                 self.log(false, format!("Found {} AI option(s) on this computer", d.len()));
                 self.detected = Some(d);
