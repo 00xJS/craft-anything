@@ -825,7 +825,10 @@ impl Worker {
                 break;
             }
             refinements += 1;
-            prompt = kind.refine(check) + &pictures_reminder(ws);
+            // Nothing written yet: a fix for a build that doesn't exist sends the builder looking for one.
+            // It is asked to write the project and to show its build output (#736).
+            let refined = if app_is_empty(ws) { NO_PROJECT_PROMPT.to_string() } else { kind.refine(check) };
+            prompt = refined + &pictures_reminder(ws);
             if !api_loop {
                 prompt.push_str(CHECK_BEFORE_REPLYING);
             }
@@ -1156,7 +1159,23 @@ fn not_working(ws: &Workspace) -> ToolError {
         .with_remediation("Send a new request with a concrete correction to start again. The last check's note in the feed says what it found.")
 }
 
+/// The builder's next request when app/ holds no files: write the project first, then say what the
+/// build printed. The reporter's agent claimed `npm run build` had passed while app/ was empty (#736).
+const NO_PROJECT_PROMPT: &str = "The check found no project: app/ has no files, so nothing has been written yet and nothing can be built. Create the project's files in app/ now (for a website, a package.json and an index.html or the source files), then build it. Reply with the exact command you ran and the last lines of its output. Say something is built only when that output says so.";
+
+/// Whether app/ holds no files or folders at all, so the builder has written no project.
+fn app_is_empty(ws: &Workspace) -> bool {
+    std::fs::read_dir(ws.app_dir()).map(|mut entries| entries.next().is_none()).unwrap_or(true)
+}
+
 fn no_build_progress(ws: &Workspace) -> ToolError {
+    if app_is_empty(ws) {
+        return ToolError::new(
+            ErrorCode::OverLimit,
+            format!("The build stopped: after two builder turns, {} still has no files, so no project was written.", ws.app_place()),
+        )
+        .with_remediation("Send a new request that names the project's files and where to put them, or check which folder the agent writes to.");
+    }
     ToolError::new(ErrorCode::OverLimit, format!("The build stopped after two builder turns changed no files in {}.", ws.app_place()))
         .with_remediation("Send a new request with a concrete correction, or edit the app's files before trying again.")
 }

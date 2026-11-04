@@ -1,7 +1,7 @@
 use super::*;
 use crate::agent::tests::{Scripted, turn};
 use crate::agent::{ApiConversation, EngineHost, LoopConfig, ModelSlot};
-use crate::model::{Block, ChatModel, Delta, Stop, StopReason, TurnRequest, TurnResult};
+use crate::model::{Block, ChatModel, Delta, Msg, Stop, StopReason, TurnRequest, TurnResult};
 
 /// A kind whose one check always says the build isn't there yet (as a website with an empty
 /// app/ does, #736). The builder is scripted to answer every turn without writing a file.
@@ -41,7 +41,7 @@ impl TargetKind for NeverBuilt {
 
 /// Runs one build whose builder never writes a file, and returns the run's error and how many
 /// builder turns the model was asked for.
-fn run_idle_builder(create_app_dir: bool) -> (ToolError, usize) {
+fn run_idle_builder(create_app_dir: bool) -> (ToolError, Vec<Vec<Msg>>) {
     let dir = tempfile::tempdir().unwrap();
     let mut ws = Workspace::create(dir.path(), "Idle build", "Build an app", TargetRef::None).unwrap();
     if create_app_dir {
@@ -70,17 +70,34 @@ fn run_idle_builder(create_app_dir: bool) -> (ToolError, usize) {
     kinds.register(Arc::new(NeverBuilt));
     let opts = RunOptions { message: Some("Build the app".into()), kinds, max_rounds: 6, ..RunOptions::default() };
     let error = worker.run(&mut ws, entry, Some(api), None, &opts).unwrap_err();
-    let asked = seen.lock().unwrap().len();
-    (error, asked)
+    let requests = seen.lock().unwrap().clone();
+    (error, requests)
 }
 
 #[test]
 fn an_idle_builder_with_an_empty_app_stops_after_two_turns() {
     for create_app_dir in [true, false] {
-        let (error, asked) = run_idle_builder(create_app_dir);
-        assert!(error.message.contains("changed no files"), "app dir {create_app_dir}: {error:?}");
-        assert!(asked <= 3, "app dir {create_app_dir}: the builder was asked {asked} times; it should stop after two turns that changed nothing");
+        let (error, requests) = run_idle_builder(create_app_dir);
+        assert!(error.message.contains("no project was written"), "app dir {create_app_dir}: {error:?}");
+        assert!(
+            requests.len() <= 3,
+            "app dir {create_app_dir}: the builder was asked {} times; it should stop after two turns that changed nothing",
+            requests.len()
+        );
     }
+}
+
+/// #736: with app/ empty, the stop says no project was written, and the builder is told to write
+/// the project's files (not to fix a build) and to show the build's output.
+#[test]
+fn an_empty_app_is_said_to_have_no_project() {
+    let (error, requests) = run_idle_builder(true);
+    assert!(error.message.contains("no project was written"), "{error:?}");
+    assert!(error.remediation.as_deref().unwrap_or_default().contains("names the project's files"), "{error:?}");
+    let second = requests.get(1).map(|m| m.iter().map(Msg::text).collect::<String>()).unwrap_or_default();
+    assert!(second.contains("app/ has no files"), "the next prompt says so: {second}");
+    assert!(second.contains("exact command you ran"), "and asks for the build's output: {second}");
+    assert!(!second.contains("Fix this in app/"), "not a fix for a build that doesn't exist: {second}");
 }
 
 /// A builder that changes one file in app/ every turn, so the unchanged-turn limit never fires.

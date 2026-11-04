@@ -225,7 +225,8 @@ Every round spends the person's money or quota. One that can't do anything shoul
       `not_working_checks`). "Try again" used to start six more rounds every time with nothing counted across
       runs, so #736's build went on to check 40 and 49 times. A run at the limit stops before a builder turn.
       The unchanged-turn guard already stops a builder that writes nothing; #736's exact Windows run (gemini-cli)
-      is not reproduced here, so: — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
+      is not reproduced here. An empty `app/` is named as "no project was written" and the builder is asked to
+      write the project and show its build's output, not to fix a build (`NO_PROJECT_PROMPT`). — claimed: fabox-os, branch bugfix/736-stop-empty-build-loop
 - [ ] Live-check #736 on Windows with gemini-cli: an empty app/ and a builder that claims `npm run build`
       stops after two turns (or 10 checks) with the "no files yet" note, and Try again doesn't restart it
 
