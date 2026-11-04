@@ -85,7 +85,7 @@ pub(super) fn build_check(app: &Path, place: &str, stack: &str, editor: Option<&
         _ if app.join("Cargo.toml").is_file() => run(Path::new("cargo"), &["build".into(), "--quiet".into()], 2 * 60),
         _ if app.join("package.json").is_file() => run(Path::new(if cfg!(windows) { "npm.cmd" } else { "npm" }), &["run".into(), "build".into()], 2 * 60),
         (None, _) if static_site(app) => return (true, "Nothing to build: a static site.".into()),
-        _ => return (false, format!("No project to build found in {place} yet.")),
+        _ => return (false, no_project(app, place)),
     };
     match result {
         Ok((true, _)) => (true, "Build succeeded.".into()),
@@ -112,6 +112,26 @@ fn static_site(app: &Path) -> bool {
     let engine = app.join("project.godot").is_file() || uproject(app).is_some() || (app.join("Assets").is_dir() && app.join("ProjectSettings").is_dir());
     let page = |site: PathBuf| std::fs::read(site.join("index.html")).is_ok_and(|html| html.iter().any(|b| !b.is_ascii_whitespace()));
     !engine && site_dir(app).is_some_and(page)
+}
+
+/// "No project to build", saying where one is when it was made a folder down (`cargo new app` run
+/// inside app/ makes app/app/), so the builder can move it instead of starting again.
+fn no_project(app: &Path, place: &str) -> String {
+    let none = format!("No project to build found in {place} yet.");
+    let Some((dir, manifest)) = nested_project(app) else { return none };
+    let sub = if place.ends_with('/') { format!("{place}{dir}/") } else { format!("{dir}/ in {place}") };
+    format!("{none} There's a {manifest} one folder down, in {sub}, but the build runs in {place} itself: its files belong there.")
+}
+
+/// The first folder directly inside `app` (by name, of the first 256 entries) that holds a cargo or
+/// npm project, and that project's manifest.
+fn nested_project(app: &Path) -> Option<(String, &'static str)> {
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(app).ok()?.flatten().take(256).map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    dirs.sort();
+    dirs.iter().find_map(|d| {
+        let manifest = ["Cargo.toml", "package.json"].into_iter().find(|m| d.join(m).is_file())?;
+        Some((d.file_name()?.to_string_lossy().into_owned(), manifest))
+    })
 }
 
 /// The Unreal project file in `app`, if there is one.
@@ -162,6 +182,27 @@ mod tests {
         assert_eq!(engine_for("Electron", app), None);
         std::fs::write(app.join("Cargo.toml"), "").unwrap();
         assert_eq!(engine_for("Rust + macroquad", app), None);
+    }
+
+    #[test]
+    fn a_project_one_folder_down_is_named() {
+        let d = tempfile::tempdir().unwrap();
+        let app = d.path();
+        let stop = CancelToken::default();
+        let check = |place| build_check(app, place, "Rust + egui (eframe)", None, &stop);
+        assert_eq!(check("app/"), (false, "No project to build found in app/ yet.".into()), "nothing anywhere");
+        std::fs::create_dir(app.join("notes")).unwrap();
+        assert_eq!(check("app/").1, "No project to build found in app/ yet.", "a folder without a project");
+        // What `cargo new app` run inside app/ leaves.
+        std::fs::create_dir_all(app.join("app/src")).unwrap();
+        std::fs::write(app.join("app/Cargo.toml"), "[package]").unwrap();
+        let (ok, note) = check("app/");
+        assert!(!ok);
+        assert_eq!(
+            note,
+            "No project to build found in app/ yet. There's a Cargo.toml one folder down, in app/app/, but the build runs in app/ itself: its files belong there."
+        );
+        assert!(check("the project folder").1.contains("in app/ in the project folder, but the build runs in the project folder itself"));
     }
 
     #[test]
