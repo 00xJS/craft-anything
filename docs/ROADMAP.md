@@ -243,9 +243,15 @@ been run live.
       reads a reply that is only the JSON. Half the model's calls came this way and the turn ended
       with nothing done. Run a reply that ends in one fenced call to an offered tool, and say in
       the transcript that it was read from text
-- [ ] The model ran `cargo new app` in `app/` (commands run there), so the project landed in
-      `app/app/` and every check said "No project to build found in app/ yet". Say in that check
-      where a project was found one folder down, and have the Rust brief say `cargo init`
+- [x] The model ran `cargo new app` in `app/` (commands run there), so the project landed in
+      `app/app/` and every check said "No project to build found in app/ yet". The check now says
+      where a cargo or npm project one folder down is, and the Rust steps say `app/Cargo.toml`,
+      not a folder inside `app/` (a brief can't say `cargo init`: not every builder's commands
+      start in `app/`). Live, with calls after a sentence run too, the model then made
+      `app/Cargo.toml` and the build compiled
+- [ ] The model reads file paths from the project folder and commands from `app/` as one base:
+      it ran `cargo init app` and `cd app && cargo build` after writing `app/Cargo.toml`. Say the
+      folder in `build_command_run`'s result (or its description) so the two can't be mixed up
 - [ ] `usage.json` after a local build says about 4,200 input tokens and 6.5 s of work, while
       Ollama logged about six requests of 4,000-5,000 tokens each: find what it leaves out
 - [x] An assistant turn with no text sends an empty string, not `content: null`, which Ollama
