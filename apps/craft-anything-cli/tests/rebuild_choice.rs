@@ -102,6 +102,47 @@ fn an_enabled_api_backend_is_enough_without_being_named() {
     assert!(!saved.contains("agent_cli"), "no agent app may be saved when an API backend is enabled:\n{saved}");
 }
 
+/// A named agent that is installed but not added yet is still registered, so the run can use it.
+#[test]
+fn a_named_installed_agent_is_added_when_missing() {
+    let config = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    api_config(config.path());
+    fake_claude(bin.path());
+
+    let args = stopped_run(project.path(), Some("Claude Code"));
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = cli(&refs, config.path(), home.path(), bin.path());
+    let log = out.stderr_text();
+    assert!(!out.success, "the empty project folder must stop the run:\n{log}");
+    assert!(log.contains("craft.json"), "the run must stop at the missing project, before any build:\n{log}");
+    assert!(log.contains("Using Claude Code"), "the named agent must still be registered:\n{log}");
+    let saved = std::fs::read_to_string(config.path().join("config.toml")).unwrap();
+    assert!(saved.contains("agent_cli") && saved.contains("name = \"Claude Code\""), "the named agent must be saved:\n{saved}");
+}
+
+/// An unknown name must not add a different agent that happens to be installed.
+#[test]
+fn an_unknown_backend_does_not_add_an_agent() {
+    let config = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fake_claude(bin.path());
+
+    let args = stopped_run(project.path(), Some("No Such AI"));
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = cli(&refs, config.path(), home.path(), bin.path());
+    let log = out.stderr_text();
+    assert!(!out.success, "the empty project folder must stop the run:\n{log}");
+    assert!(log.contains("craft.json"), "the run must stop at the missing project, before any build:\n{log}");
+    assert!(!log.contains("Using "), "an unknown name must not pick an installed agent:\n{log}");
+    let saved = std::fs::read_to_string(config.path().join("config.toml")).unwrap_or_default();
+    assert!(!saved.contains("agent_cli"), "an unknown name must not save an agent:\n{saved}");
+}
+
 /// A command refused before any build starts must not change the person's AI settings either.
 #[test]
 fn an_invalid_command_does_not_add_an_agent() {
