@@ -222,6 +222,20 @@ desktop no longer lags; `WGPU_POWER_PREF=high`, `WGPU_ADAPTER_NAME=nvidia` and `
 `WGPU_POWER_PREF=none` still draw on NVIDIA. Desktops with monitors on one or two GPUs and Intel
 laptops are covered by unit tests on fake `/sys/class/drm` folders only.
 
+### Windows renderer fallback
+
+On Windows the window draws with DX12 on the graphics card. A start that never opens its window
+(a driver that crashes the process, or a wgpu error such as DX12 refusing egui's pipeline, #794)
+makes the next start take the next renderer: WARP, then Vulkan, then OpenGL, then DX12 again. After a
+wgpu error the app starts again by itself with the next one; after a native crash the person starts it.
+The renderer that opened the window is kept in `renderer` beside `desktop.log` for this app version,
+so an update tries DX12 first again. `WGPU_BACKEND` and `CRAFT_ANYTHING_RENDERER` still decide when set.
+
+Checked live on an RX 6900 XT (Windows 11): a build that turned every DX12 start
+into #794's wgpu error went DX12 → WARP → Vulkan by itself in about 2 s, opened on Vulkan, kept it at the
+next start, and went back to DX12 for another app version. The real #794 failure wasn't reproduced:
+DX12 and WARP both draw on that machine.
+
 ## Known limits
 
 - Locks: every mutex but the browser viewer's goes through `platform::sync`. A deadlock on one thread or across
