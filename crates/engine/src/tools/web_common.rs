@@ -58,11 +58,21 @@ pub struct Browser {
 
 struct BrowserProfile(std::path::PathBuf);
 
+fn remove_profile_with(mut remove: impl FnMut() -> std::io::Result<()>) -> std::io::Result<()> {
+    let started = std::time::Instant::now();
+    loop {
+        match remove() {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) if started.elapsed() >= Duration::from_secs(5) => return Err(e),
+            Err(_) => std::thread::sleep(Duration::from_millis(50)),
+        }
+    }
+}
+
 impl Drop for BrowserProfile {
     fn drop(&mut self) {
-        if let Err(e) = std::fs::remove_dir_all(&self.0)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
+        if let Err(e) = remove_profile_with(|| std::fs::remove_dir_all(&self.0)) {
             log::warn!("couldn't remove the private browser profile {}: {e}", self.0.display());
         }
     }
@@ -1079,6 +1089,21 @@ mod tests {
         };
         drop(browser);
         assert!(!profile.exists(), "the private browser profile survived its owner");
+    }
+
+    #[test]
+    fn profile_cleanup_retries_while_the_browser_releases_files() {
+        let root = tempfile::tempdir().unwrap();
+        let profile = root.path().join("private-profile");
+        std::fs::create_dir(&profile).unwrap();
+        let mut attempts = 0;
+        super::remove_profile_with(|| {
+            attempts += 1;
+            if attempts < 3 { Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "still locked")) } else { std::fs::remove_dir_all(&profile) }
+        })
+        .unwrap();
+        assert_eq!(attempts, 3);
+        assert!(!profile.exists());
     }
 
     /// #747: a Flatpak or Snap browser keeps its profile where its sandbox can reach it and we can

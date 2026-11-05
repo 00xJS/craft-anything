@@ -758,7 +758,7 @@ impl Supervisor {
             let _ = self.child.kill();
         } else {
             // The leader exited; take any leftover group members with it so they can't hold the pipes.
-            let _ = self.child.start_kill();
+            let _ = self.child.kill();
         }
         self.drain();
         let duration = self.start.elapsed();
