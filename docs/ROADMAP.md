@@ -139,6 +139,12 @@ cheapest help we can give anyone, so nothing below should hold it up for long.
       driver that crashes while its device is created crashes the retry too. wgpu has no way to
       skip hardware adapters; needs a different route (another renderer, or a helper that starts
       the app with only WARP visible)
+- [ ] #794: on some systems DX12 refuses egui's own pipeline (`egui_pipeline`, 0x80070057 from
+      `CreatePipelineState`) on AMD, Intel and NVIDIA cards and on WARP too (lightcraft#812,
+      pdfcraft#1046, wgpu#10771), so the software retry fails the same way every start, and the
+      dialog only says to update the driver. Each failed start should move on to another renderer
+      (Vulkan, then GL), keep the one that works, and start again by itself after a wgpu error
+      — claimed: 00xJS, branch bugfix/r5.1-renderer-fallback
 - [ ] Add to `docs/releasing.md`: before publishing, a Deep build through Claude Code from the
       finished package, on a Mac and on Windows. Starting the CLI from the package (#91) doesn't
       show whether Claude Code accepts its tools
