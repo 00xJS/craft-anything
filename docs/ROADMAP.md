@@ -172,9 +172,11 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 - [ ] `capture::console_tests::reads_what_the_program_drew_and_stops_at_the_deadline` failed once
       with the whole platform suite running and passes alone (passed 3 whole-suite runs on Windows 11
       on 2026-11-04). Find what it depends on
-- [ ] `process::launch_tests::a_launcher_that_hands_off_keeps_its_group_until_stopped` fails on a
-      busy Windows machine: it kills the run 500 ms after the start, and a `cmd` that hasn't exited
-      by then makes a cancelled run, not a hand-off — claimed: 00xJS, branch test/r5.2-hand-off-race
+- [x] `process::launch_tests::a_launcher_that_hands_off_keeps_its_group_until_stopped` failed on a
+      busy Windows machine: it killed the run 500 ms after the start, and a `cmd` that hadn't exited
+      by then made a cancelled run, not a hand-off. The test now waits for the launcher's mark, and
+      a kill that finds the program already exited reports its exit, not a cancel
+      — claimed: 00xJS, branch test/r5.2-hand-off-race
 - [ ] `a_helper_is_judged_by_whether_it_runs` (ai crate) sometimes fails when several crates'
       tests run at once and passes alone: it writes a script and runs it straight away, which a
       busy machine can refuse while another test's child still holds the file open

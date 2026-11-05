@@ -795,6 +795,13 @@ impl Supervisor {
                 }
             }
             if self.kill.load(Ordering::SeqCst) || self.cancel.as_ref().is_some_and(|c| c()) {
+                // A program that exited since the check above ended on its own (a launcher that
+                // handed off, or a run that finished): say how, not that it was stopped.
+                if handed_off.is_none()
+                    && let Ok(Some(status)) = self.child.try_wait()
+                {
+                    return Stop::Exited(status);
+                }
                 return handed_off.map_or(Stop::Cancelled, Stop::Exited);
             }
             let elapsed = self.start.elapsed();
@@ -1262,8 +1269,23 @@ mod launch_tests {
     fn a_launcher_that_hands_off_keeps_its_group_until_stopped() {
         // Plain: a clean exit ends the run.
         assert!(exits_with(0).run().unwrap().success);
-        // Handing off: the launcher's clean exit doesn't, so the browser it started lives on.
-        let mut p = exits_with(0).hands_off().spawn().unwrap();
+        // Handing off: the launcher's clean exit doesn't, so the browser it started lives on. The
+        // launcher leaves a mark as its last step and the kill waits for it: on a busy machine
+        // `cmd` could still be starting when a fixed 500 ms was up, and a launcher stopped before
+        // it handed off is a cancelled run, not a clean one.
+        let dir = tempfile::tempdir().unwrap();
+        let mark = dir.path().join("handed-off");
+        let launcher = if cfg!(windows) {
+            Process::new("cmd").args(["/C", "type nul > handed-off & exit 0"])
+        } else {
+            Process::new("sh").args(["-c", ": > handed-off; exit 0"])
+        };
+        let mut p = launcher.cwd(dir.path()).hands_off().spawn().unwrap();
+        let start = std::time::Instant::now();
+        while !mark.exists() && start.elapsed() < Duration::from_secs(20) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(mark.exists(), "the launcher never ran");
         assert!(p.wait_timeout(Duration::from_millis(500)).is_none(), "a clean hand-off ended the run");
         assert!(p.kill_and_wait(Duration::from_secs(5)));
         assert!(p.wait().unwrap().success);
