@@ -1500,6 +1500,67 @@ mod picking_up_a_build {
     }
 
     #[test]
+    fn a_message_after_just_ask_tells_the_builder_what_was_asked_once() {
+        use craft_anything_engine::questions::{self, AskedQuestion};
+        let b = bench();
+        let ws = worked_on(&b);
+        let ask = |q: &str| {
+            questions::add(&ws, AskedQuestion { deep: false, ..AskedQuestion::new(q.into(), "It's in src.".into(), true, "Stand-in".into(), None, 0) }).unwrap()
+        };
+        let say = |m: &str| {
+            try_with(&b, &ws, RunOptions { message: Some(m.into()), ..RunOptions::default() });
+            std::fs::read_to_string(&b.prompts).unwrap_or_default()
+        };
+        ask("where is the score kept");
+        let told = say("make it bigger");
+        assert!(told.contains("Q: where is the score kept\nA: It's in src.") && told.contains("make it bigger"), "{told}");
+        let again = say("and blue");
+        let later = again.strip_prefix(told.as_str()).unwrap_or_default();
+        assert!(later.contains("and blue") && !later.contains("where is the score kept"), "told once: {later}");
+        // Try again has no new message for it to go with, so it isn't used up.
+        ask("how does saving work");
+        let _ = try_it(&b, &ws);
+        let before = std::fs::read_to_string(&b.prompts).unwrap_or_default();
+        assert!(!before.contains("how does saving work"), "{before}");
+        let told = say("now add saving");
+        let later = told.strip_prefix(before.as_str()).unwrap_or_default();
+        assert!(later.contains("how does saving work") && later.contains("now add saving"), "{later}");
+    }
+
+    /// A turn that failed may never have reached the builder, so its questions are still to tell.
+    #[test]
+    fn a_failed_turn_leaves_just_ask_questions_to_tell_with_the_next_message() {
+        use craft_anything_engine::questions::{self, AskedQuestion};
+        let b = bench();
+        let ws = worked_on(&b);
+        questions::add(
+            &ws,
+            AskedQuestion { deep: false, ..AskedQuestion::new("where is the score kept".into(), "In src.".into(), true, "Stand-in".into(), None, 0) },
+        )
+        .unwrap();
+        // As in the test above: a typed failure, which isn't retried after a wait.
+        let mut config = b.hub.config();
+        let mut entry = config.get("Stand-in").unwrap().clone();
+        entry.config.model = "opencode".into();
+        config.upsert(entry);
+        b.hub.engine.session().settings.ai = config.to_table().unwrap();
+        let agent = b._dir.path().join("agent.sh");
+        let works = std::fs::read_to_string(&agent).unwrap().replacen(
+            "#!/bin/sh\n",
+            "#!/bin/sh\nif [ \"$2\" = '--help' ]; then printf '%s\\n' '--format'; exit 0; fi\n",
+            1,
+        );
+        let error = json!({"type":"error","error":{"name":"APIError","data":{"message":"fixture sign in needed","statusCode":401,"isRetryable":false}}});
+        std::fs::write(&agent, works.replace("echo Done.", &format!("printf '%s\\n' '{error}'\nexit 1"))).unwrap();
+        let say = |m: &str| try_with(&b, &ws, RunOptions { message: Some(m.into()), ..RunOptions::default() }).0;
+        assert!(!say("make it bigger"));
+        assert_eq!(questions::untold(&ws, false).len(), 1, "the turn failed");
+        std::fs::write(&agent, works).unwrap();
+        say("make it bigger");
+        assert!(questions::untold(&ws, false).is_empty(), "the turn finished");
+    }
+
+    #[test]
     fn try_again_after_the_builder_stopped_carries_on_instead_of_starting_over() {
         let b = bench();
         let ws = worked_on(&b);
@@ -1999,6 +2060,23 @@ mod picking_up_a_build {
         assert!(!written.message.contains("has no files"), "{written:?}");
         assert_eq!(written.message, "The build stopped after two builder turns changed no files in app/.");
     }
+}
+
+#[test]
+fn just_ask_is_told_to_the_builder_shortly_and_cut_on_a_character() {
+    use craft_anything_engine::questions::AskedQuestion;
+    assert_eq!(super::just_asked(&[]), "", "nothing asked, nothing added");
+    let q = |n: usize, answer: String| AskedQuestion::new(format!("question {n}"), answer, true, "Claude".into(), None, 0);
+    let mut asked: Vec<_> = (0..7).map(|n| q(n, "short".into())).collect();
+    asked.push(q(7, "é".repeat(3000)));
+    let told = super::just_asked(&asked);
+    assert!(!told.contains("question 2") && told.contains("question 3") && told.contains("question 7"), "the latest five: {told}");
+    assert!(told.contains(&format!("{}…", "é".repeat(1500))) && !told.contains(&"é".repeat(1501)), "a long answer is cut");
+    assert!(told.contains("A: short\n"), "a short one isn't marked as cut");
+    // The most a person can ask, five times over, still leaves room on a Windows command line, which
+    // counts UTF-16 units: an emoji is two.
+    let longest: Vec<_> = (0..5).map(|_| AskedQuestion::new("😀".repeat(4000), "😀".repeat(100_000), true, "Claude".into(), None, 0)).collect();
+    assert!(super::just_asked(&longest).encode_utf16().count() < 20_000);
 }
 
 fn check_worker(ws: &Workspace, deep: bool) -> Worker {

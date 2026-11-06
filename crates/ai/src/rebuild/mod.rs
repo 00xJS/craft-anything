@@ -698,6 +698,12 @@ impl Worker {
             let handoff = keeper.as_ref().and_then(|a| a.handoff(&kept_session(ws)?, HANDOFF_CHARS));
             resumed_elsewhere(&brief(kind, &cx, opts.message.as_deref()), &ws.manifest.last_reply, handoff.as_deref())
         });
+        // "Just ask" runs apart from the builder's session, and the person's message may follow on from it (#857).
+        let new_request = opts.message.as_deref().is_some_and(|m| !m.trim().is_empty());
+        let mut asked = if new_request { craft_anything_engine::questions::untold(ws, deep) } else { Vec::new() };
+        let just_asked = just_asked(&asked);
+        prompt.insert_str(0, &just_asked);
+        fresh = fresh.map(|f| format!("{just_asked}{f}"));
         let mut round = ws.manifest.checks.iter().map(|c| c.round).max().unwrap_or(0);
         // A new request starts the count of checks that found no working build again. "Try again" on
         // a build that already reached the limit stops before another builder turn is paid for (#736).
@@ -755,6 +761,14 @@ impl Worker {
                         return Err(error);
                     }
                 };
+                // Only a finished turn counts: telling the builder twice costs little, and a turn that
+                // failed may not have told it at all.
+                let told = std::mem::take(&mut asked);
+                if !told.is_empty()
+                    && let Err(e) = craft_anything_engine::questions::mark_told(ws, &told)
+                {
+                    log::warn!("couldn't record which questions the builder was told: {}", e.message);
+                }
                 if !reply.trim().is_empty() {
                     ws.manifest.last_reply = reply.trim().to_string();
                 }
