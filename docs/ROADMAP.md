@@ -734,6 +734,8 @@ Gaps found while using the app for real projects.
 - [x] Agent paragraphs with glossary terms and long file links wrap together without pushing
       their card or later messages under the sidebar (#523); Project and Ask bounds checked at two sizes
       — claimed: carl-dourado, branch hotfix/r2.9-523-message-width
+- [x] Create atomic-write temporary files exclusively with short names distinct from the destination and private Unix permissions from creation.
+      — claimed: Afloat16, branch bugfix/r2.9-atomic-temp-creation-20261103b
 - [x] A prompt brought back with Up keeps its pictures (their paths are absolute, so they don't
       come back after the project is moved)
 - [ ] Change a project's builder from its page (a tool, so the CLI and MCP can too) — in PR #245
@@ -909,6 +911,16 @@ Owner: open · Status: in progress
 - [ ] Bun: take source maps and bytecode out as files; a standalone `.pyz`
 - [ ] `native_source_folder_write` uses the built-in decompiler only: use Ghidra in Deep mode when
       it's there
+- [x] Keep stand-in response samples distinct when headers, content types or body-availability metadata differ.
+      Compare header names without case and ignore ordering between different names, preserving each name's value order.
+      At the sample cap, a usable answer can replace an unavailable 304 for the same path, query and request key;
+      other requests keep their missing-body evidence. Refused bodies cannot replace that evidence.
+      Compare complete samples before charging retained bytes, using #717's retained-budget accounting.
+      Historical revision `f79dc0bd` passed [full Linux CI](https://github.com/storytold/craft-anything/actions/runs/41793241151):
+      all five original metadata regressions and nine header and capacity regressions passed.
+      All 24 combined replay regressions pass locally on the refresh onto `cf414ff4`.
+      See this PR's checks for the refreshed revision's complete gate.
+      — claimed: Afloat16, branch bugfix/r3.11-standin-sample-metadata-20261103b
 - [ ] `native_publisher_show` hashes the file minus the signature fields, not section by section;
       a file with unusual gaps between sections can read as different
 - [x] Enforce stand-in per-body and total byte budgets on the text that is actually retained after redaction;

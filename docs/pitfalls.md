@@ -422,6 +422,14 @@ navigation vanished from the run's network capture. Only the code that owns a ru
 drains its event queue; steps leave events where they are, and the run keeps them all, tagged
 with the step they arrived in.
 
+**Exclusive creation left a permission window.** Opening a private temporary file with default
+permissions could let another process retain a readable descriptor before a later chmod. Set
+mode 0600 in the first Unix open for private files. Temporary names must also stay short and
+independent of the destination name: adding a prefix and suffix can exceed the component limit
+even when the destination name is valid. Keep the temporary file in the destination directory,
+but exclude the destination component before creating a candidate, including case and trailing
+dot/space aliases. Probe a supported long name in tests instead of assuming a fixed filename limit.
+
 **Two writers to one file.** The app and the rebuild run both wrote `feed.json`. Give each persisted
 file one owner; when another writer is unavoidable (an answer given from the CLI while a run is
 going), merge what's on disk before saving instead of overwriting it.
@@ -619,6 +627,15 @@ API answers, then also ran on recorded scripts: `this.token=t` became `[dropped]
 broke, and "Basic Membership" lost a word. It also tested whole tokens, so a secret inside a URL or
 after `ref=` passed. Test a scrubber on what must survive as well as what must go, and on each
 kind of content it can receive.
+
+**Response metadata that fills a replay limit.** Comparing stored HTTP headers literally kept
+equivalent polls apart: names ignore case, and only values for the same name retain order.
+Compare that way without rewriting the saved headers. Unavailable 304 samples still prove which
+request lacked a cached body. At capacity, replace one only with a usable response for the same
+path, query and request key, then append it in recording order. Keep other requests' evidence,
+count the displaced sample, and do not replace anything with a body refused by a size or secret
+check. Compare complete samples before charging retained bytes, so repeats need no refund. Test an
+exact total-body limit and one with room remaining, preserving the unavailable 304 and remaining budget.
 
 **A strict tool that sent an AI off to write its own.** `game_pak_extract` refused an output
 whose folder didn't exist and took one file per call; the extractor model hit that twice, then
