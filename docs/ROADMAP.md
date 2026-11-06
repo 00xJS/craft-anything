@@ -206,6 +206,18 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 - [x] `remote_discovery_uses_the_remote_program_and_connection_context` fails on a computer with
       OpenCode installed: its made-up path is missing, so `program_of` falls back to `opencode`
       — claimed: justinjohn0306, branch test/remote-discovery-without-opencode
+- [x] Idle CPU on an AMD Radeon, measured (2026-11-04, `main` at `869eb85`, release build, Windows 11
+      build 26300, RX 6900 XT, driver 32.0.21045.16010, Ryzen 5 2600X; the window open on a fresh
+      profile, nothing changing). DX12 on the card: one core at ~100% for as long as the window is
+      open; Vulkan: the same; GL: 0%; WARP: ~280% for the first 5 s after start, then 0%. The busy
+      thread isn't the app's: on DX12 it starts in `amdxc64.dll`, on Vulkan in `amdvlk64.dll`, and
+      it starts with the device, not the main thread. A bare eframe window does the same with every
+      present mode and frame latency tried (AutoVsync, Fifo, Mailbox, Immediate; latency 1, 2, 3),
+      so nothing in our frame pacing causes or avoids it; GL alone stays idle. Seen in the same way
+      with PdfCraft and PhotoCraft (pdfcraft#3255) — claimed: 00xJS, branch docs/r5.2-idle-cpu-amd
+- [ ] **decision** AMD's idle driver thread costs Radeon owners a core on DX12 and Vulkan. Say so
+      in the troubleshooting docs (with `WGPU_BACKEND=gl` as the way out, which loads AMD's OpenGL
+      driver), report it to AMD, or leave it
 
 ### R5.3 A builder that can't make progress stops
 Owner: open · Status: todo
