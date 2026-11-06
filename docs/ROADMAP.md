@@ -718,6 +718,14 @@ Owner: open · Status: in progress
       (#62)
 - [ ] Gemini CLI's sign-in reportedly refuses individuals now (#400): check, and stop recommending
       it in the builder setup dialog if so
+- [x] DeepSeek Harness: an adapter runs `dsh --profile headless "<task>"` and hands it our tool
+      server as a generated `--patch` overlay for that run (its own project, inbox and mode), since
+      the harness reads tool servers only from profile layers; a question gets none and the person's
+      own profile is left untouched. Verified with adapter and overlay tests and a live follow-up
+      website build whose journal shows `rebuild_check`, `core_unknown_add` and `core_handoff_write`
+      going through our server — claimed: 0231071, branch `feature/dsh-agent-adapter`
+- [ ] DeepSeek Harness: no resume (its headless profile keeps no session), a build on the harness's
+      desktop profile is untried, and the task still goes over in argv (see the argv note above)
 
 ### R2.4 Runtime study for apps and games (with consent)
 Owner: maintainers · Status: in progress

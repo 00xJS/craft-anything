@@ -7,11 +7,13 @@ use super::*;
 
 mod antigravity;
 mod copilot;
+mod dsh;
 mod hermes;
 mod maki;
 mod opencode;
 pub use antigravity::Antigravity;
 pub use copilot::Copilot;
+pub use dsh::DeepSeekHarness;
 pub use hermes::Hermes;
 pub use maki::Maki;
 pub use opencode::OpenCode;
@@ -241,6 +243,7 @@ impl AgentAdapters {
                 Arc::new(Hermes),
                 Arc::new(Maki),
                 Arc::new(Copilot),
+                Arc::new(DeepSeekHarness),
             ],
         }
     }
