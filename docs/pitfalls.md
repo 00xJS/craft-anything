@@ -30,6 +30,13 @@ whatever the PR's head was by then; its author had pushed two more commits meanw
 reached `main` with code neither CI nor review had seen. Merge with `--match-head-commit` set to
 the commit the green run tested (`gh run view <id> --json headSha`), never to a head read later.
 
+**Squash messages that lost their co-authors.** A batch of replays was merged from a script that
+kept each message on one line and turned `\n` back into line breaks. A shell heredoc had collapsed
+that step into one that did nothing, and `printf` broke other lines early, so a dozen squash
+commits reached `main` with `\n\nCo-authored-by:` as plain text or with the line cut off, and
+GitHub credited nobody. Write a squash message to a file with real line breaks, and read the first
+commit a new merge script makes (`git log -1 --format=%B`) before it does a second.
+
 **A squash commit names the wrong PR number.** The subject was written as "(#12)" before the PR
 existed; it became #11. Take the number from `gh pr create`'s output (`${URL##*/}`) and use it.
 
