@@ -871,6 +871,9 @@ Gaps found while using the app for real projects.
 - [x] Leaving "Work on my project" forgets a folder it would edit in place and drops a folder
       dialog that ends later, so a version made on Make can't edit that project, and an address
       in its request isn't read as an original to recreate (review of #686) — claimed: xerenon, branch bugfix/r2.9-own-project-review; PR #750
+- [x] `build_files_list` lists an edited-in-place project from the project folder itself, not a
+      missing or nested `app/`, and leaves Craft Anything's own records out
+      — claimed: AlexJoaquimPereira, branch `bugfix/r2.9-build-files-in-place`; commit 1ffeb40
 - [x] Choose Claude Code's folder (`CLAUDE_CONFIG_DIR`) per AI, so one computer can build with
       two Claude accounts; an app opened from the Dock never sees the shell's variable. Settings →
       AI (a typed folder, and Add another) and `ai folder`; live-checked from the CLI with an empty
