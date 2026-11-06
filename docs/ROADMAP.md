@@ -746,7 +746,7 @@ Owner: open · Status: in progress
       used to ask for Unity even in a Godot project, and an app got the kind's default
       — claimed: xerenon, branch bugfix/r2.7-stack-from-files; PR #755
 - [x] A person's own project (edited in place, nothing to recreate) is judged by what it does for
-      itself: its own build, then its own tests, through `[[toolchain]]` in `stacks.toml` (Rust,
+      itself: its own build, then its own tests, through `[[toolchain]]` in `engine/src/toolchains.toml` (Rust,
       Node.js, Python, Go, .NET, Maven, Gradle, Make). Nothing is added to it for our sake: no
       `--screenshot`, `--self-test` or mechanics sheet. A site stack with nothing to recreate is a
       website, whatever the request says
@@ -758,8 +758,18 @@ Owner: open · Status: in progress
 - [ ] A person's own tests that already failed before their request fail the check too, so the
       builder is sent to fix them. If that proves a nuisance, run them once before the first turn
       and hold it only to what it broke
-- [ ] A new project in Python, Go or the like still fails the build check ("No project to build
-      found") and has no program for the screenshot check: `[[toolchain]]` could build it too
+- [x] New projects build through the shared `[[toolchain]]` catalogue. Python root entrypoints,
+      Go's root `main.go`, and one root `.csproj` also launch for screenshots, self-tests and Play;
+      existing packaged programs, Rust, Electron and game-engine paths keep priority — PR #950
+      — claimed: Codex, branch bugfix/r2.7-new-project-toolchains
+- [x] Runtime window capture follows runner descendants (including `go run`) and reads controls
+      from the same process that supplied the picture, without falling back to unrelated names — PR #950
+- [x] Shared toolchain commands make project-local executables absolute before changing the
+      working directory, preserving virtualenv paths for relative project placements — PR #950
+- [ ] Extend launch recipes beyond conventional root entrypoints: Python package scripts, Go
+      `cmd/` layouts, and Java build outputs; build checks already use their toolchain commands
+- [ ] Audit relative project placements in build, option-run and Play paths too: runtime window
+      capture now normalizes its request paths, but earlier runner paths can still be relative
 - [x] "player" alone doesn't make a request a game: a video or music player is an app (#953)
       — claimed: justinjohn0306, branch bugfix/953-player-not-a-game
 - [ ] Game words can't tell these apart from games: "a low level disk tool", "an MPEG 2 player",
