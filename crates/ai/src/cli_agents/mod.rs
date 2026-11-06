@@ -750,6 +750,8 @@ fn agent_env(builder: bool, effort: Option<crate::model::Effort>) -> Vec<(&'stat
         // High effort for Claude Code unless chosen. An environment variable rather than
         // `--effort`: it ranks highest, and an older Claude Code that doesn't know it ignores it.
         ("CLAUDE_CODE_EFFORT_LEVEL", crate::prompt::choose_effort(effort).as_str().into()),
+        // Our own CLI, started from inside the agent, calls tools as an agent (not the person).
+        (craft_anything_engine::AGENT_ENV, "1".into()),
     ]
 }
 

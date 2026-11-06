@@ -197,6 +197,9 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
       by then made a cancelled run, not a hand-off. The test now waits for the launcher's mark, and
       a kill that finds the program already exited reports its exit, not a cancel
       — claimed: 00xJS, branch test/r5.2-hand-off-race
+- [ ] `website_tools::tests::a_browser_that_exits_at_once_is_reported_at_once` (engine) failed once
+      on Windows with the whole engine suite running (66 s under load) and passes alone, three
+      times in a row. Find what it times
 - [ ] `a_helper_is_judged_by_whether_it_runs` (ai crate) sometimes fails when several crates'
       tests run at once and passes alone: it writes a script and runs it straight away, which a
       busy machine can refuse while another test's child still holds the file open
@@ -820,6 +823,23 @@ Owner: maintainers · Status: in progress
 ### R2.9 Everyday use: typing, projects, settings
 Owner: maintainers · Status: in progress
 Gaps found while using the app for real projects.
+- [x] Each project chooses, per kind of action, what the builder's approvals get (allow, ask or
+      refuse): reading the web, commands, files outside the project, pushing and publishing,
+      deleting outside the project, system changes, other tools. Unset kinds follow Auto mode as
+      today. Found when Auto mode refused every `git push` without a card, so the person's OK in
+      the prompt box never reached the check, and refused `gh repo view` as publishing too
+      — claimed: tanish2k09, branch feature/r2.9-project-approvals
+- [ ] Agents that don't ask our approval tool (OpenCode `--auto`, Hermes `-z`, Maki's `-p`) aren't
+      held to a project's approval choices either; part of R2.2's approval decision
+- [ ] While "commands" are allowed (Auto mode's default), a builder can run any program. Commands
+      that name `craft.json`, the inbox or the approvals tool count as system changes, and our CLI
+      started inside an agent calls tools as an agent, but a script that builds the path, or
+      unsets `CRAFT_ANYTHING_AGENT`, isn't caught. Keep the person's choices where a builder's
+      shell can't write them, or say plainly that "commands: allow" trusts the builder
+- [ ] A typed note ("yes, push it") still reaches the builder only as text: say in the card's
+      place, when the builder is refused, how the person can allow that kind
+- [ ] The project page and a slash command change those choices (like `/btw`)
+      — claimed: tanish2k09, branch feature/r2.9-approvals-ui
 - [x] Keep New project's content column fixed while the vertical scrollbar animates in or out,
       hiding it when there is nothing to scroll, so switching tabs never shifts the page horizontally
       — claimed: Codex, branch bugfix/r2.9-home-scrollbar-gutter

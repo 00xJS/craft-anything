@@ -291,6 +291,14 @@ upstream providers, and a provider without tool calling answered 400 "Provider r
 what the provider must support (`provider.require_parameters` for tools), and show the provider's
 own reason when it still fails (#542).
 
+**A refusal that names a person nobody asks.** Auto mode refused `git push` with "never …
+without the person", but never showed a card, so the person's "yes, push it" in the prompt box
+reached only the builder, which retried and was refused again, five times. Its rule matched
+`gh repo` anywhere, so `gh repo view` was "publishing" too, and "always" on `cd app && npm i` was
+kept as `bash:cd`, which would have let `cd app && git push` through. A refusal says how the
+person can allow it, and a way to allow it exists; read commands word by word; remember a
+dangerous kind whole, never by a command's first word.
+
 **A crash that no code can report.** Three Windows tickets (#33, #104, #74) said the app "does
 nothing": a graphics driver crashed natively as the window opened, so no dialog, panic hook or log
 line ever ran, and each fix only covered the driver already seen. When a failure can't be caught,
@@ -607,6 +615,11 @@ field what it counts, and test each producer with the case where they differ (he
 **Docs that drift.** `STATUS.md` described a branch 25 commits old and the tool count was stale.
 Update STATUS, the roadmap and generated docs (`cargo xtask tools`, `cargo xtask schemas`) in the
 same PR as the change.
+
+**A tool's title is a UI string.** A PR that added an engine tool and no UI passed every check run
+for it locally, and CI's `cargo xtask i18n-coverage` failed: the app shows tool titles, so each
+needs a translation in every catalog. Run `cargo xtask i18n-coverage` for any PR that adds a tool
+or changes a title, not only for UI changes.
 
 **A second lock in one statement.** `CliSpec { deep: !engine.session().clean_room(), logs: engine.session().config_dir(), … }`
 looked like two quick reads, but an unbound guard lives to the end of the statement, so the second
