@@ -111,8 +111,10 @@ pub fn show(app: &mut CraftApp, ui: &mut Ui) {
         .frame(egui::Frame::new().fill(t.chrome).inner_margin(Margin { left: 8, right: 10, top: 10, bottom: 8 }))
         .show(ui, |ui| crate::guard_ui(ui, "inspector", |ui| right(app, ui)));
     let mut open = app.state.bottom_open;
-    egui::Panel::bottom("wb-bottom")
-        .default_size(240.0)
+    // A new id: nobody could resize the old one, so its saved sizes were never anyone's choice.
+    egui::Panel::bottom("wb-console")
+        .resizable(true)
+        .default_size(280.0)
         .size_range(120.0..=600.0)
         .frame(egui::Frame::new().fill(t.chrome).inner_margin(Margin { left: 8, right: 10, top: 4, bottom: 8 }))
         .show_collapsible(ui, &mut open, |ui| crate::guard_ui(ui, "bottom", |ui| bottom(app, ui)));
