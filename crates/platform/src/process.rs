@@ -361,19 +361,29 @@ impl Process {
     }
 }
 
+/// Programs start under its read side and [`crate::capture`] opens consoles and terminals under its
+/// write side: one being opened briefly has handles that a program started at that moment inherits
+/// (Windows Server 2022's console; a Unix terminal until it's made close-on-exec), and it then can't
+/// close until that program ends. Starts don't wait for each other, and nothing else is taken under it.
+pub(crate) static STARTING: std::sync::RwLock<()> = std::sync::RwLock::new(());
+
 /// Start a program, trying again for about a third of a second while its file is busy. A program
 /// just written (an agent's update, a test's stand-in) can still be open for writing in a child
 /// another thread is starting, and Linux then refuses to run it ("Text file busy").
 fn spawn_retrying<T>(mut spawn: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut start = || {
+        let _starting = STARTING.read().unwrap_or_else(PoisonError::into_inner);
+        spawn()
+    };
     let mut wait = Duration::from_millis(5);
     for _ in 0..6 {
-        match spawn() {
+        match start() {
             Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => std::thread::sleep(wait),
             started => return started,
         }
         wait = wait.saturating_mul(2);
     }
-    spawn()
+    start()
 }
 
 /// The child gets [`search_path`](crate::which::search_path), which is also where a bare program

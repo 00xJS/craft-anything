@@ -190,6 +190,26 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
       with the fixture's canonical path, so macOS's `/var` → `/private/var` alias does not fail
       the test. Remote expansion and special-character quoting checks are retained — PR #949
       — claimed: Codex, branch test/r5.2-macos-remote-query-path
+- [x] `which::tests::usual_windows_dirs_come_after_path` (platform) failed on Windows with 10
+      found, 9 expected ("nothing twice"): #748's second Antigravity folder, counted since #770
+- [x] `capture::console_tests` (platform) timed out now and then with the whole platform suite
+      running. On Windows Server 2022 a program another thread starts while a console opens
+      inherits its handles and holds it open until it ends, and closing a console that programs
+      are still attached to can hang its host. Program starts and console opens (and Unix terminal
+      opens, which have a shorter gap of the same kind) now take one lock (`process::STARTING`),
+      and a timeout ends the program's whole tree before closing
+      — claimed: SoldierPePe, branch test/r5.2-console-capture-flake
+- [ ] A console program that exits by itself and leaves programs attached to its console: closing
+      it can still hang the console host on Windows Server 2022 (only a timeout ends the tree)
+- [ ] `process::launch_tests::a_watched_program_can_be_stopped` leaves its `sleep 30` (Windows:
+      `ping -n 30`) running, on `main` too: `stop` ends the shell but not what the shell started
+- [x] `a_helper_is_judged_by_whether_it_runs` (ai crate) sometimes failed when several crates'
+      tests ran at once: a script just written can't start while another thread's child still
+      holds it open ("Text file busy"). #787 tries again: on Linux 4 of 72 runs failed before
+      it, none after
+- [ ] `a_remote_query_expands_only_the_remote_working_directory` (ai crate) fails on a Mac: the
+      temp folder is `/var/…`, a link to `/private/var/…`, and the shell's `$PWD` gives the second.
+      Compare with the folder's canonical path
 - [ ] Revisit the two advisory exceptions in `deny.toml`: `rsa` (no fix; we only verify with public
       keys) when rsa 0.10 lands, and unmaintained `zbus_names`/`zvariant` (Linux-only via keyring
       and accesskit) when those move on. `deny.toml`'s comments say this is tracked in R0.3: point
