@@ -612,6 +612,8 @@ Owner: open · Status: in progress
       fix if the helper is missing. Verified: POSIX-shell regression test (`the_remote_line_runs_on_a_posix_shell`)
       and an SSH round-trip to localhost (probe, byte-exact write, mode, cleanup). Not run with a live
       agent over SSH. — claimed: jelassiaymen94, branch feature/r2.2-opencode-remote-mcp
+- [ ] Make `the_remote_line_runs_on_a_posix_shell` accept the shell's missing-command status:
+      on macOS, `command -v` returns 1 rather than the asserted 127; the full AI suite fails.
 - [ ] Verify OpenCode model discovery and an explicit thinking selection on a live SSH host,
       and complete a live generation with the selected model and variant (local catalogue verified).
 
@@ -811,8 +813,10 @@ Gaps found while using the app for real projects.
 - [x] A prompt brought back with Up keeps its pictures (their paths are absolute, so they don't
       come back after the project is moved)
 - [ ] Change a project's builder from its page (a tool, so the CLI and MCP can too) — in PR #245
-- [ ] `chat --backend <a name that is turned off>` (and `compare`) still talks to it:
-      `AiHub::start` accepts a named backend without checking `enabled`, unlike a build
+- [x] `chat --backend <a name that is turned off>` and `compare` refuse it before model or
+      agent setup: `AiHub::start` checks `enabled` and says how to turn it on or choose another
+      — PR #1008; claimed: Codex, branch bugfix/r2.9-disabled-chat-backend
+      (the API regression uses invalid tunnel settings to detect setup before the guard)
 - [x] Ctrl+V (Shift+Insert, Cmd+V) in a prompt box that takes pictures pastes a copied image (saved
       as a PNG) or copied picture files; attachments show as square picture tiles, the whole
       picture on hover, decoded on a worker
