@@ -843,6 +843,74 @@ Owner: open · Status: in progress
 
 ### R3.12 Format parser correctness
 Owner: open · Status: in progress
+- [x] Require a complete DNS question's type and class fields before retaining it, and keep
+      truncated questions out of packet inventories while reporting the incomplete message
+      — claimed: Afloat16, branch bugfix/r3.12-dns-question-class-review-20261104
+- [x] Reject impossible IPv4 header and total lengths.
+      — claimed: Afloat16, branch bugfix/r3.12-ipv4-header-lengths-20261105
+- [x] Validate the version in IPv6 frames.
+      — claimed: Afloat16, branch bugfix/r3.12-ipv6-version-20261105
+- [x] Stop decoding extension headers inside noninitial IPv6 fragments.
+      — claimed: Afloat16, branch bugfix/r3.12-ipv6-fragment-payload-20261105
+- [x] Enforce the expanded DNS name wire-length limit.
+      — claimed: Afloat16, branch bugfix/r3.12-dns-name-wire-length-20261105
+- [x] Report truncated DNS TXT strings as incomplete.
+      — claimed: Afloat16, branch bugfix/r3.12-dns-txt-truncation-20261105
+      Preserve empty ANY/NONE UPDATE prerequisites with zero TTL; keep TXT validation scoped to parsed answers/prerequisites.
+      Preserve empty multicast/unicast DNS-SD TXT records using wire-label service instance names.
+- [x] Read HTTP Host fields only from the header section.
+      — claimed: Afloat16, branch bugfix/r3.12-http-host-boundary-20261105
+- [x] Keep capture flow timestamps in chronological order.
+      — claimed: Afloat16, branch bugfix/r3.12-capture-flow-time-range-20261105
+- [x] Reject incomplete simple packet block payloads.
+      — claimed: Afloat16, branch bugfix/r3.12-pcapng-simple-block-length-20261105
+      Count rejected lengths against the packet scan limit and summarize them once at the end of the walk.
+- [x] Keep ZIP directory entries within the declared directory.
+      — claimed: Afloat16, branch bugfix/r3.12-zip-directory-bounds-20261105
+- [x] Refuse split ZIP archives without their other volumes.
+      — claimed: Afloat16, branch bugfix/r3.12-zip-multidisk-20261105
+- [x] Check Unity bundle blocks against their declared output lengths.
+      — claimed: Afloat16, branch bugfix/r3.12-unity-bundle-decompressed-length-20261105
+- [x] Locate Unity bundle metadata within the declared bundle size.
+      — claimed: Afloat16, branch bugfix/r3.12-unity-bundle-declared-size-20261105
+- [ ] Check that Unity bundle compressed blocks end before the trailing block table, or the declared
+      bundle end for front-positioned tables, so bytes outside the data region cannot supply block contents.
+- [x] Reject Unity serialized objects outside their declared file.
+      — claimed: Afloat16, branch bugfix/r3.12-unity-serialized-object-ranges-20261105
+- [x] Preserve compression method slots in Unreal pak indexes.
+      — claimed: Afloat16, branch bugfix/r3.12-unreal-pak-compression-slots-20261105
+- [x] Require complete terminators in Unreal FString values.
+      — claimed: Afloat16, branch bugfix/r3.12-unreal-fstring-terminators-20261105
+- [x] Count every compression block spanned by an IoStore chunk.
+      — claimed: Afloat16, branch bugfix/r3.12-iostore-unaligned-chunk-blocks-20261105
+- [x] Reject truncated IoStore fixed headers.
+      — claimed: Afloat16, branch bugfix/r3.12-iostore-complete-header-20261105
+- [x] Reject invalid marshal long integer digits.
+      — claimed: Afloat16, branch bugfix/r3.12-pyc-long-limb-validation-20261105
+- [x] Check expanded RGBA image sizes and enforce output budgets before allocation.
+      — claimed: Afloat16, branch bugfix/r3.12-pixel-rgba-output-overflow-20261105
+- [x] Count empty tensor shapes consistently across axis orders.
+      — claimed: Afloat16, branch bugfix/r3.12-tensor-zero-dimension-product-20261105
+- [x] Find APK signatures through valid ZIP comments and framed central directories.
+      — claimed: Afloat16, branch bugfix/r3.12-apk-sign-eocd-comment-boundary-20261105
+- [x] Keep Mach-O load-command facts within their command.
+      — claimed: Afloat16, branch bugfix/r3.12-macho-load-command-framing-20261105
+- [x] Keep Mach-O function starts within their declared payload.
+      — claimed: Afloat16, branch bugfix/r3.12-macho-function-starts-payload-boundary-20261105
+- [x] Keep code-signature children and verification reads within their declared superblob.
+      — claimed: Afloat16, branch bugfix/r3.12-codesign-superblob-length-boundary-20261105
+- [x] Keep PE optional-header reads within the declared header.
+      — claimed: Afloat16, branch bugfix/r3.12-pe-optional-header-framing-20261105
+- [x] Keep PE resource metadata within the resource directory.
+      — claimed: Afloat16, branch bugfix/r3.12-pe-resource-directory-boundary-20261105
+- [x] Keep Go function tables and names within their section.
+      — claimed: Afloat16, branch bugfix/r3.12-go-pclntab-section-boundary-20261105
+- [x] Preserve complete Unicode characters in shortened .NET strings.
+      — claimed: Afloat16, branch bugfix/r3.12-dotnet-user-string-surrogate-limit-20261105
+- [x] Locate ELF core mapping names after the complete declared table.
+      — claimed: Afloat16, branch bugfix/r3.12-elf-core-file-name-count-cap-20261105
+- [x] Keep DOS relocations inside the declared executable header.
+      — claimed: Afloat16, branch bugfix/r3.12-dos-relocation-header-boundary-20261105
 - [x] Parsers refuse what they used to half-read: binary plists keep objects inside their object
       area and reject unrepresentable widths, base64 (plists, source maps) refuses damaged tails
       and incomplete quanta through one shared decoder, OIDs must be minimally encoded, and string
@@ -868,6 +936,11 @@ Owner: open · Status: in progress
       — claimed: Afloat16, branch bugfix/r3.12-parser-review-followups-main-20261104
       Shared-budget revision `29c48e03` passed [full Linux CI](https://github.com/storytold/craft-anything/actions/runs/41762780268).
       The merge with main `41d2175e` awaits a new CI run.
+
+- [x] Keep DNS answer names inside their declared RDATA, including compressed names and MX
+      exchanges, and report malformed records as incomplete instead of inventing answer values,
+      while preserving legal empty DNS UPDATE RRset prerequisites
+      — claimed: Afloat16, branch bugfix/r3.12-dns-rdata-names-review-20261104
 
 ### R3.13 Web inspection correctness
 Owner: open · Status: in progress
