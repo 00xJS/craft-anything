@@ -1868,15 +1868,36 @@ fn questions_switch(app: &mut CraftApp, ui: &mut Ui) {
     let root = ws.root.clone();
     let t = Tokens::get(ui.ctx());
     ui.add_space(4.0);
+    let (sending, asking) = (["Change it", "Just ask"], ["Ask me", "Decide yourself"]);
+    let title = widgets::label_galley(ui, &tr(QUESTIONS_TITLE), theme::SMALL, t.text_dim).size().x;
+    let gaps = ui.spacing().item_spacing.x * 3.0;
+    // Side by side when both switches fit, else one under the other (a longer language, a narrow window).
+    let fits = widgets::segmented_width(ui, &sending) + widgets::segmented_width(ui, &asking) + title + gaps <= ui.available_width();
+    let hint = |ui: &mut Ui| {
+        ui.add(egui::Label::new(RichText::new(tr("or start with /btw to just ask")).color(t.text_faint).size(theme::SMALL)).truncate());
+    };
+    let right = egui::Layout::right_to_left(egui::Align::Center);
     ui.horizontal(|ui| {
         // What sending does: ask for a change, or just ask about the build.
-        if let Some(i) = widgets::segmented(ui, &["Change it", "Just ask"], usize::from(app.state.just_ask), 24.0) {
+        if let Some(i) = widgets::segmented(ui, &sending, usize::from(app.state.just_ask), 24.0) {
             app.state.just_ask = i == 1;
         }
-        ui.label(RichText::new(tr("or start with /btw to just ask")).color(t.text_faint).size(theme::SMALL));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| questions_controls(app, ui, now, &root, &t));
+        if fits {
+            ui.with_layout(right, |ui| {
+                questions_controls(app, ui, now, &root, &t);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), hint);
+            });
+        } else {
+            hint(ui);
+        }
     });
+    if !fits {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| ui.with_layout(right, |ui| questions_controls(app, ui, now, &root, &t)));
+    }
 }
+
+const QUESTIONS_TITLE: &str = "Builder's questions:";
 
 fn questions_controls(app: &mut CraftApp, ui: &mut Ui, now: craft_anything_engine::workspace::Questions, root: &Path, t: &Tokens) {
     use craft_anything_engine::workspace::Questions;
@@ -1891,7 +1912,7 @@ fn questions_controls(app: &mut CraftApp, ui: &mut Ui, now: craft_anything_engin
         } else {
             tr("The builder answers its own questions and says what it chose (\"I decided: …\"), so you can change it.")
         };
-        ui.label(RichText::new(tr("Builder's questions:")).color(t.text_dim).size(theme::SMALL)).on_hover_text(tip);
+        ui.label(RichText::new(tr(QUESTIONS_TITLE)).color(t.text_dim).size(theme::SMALL)).on_hover_text(tip);
     }
 }
 

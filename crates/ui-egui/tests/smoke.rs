@@ -2834,6 +2834,29 @@ fn a_long_status_note_in_the_work_rows_stays_in_the_window() {
     }
 }
 
+/// #983: in a longer language or a narrow window the two switches go on two lines, never over each other.
+#[test]
+fn the_switches_under_the_prompt_box_never_overlap() {
+    let d = tempfile::tempdir().unwrap();
+    let ws = craft_anything_engine::workspace::Workspace::create(d.path(), "Notes", "A notes app", craft_anything_engine::workspace::TargetRef::None).unwrap();
+    for width in [1600.0, 1000.0, 700.0, 560.0] {
+        let ws = ws.clone();
+        let mut h = harness_sized(egui::vec2(width, 800.0), move || {
+            let mut a = demo::app(demo::engine(Mode::Beginner, true));
+            a.workspace = Some(ws);
+            a.state.screen = Screen::Project;
+            a
+        });
+        h.run_steps(3);
+        let sending = h.get_by_label("Just ask").rect();
+        let (asking, title) = (h.get_by_label("Ask me").rect(), h.get_by_label("Builder's questions:").rect());
+        let hint = h.get_by_label("or start with /btw to just ask").rect();
+        assert!(!sending.intersects(title) && !sending.intersects(asking), "at {width}: {sending:?}, {title:?}, {asking:?}");
+        assert!(!hint.intersects(title) && !hint.intersects(asking), "at {width}: {hint:?}, {title:?}, {asking:?}");
+        assert!(title.left() >= 0.0 && asking.right() <= width, "at {width} they stay in the window: {title:?}, {asking:?}");
+    }
+}
+
 #[test]
 fn a_very_long_app_file_name_keeps_start_inside_the_window() {
     use craft_anything_engine::workspace::TargetRef;

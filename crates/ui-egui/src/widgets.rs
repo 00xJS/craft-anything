@@ -238,7 +238,7 @@ pub fn segmented(ui: &mut Ui, options: &[&str], selected: usize, height: f32) ->
 pub fn segmented_sized(ui: &mut Ui, options: &[&str], selected: usize, height: f32, text: f32) -> Option<usize> {
     let t = Tokens::get(ui.ctx());
     let galleys: Vec<_> = options.iter().map(|o| label_galley(ui, &tr(o), text, t.text)).collect();
-    let widths: Vec<f32> = galleys.iter().map(|g| g.size().x + text * 2.0 + 2.0).collect();
+    let widths: Vec<f32> = galleys.iter().map(|g| segment_width(g.size().x, text)).collect();
     let total: f32 = widths.iter().sum::<f32>() + 4.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(total, height), Sense::hover());
     ui.painter().rect(rect, t.radius, t.raised, Stroke::new(1.0, t.card_border), egui::StrokeKind::Inside);
@@ -264,6 +264,16 @@ pub fn segmented_sized(ui: &mut Ui, options: &[&str], selected: usize, height: f
         x += w;
     }
     picked
+}
+
+fn segment_width(label: f32, text: f32) -> f32 {
+    label + text * 2.0 + 2.0
+}
+
+/// How wide [`segmented`] draws `options`, for a row that needs to know before drawing them.
+pub fn segmented_width(ui: &Ui, options: &[&str]) -> f32 {
+    let t = Tokens::get(ui.ctx());
+    options.iter().map(|o| segment_width(label_galley(ui, &tr(o), 12.0, t.text).size().x, 12.0)).sum::<f32>() + 4.0
 }
 
 /// A small status label on a tint.
