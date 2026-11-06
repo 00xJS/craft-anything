@@ -31,12 +31,15 @@ fn wait(h: &mut Harness<'static, CraftApp>, done: impl Fn(&CraftApp) -> bool) ->
     false
 }
 
+/// First run goes from the welcome to the AI step, with the window controls there throughout.
 #[test]
 fn first_run_walks_through_four_screens() {
     let mut h = harness(|| demo::app(demo::engine(Mode::Beginner, false)));
     h.run_steps(3);
-    // The window controls are there from the first screen (the native frame is off).
-    h.get_by_label("Close");
+    // The window controls are there from the first screen (the native frame is off; macOS draws its own).
+    if !craft_anything_ui_egui::titlebar::NATIVE_FRAME {
+        h.get_by_label("Close");
+    }
     h.get_by_label("I'm new to this").click();
     h.run_steps(3);
     assert_eq!(h.state().state.first_run, FirstRunStep::Brain);
@@ -1445,6 +1448,37 @@ fn zoom_stays_between_half_and_double() {
     h.run_steps(3);
     assert_eq!(h.ctx.zoom_factor(), 0.5);
     assert_eq!(craft_anything_ui_egui::bounded_zoom(f32::NAN), 1.0);
+}
+
+/// macOS keeps its own window buttons beside the title bar, and they don't zoom, so the bar
+/// doesn't either: at 50%, 100% and 150% its controls keep their size and place on screen (zoomed
+/// points times the zoom), while the body below does zoom.
+#[cfg(target_os = "macos")]
+#[test]
+fn title_bar_keeps_its_size_when_zoomed() {
+    let on_screen = |zoom: f32| {
+        let mut h = harness_sized(egui::vec2(1360.0, 600.0), || demo::app(demo::engine(Mode::Experienced, true)));
+        h.ctx.set_zoom_factor(zoom);
+        h.run_steps(4);
+        // The topmost node with the label: Settings and Advanced appear in the bar first.
+        let rect = |label: &str| {
+            let r = h.get_all_by_label(label).map(|n| n.rect()).min_by(|a, b| a.top().total_cmp(&b.top())).unwrap();
+            egui::Rect::from_min_max(r.min * zoom, r.max * zoom)
+        };
+        (rect("Settings"), rect("Advanced"), rect("Filter"))
+    };
+    let (settings, advanced, filter) = on_screen(1.0);
+    // The bar is the system title bar's height, and its controls sit centred in it.
+    assert!((settings.center().y - 16.0).abs() <= 1.0, "settings button at {settings:?}");
+    for zoom in [0.5, 1.5] {
+        let (s, a, f) = on_screen(zoom);
+        for (name, at_100, now) in [("Settings", settings, s), ("Advanced", advanced, a)] {
+            let moved = (now.min - at_100.min).length().max((now.max - at_100.max).length());
+            assert!(moved <= 1.0, "{name} moved {moved} pt at {zoom}x: {at_100:?} → {now:?}");
+        }
+        let grew = f.height() / filter.height();
+        assert!((grew - zoom).abs() < 0.15, "the body should zoom: Filter grew {grew}x at {zoom}x");
+    }
 }
 
 #[test]
