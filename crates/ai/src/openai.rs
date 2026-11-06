@@ -274,7 +274,17 @@ pub fn messages_json(m: &Msg, react: bool) -> Vec<Value> {
             let calls: Vec<Value> = m
                 .tool_uses()
                 .into_iter()
-                .map(|(id, name, input)| json!({"id": id, "type": "function", "function": {"name": name, "arguments": input.to_string()}}))
+                .map(|(id, name, input)| {
+                    let mut call = json!({"id": id, "type": "function", "function": {"name": name, "arguments": input.to_string()}});
+                    let extra = m.blocks.iter().find_map(|b| match b {
+                        Block::ToolExtra { tool_use_id, extra } if *tool_use_id == id => Some(extra.clone()),
+                        _ => None,
+                    });
+                    if let (Some(extra), Some(o)) = (extra, call.as_object_mut()) {
+                        o.insert("extra_content".into(), extra);
+                    }
+                    call
+                })
                 .collect();
             if text.is_empty() && calls.is_empty() {
                 return Vec::new();
@@ -298,6 +308,7 @@ struct CallAcc {
     id: String,
     name: String,
     args: String,
+    extra: Option<Value>,
 }
 
 /// Accumulates a streamed chat completion.
@@ -371,6 +382,9 @@ impl ChatStream {
                 if let Some(a) = c.pointer("/function/arguments").and_then(Value::as_str) {
                     acc.args.push_str(a);
                 }
+                if let Some(extra) = c.get("extra_content") {
+                    acc.extra = Some(extra.clone());
+                }
             }
         }
         if let Some(f) = choice.get("finish_reason").and_then(Value::as_str) {
@@ -389,7 +403,10 @@ impl ChatStream {
             let input =
                 if c.args.trim().is_empty() { json!({}) } else { serde_json::from_str(&c.args).unwrap_or_else(|_| crate::anthropic::invalid_input(&c.args)) };
             let id = if c.id.is_empty() { format!("call_{i}") } else { c.id };
-            blocks.push(Block::ToolUse { id, name: c.name, input });
+            blocks.push(Block::ToolUse { id: id.clone(), name: c.name, input });
+            if let Some(extra) = c.extra {
+                blocks.push(Block::ToolExtra { tool_use_id: id, extra });
+            }
         }
         let stop = match self.finish.as_deref() {
             Some(f) => StopReason::parse(f),
@@ -865,6 +882,27 @@ mod tests {
     /// #369: OpenRouter routes to an upstream provider per request, and one without tool calling
     /// answered "400: Provider returned error". With tools in the request, only providers that
     /// support every parameter are used; nothing else changes.
+    /// #978: Gemini refuses a tool call sent back without the thought signature it came with.
+    #[test]
+    fn a_tool_calls_extra_content_goes_back_with_it() {
+        let extra = json!({"google": {"thought_signature": "sig"}});
+        let mut chat = ChatStream::default();
+        for call in [
+            json!({"index": 0, "id": "a", "extra_content": extra, "function": {"name": "look", "arguments": "{\"pa"}}),
+            json!({"index": 0, "function": {"arguments": "th"}}),
+            json!({"index": 1, "id": "b", "function": {"name": "look", "arguments": "{}"}}),
+        ] {
+            let data = json!({"choices": [{"delta": {"tool_calls": [call]}}]}).to_string();
+            chat.apply(&SseEvent { event: None, data }, &mut |_| {}).unwrap();
+        }
+        let message = chat.finish("m").unwrap().message;
+        let wire = messages_json(&message, false);
+        let calls = wire[0]["tool_calls"].as_array().unwrap();
+        assert_eq!(calls[0]["extra_content"], extra, "kept with the call whose arguments were cut off");
+        assert_eq!(calls[0]["function"]["name"], "look");
+        assert!(calls[1].get("extra_content").is_none(), "only on the call it came with");
+    }
+
     #[test]
     fn gemini_uses_the_google_endpoint_with_a_bearer_key() {
         let g = OpenAi::gemini(None, "k".into(), "");
