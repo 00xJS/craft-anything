@@ -603,6 +603,12 @@ Owner: open · Status: in progress
       explicit model/thinking execution: a config file in `OPENCODE_CONFIG` with `run --standalone`
       (verified live locally). — claimed: advokat11, branch bugfix/r2.2-opencode-native-mcp
 - [ ] Hand native OpenCode runs over SSH the Craft Anything MCP server (the config file is local).
+- [x] Hand native OpenCode runs over SSH the Craft Anything MCP server (the config file is local).
+      One `ssh` run checks `craft-anything-cli` is on the host's PATH and writes the config on the
+      host (`~/.cache/craft-anything/`, mode 600, atomic rename); the builder fails fast with the
+      fix if the helper is missing. Verified: POSIX-shell regression test (`the_remote_line_runs_on_a_posix_shell`)
+      and an SSH round-trip to localhost (probe, byte-exact write, mode, cleanup). Not run with a live
+      agent over SSH. — claimed: jelassiaymen94, branch feature/r2.2-opencode-remote-mcp
 - [ ] Verify OpenCode model discovery and an explicit thinking selection on a live SSH host,
       and complete a live generation with the selected model and variant (local catalogue verified).
 
