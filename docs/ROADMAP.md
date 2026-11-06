@@ -524,6 +524,7 @@ Owner: maintainers · Status: in progress
       Files (through the Visual Studio Installer's `ProgramData` instance state or developer
       environment variables, #669, [PR #726](https://github.com/storytold/craft-anything/pull/726))
       — claimed: riyaz, branch `bugfix/r1.6-windows-vs-cpp-tools`
+- [x] Turn off web and capture tools by default in restricted MCP mode (#856, #855).
 
 ---
 
