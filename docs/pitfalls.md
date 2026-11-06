@@ -766,6 +766,10 @@ command that then wrote and ran a script: 10 minutes lost. Write the script with
 tool and run only `python -I <file>`.
 And twice more in one night, each time a `python -I - <<'X'` with an empty body typed as a
 throwaway step in a longer command. There is no safe use of `python -` here: never type it.
+And again as the first step of a `sed` edit (`python -I - 2>/dev/null; sed …`): the command sat
+for two minutes and the edit after it never ran. Make an edit with the editor tool, not a shell
+line. The same session typed it once more, with `</dev/null` added, and that hung too: the habit
+is the problem, not the input. Every Python step names a script file.
 
 **A search that ran no search.** `timeout 40 find … 2>/dev/null` on a Mac: there's no `timeout` there,
 the error went to `/dev/null`, and the empty result read as "no such files on this computer". Don't

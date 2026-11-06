@@ -841,8 +841,11 @@ Gaps found while using the app for real projects.
       shell can't write them, or say plainly that "commands: allow" trusts the builder
 - [ ] A typed note ("yes, push it") still reaches the builder only as text: say in the card's
       place, when the builder is refused, how the person can allow that kind
-- [ ] The project page and a slash command change those choices (like `/btw`)
+- [x] The project page and a slash command change those choices (like `/btw`): the Approvals
+      menu under the prompt box and `/approvals <kind> <allow|ask|refuse|default>`
       — claimed: tanish2k09, branch feature/r2.9-approvals-ui
+- [ ] The new approvals strings in every catalog were written with an AI; not reviewed by native
+      speakers yet
 - [x] Keep New project's content column fixed while the vertical scrollbar animates in or out,
       hiding it when there is nothing to scroll, so switching tabs never shifts the page horizontally
       — claimed: Codex, branch bugfix/r2.9-home-scrollbar-gutter
