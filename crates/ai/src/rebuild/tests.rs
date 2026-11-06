@@ -142,6 +142,16 @@ fn spanish_requests_keep_their_project_kind() {
 }
 
 #[test]
+fn portuguese_and_turkish_requests_keep_their_project_kind() {
+    for request in ["Um jogo simples da cobrinha", "Basit bir yılan oyunu", "Bir oyun yap"] {
+        assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");
+    }
+    assert_eq!(choose("Bir web sitesi yap", &TargetRef::None), ("website", stacks::BUILDERS_CHOICE));
+    assert_eq!(choose("Um site para a minha padaria", &TargetRef::None), ("website", stacks::BUILDERS_CHOICE));
+    assert_eq!(choose("Bir oyuncak mağazası uygulaması", &TargetRef::None).0, "app", "oyuncak is a toy");
+}
+
+#[test]
 fn vietnamese_requests_keep_their_project_kind() {
     for request in ["Một trò chơi rắn săn mồi đơn giản", "Trò chơi đó, thêm bảng xếp hạng"] {
         assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");

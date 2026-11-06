@@ -32,6 +32,8 @@ pub static LANGUAGES: &[LangInfo] = &[
     LangInfo { code: "cs", name: "Čeština", source: include_str!("i18n/cs.tsv") },
     LangInfo { code: "es", name: "Español", source: include_str!("i18n/es.tsv") },
     LangInfo { code: "vi", name: "Tiếng Việt", source: include_str!("i18n/vi.tsv") },
+    LangInfo { code: "pt-br", name: "Português (Brasil)", source: include_str!("i18n/pt-br.tsv") },
+    LangInfo { code: "tr", name: "Türkçe", source: include_str!("i18n/tr.tsv") },
 ];
 
 /// Match a locale to a registered UI language. An explicit script wins over the region.
@@ -55,6 +57,7 @@ pub fn language_from_tag(tag: &str) -> Option<&'static str> {
                 Some("zh-hans")
             }
         }
+        "pt" => Some("pt-br"),
         _ => LANGUAGES.iter().find(|l| l.code == primary).map(|l| l.code),
     }
 }
@@ -155,6 +158,9 @@ mod tests {
         assert_eq!(preferred_language(["sv-SE", "zh-HK", "en-US"]), "zh-hant");
         assert_eq!(language_from_tag("vi-VN"), Some("vi"));
         assert_eq!(language_from_tag("vi_VN.UTF-8"), Some("vi"));
+        assert_eq!(language_from_tag("pt_BR.UTF-8"), Some("pt-br"));
+        assert_eq!(language_from_tag("pt-PT"), Some("pt-br"));
+        assert_eq!(language_from_tag("tr-TR"), Some("tr"));
         assert_eq!(preferred_language(["de-DE", "zh-HK"]), "de");
         assert_eq!(preferred_language(["sv-SE", "vi-VN", "en-US"]), "vi");
         assert_eq!(preferred_language(["en-US", "zh-CN"]), "en");
@@ -172,7 +178,9 @@ mod tests {
             out
         }
         let mut catalogs = Vec::new();
-        for lang in LANGUAGES.iter().filter(|l| matches!(l.code, "zh-hans" | "zh-hant" | "ru" | "ko" | "cs" | "de" | "ka" | "es" | "it" | "vi")) {
+        for lang in
+            LANGUAGES.iter().filter(|l| matches!(l.code, "zh-hans" | "zh-hant" | "ru" | "ko" | "cs" | "de" | "ka" | "es" | "it" | "vi" | "pt-br" | "tr"))
+        {
             let mut keys = std::collections::BTreeSet::new();
             for (i, line) in lang.source.lines().enumerate() {
                 if line.trim().is_empty() || line.starts_with('#') {
