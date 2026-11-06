@@ -96,7 +96,7 @@ pub fn runtime_of(product: &str, user_agent: &str) -> &'static str {
 /// The error returned when no browser is available and none was asked to launch.
 pub fn engine_missing(detail: impl std::fmt::Display) -> ToolError {
     ToolError::new(ErrorCode::EngineMissing, format!("no browser is available: {detail}")).with_remediation(
-        "Give a loopback CDP endpoint (start a browser with --remote-debugging-port), or install a browser from Settings → Engines so one can be launched.",
+        "Give a loopback CDP endpoint (start a browser with --remote-debugging-port), or install a Chromium-based browser so one can be launched (set its path in Settings → Engines if it isn't found).",
     )
 }
 
@@ -155,8 +155,13 @@ impl Browser {
     }
 
     pub(crate) fn launch(ctx: &Ctx<'_>, opts: &LaunchOptions, dl: &Deadline) -> Result<Browser, ToolError> {
-        let exe = craft_anything_engines::locate("chromium", &ctx.session.settings.engines.tools, &ctx.session.settings.engine_store_dir())
-            .ok_or_else(|| engine_missing("no Chromium-based browser was found"))?;
+        let exe =
+            craft_anything_engines::locate("chromium", &ctx.session.settings.engines.tools, &ctx.session.settings.engine_store_dir()).ok_or_else(|| {
+                // Browser tools that take an endpoint come here without `Requires::Engine`'s check.
+                let (reason, fix) = ctx.session.settings.engine_not_found("chromium");
+                ToolError::new(ErrorCode::EngineMissing, reason)
+                    .with_remediation(format!("{fix} Or give a loopback CDP endpoint (start a browser with --remote-debugging-port)."))
+            })?;
         let profile = BrowserProfile(super::artifact_tools::fresh_dir_in(&profile_base(&exe, dirs::home_dir()), "craft-browser")?);
         let mut args: Vec<String> = vec![
             format!("--user-data-dir={}", profile.0.display()),
