@@ -267,9 +267,22 @@ pub fn messages_json(m: &Msg, react: bool) -> Vec<Value> {
             out
         }
         Speaker::Assistant => {
+            // Some providers (Kimi, #849) refuse an assistant message with nothing in it; blank text
+            // counts as nothing.
             let text = m.text();
+            let mut text = if text.trim().is_empty() { String::new() } else { text };
             if react {
-                return vec![json!({"role": "assistant", "content": text})];
+                // Calls made natively before the switch to the text protocol are written as the
+                // protocol's own lines, so the turn isn't empty and the model sees what it did.
+                if !text.contains("Action:") {
+                    for (_, name, input) in m.tool_uses() {
+                        if !text.is_empty() && !text.ends_with('\n') {
+                            text.push('\n');
+                        }
+                        text.push_str(&format!("Action: {name}\nAction Input: {input}"));
+                    }
+                }
+                return if text.is_empty() { Vec::new() } else { vec![json!({"role": "assistant", "content": text})] };
             }
             let calls: Vec<Value> = m
                 .tool_uses()
@@ -1018,6 +1031,10 @@ mod tests {
         let b = react.body(&TurnRequest { system: "S", messages: &msgs, tools: &tools, effort: Effort::Low, max_tokens: 100 });
         assert!(b.get("tools").is_none());
         assert!(b["messages"][0]["content"].as_str().unwrap().contains("Action Input:"));
+        // A call made natively before the switch is sent as the protocol's lines, never as an empty
+        // assistant message (#849).
+        assert_eq!(b["messages"][2]["role"], "assistant");
+        assert_eq!(b["messages"][2]["content"], "Action: t\nAction Input: {\"a\":1}");
         assert!(b["messages"][3]["content"].as_str().unwrap().contains("Observation (error): bad"));
     }
 
@@ -1035,6 +1052,43 @@ mod tests {
     fn empty_assistant_message_is_omitted() {
         let empty = Msg { role: Speaker::Assistant, blocks: vec![] };
         assert!(messages_json(&empty, false).is_empty(), "empty assistant turn must produce no wire messages");
+    }
+
+    #[test]
+    fn blank_assistant_message_is_omitted_in_both_protocols() {
+        let blank = Msg { role: Speaker::Assistant, blocks: vec![Block::Text { text: " \n".into() }] };
+        let empty = Msg { role: Speaker::Assistant, blocks: vec![] };
+        for react in [false, true] {
+            assert!(messages_json(&blank, react).is_empty(), "react={react}");
+            assert!(messages_json(&empty, react).is_empty(), "react={react}");
+        }
+        // Blank text beside a tool call is left out, the call kept.
+        let tool = Msg {
+            role: Speaker::Assistant,
+            blocks: vec![Block::Text { text: "  ".into() }, Block::ToolUse { id: "c1".into(), name: "look".into(), input: json!({}) }],
+        };
+        let m = messages_json(&tool, false);
+        assert!(m.len() == 1 && m[0].get("content").is_none() && m[0]["tool_calls"].is_array(), "{m:?}");
+        assert_eq!(messages_json(&tool, true)[0]["content"], "Action: look\nAction Input: {}");
+        // A turn written in the protocol already keeps its own lines, once.
+        let written = Msg {
+            role: Speaker::Assistant,
+            blocks: vec![
+                Block::Text { text: "Thought: look\nAction: look\nAction Input: {}".into() },
+                Block::ToolUse { id: "react_0".into(), name: "look".into(), input: json!({}) },
+            ],
+        };
+        assert_eq!(messages_json(&written, true)[0]["content"], "Thought: look\nAction: look\nAction Input: {}");
+        // In a whole request (text protocol), the user turns either side are joined into one.
+        let user = |t: &str| Msg { role: Speaker::User, blocks: vec![Block::Text { text: t.into() }] };
+        let mut o = OpenAi::compatible("Kimi", "http://127.0.0.1:9", Some("sk-test".into()), "kimi");
+        o.react = true;
+        let msgs = [user("first"), blank, user("second")];
+        let b = o.body(&TurnRequest { system: "s", messages: &msgs, tools: &[], effort: Effort::Low, max_tokens: 100 });
+        assert_eq!(b["messages"].as_array().map(Vec::len), Some(2), "system, then the joined user turn");
+        let wire = b["messages"].as_array().unwrap();
+        assert!(wire.iter().all(|m| m["role"] != "assistant"), "{wire:?}");
+        assert!(wire.iter().all(|m| m["content"].as_str().is_some_and(|c| !c.trim().is_empty())), "{wire:?}");
     }
 
     #[test]
