@@ -132,9 +132,13 @@ cheapest help we can give anyone, so nothing below should hold it up for long.
       #33) is remembered: `starting` beside `desktop.log` is written before the window is asked for
       and removed once it's open, and a start that finds it draws with WARP that once
       (`apps/craft-anything/src/start_guard.rs`)
-- [ ] Live-check the start fallback on Windows: make a start die before its window (kill the
+- [x] Live-check the start fallback on Windows: make a start die before its window (kill the
       process at launch), start again, and see `desktop.log` say it drew without the graphics card
-      and log `drawing with` an adapter of type `Cpu` (WARP), and that the window opens
+      and log `drawing with` an adapter of type `Cpu` (WARP), and that the window opens. Passed on
+      2026-11-04 (`main` at `869eb85`, release build, Windows 11, RX 6900 XT): a start killed right
+      after `drawing with` the Radeon left `starting`; the next logged "the last start never opened
+      its window", drew with "Microsoft Basic Render Driver" (`Cpu`, DX12), logged `window open` and
+      removed `starting` — claimed: 00xJS, branch docs/r5.1-start-fallback-live-check
 - [ ] The software retry still lets wgpu start every DX12 adapter before `pick_adapter` runs, so a
       driver that crashes while its device is created crashes the retry too. wgpu has no way to
       skip hardware adapters; needs a different route (another renderer, or a helper that starts
