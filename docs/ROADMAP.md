@@ -654,6 +654,10 @@ Owner: open · Status: in progress
       and hold it only to what it broke
 - [ ] A new project in Python, Go or the like still fails the build check ("No project to build
       found") and has no program for the screenshot check: `[[toolchain]]` could build it too
+- [x] "player" alone doesn't make a request a game: a video or music player is an app (#953)
+      — claimed: justinjohn0306, branch bugfix/953-player-not-a-game
+- [ ] Game words can't tell these apart from games: "a low level disk tool", "an MPEG 2 player",
+      "a single player app for movies". Telling them apart needs more than a list of words
 
 ### R2.8 Clean room means clean room
 Owner: maintainers · Status: in progress

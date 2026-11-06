@@ -8,6 +8,26 @@ use craft_anything_engines::game;
 const ASSETS_NOW_OFF: &str =
     "Generated assets are now off for this project: don't make more with assets_image_generate or assets_model_generate. Keep the ones already in app/.";
 
+/// Whether `at` starts a word, where a hyphen joins it to the word before: "(level editor)", but
+/// not "low-level" or "multilevel".
+fn starts_word(request: &str, at: usize) -> bool {
+    request.get(..at).and_then(|s| s.chars().next_back()).is_none_or(|c| !c.is_alphanumeric() && c != '-')
+}
+
+/// A number of players as its own words: "2-player", "(four players)", but not "MPEG-2 player",
+/// "mp2 player", "12 player" or "two playerctl".
+fn says_player_count(request: &str) -> bool {
+    // Any run of spaces or line breaks counts as one space: "2  player".
+    let request = request.split_whitespace().collect::<Vec<_>>().join(" ");
+    let ends_word = |rest: &str| rest.strip_prefix('s').unwrap_or(rest).chars().next().is_none_or(|c| !c.is_alphanumeric());
+    ["2", "3", "4", "two", "three", "four"].iter().any(|n| {
+        ["-player", " player"].iter().any(|player| {
+            let phrase = format!("{n}{player}");
+            request.match_indices(&phrase).any(|(at, _)| starts_word(&request, at) && request.get(at + phrase.len()..).is_some_and(ends_word))
+        })
+    })
+}
+
 pub struct GameKind;
 
 impl GameKind {
@@ -33,7 +53,26 @@ impl TargetKind for GameKind {
         // say ("Clone <its title> 1:1" never says "game").
         if game::Builder::from_stack(cx.stack).is_some() {
             Some(200)
-        } else if cx.says(&["game", "gameplay", "steam", "level", "player", "游戏", "遊戲", "玩法", " spiel", "-spiel"]) {
+        // Not plain "player": a video or music player is an app (#953).
+        } else if says_player_count(&cx.request)
+            || cx.request.match_indices("level").any(|(at, _)| starts_word(&cx.request, at))
+            || cx.says(&[
+                "game",
+                "gameplay",
+                "steam",
+                "multiplayer",
+                "multi-player",
+                "multi player",
+                "singleplayer",
+                "single-player",
+                "single player",
+                "游戏",
+                "遊戲",
+                "玩法",
+                " spiel",
+                "-spiel",
+            ])
+        {
             Some(60)
         } else {
             None

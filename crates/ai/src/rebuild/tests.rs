@@ -63,6 +63,46 @@ fn stack_choice() {
 }
 
 #[test]
+fn the_word_player_alone_is_not_a_game() {
+    for request in [
+        "A video player for my films",
+        "a music player",
+        "Um player de vídeo com canais, filmes e séries",
+        "An MPEG-2 player",
+        "an mpeg-2-player",
+        "an mp2 player",
+        "an mp4 player",
+        "a 12 player scoreboard",
+        "a music app with two playerctl shortcuts",
+        "a low-level disk tool",
+        "a multilevel menu",
+    ] {
+        assert_eq!(choose(request, &TargetRef::None).0, "app", "{request}");
+    }
+    assert_eq!(choose("Um player de vídeo desktop, use Electron", &TargetRef::None), ("app", "Electron"));
+    for request in [
+        "A multiplayer shooter",
+        "A single-player adventure",
+        "A single player adventure",
+        "a 2-player chess board",
+        "a two player chess board",
+        "Build a (2-player) chess board",
+        "a 2  player chess board",
+        "chess for 2 players",
+        "party fun for four players.",
+        "a two\nplayer chess board",
+        "a four-player party",
+        "4 player dungeon crawl",
+        "A game with one player",
+        "A level editor",
+        "Build a (level editor)",
+        "Make this:\nlevel editor",
+    ] {
+        assert_eq!(choose(request, &TargetRef::None).0, "game", "{request}");
+    }
+}
+
+#[test]
 fn german_requests_keep_their_project_kind() {
     for request in ["Ein einfaches Snake-Spiel", "Dasselbe Spiel mit einer Bestenliste"] {
         assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");
