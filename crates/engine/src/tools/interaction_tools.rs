@@ -636,11 +636,15 @@ fn publishes(c: &str) -> bool {
 }
 
 /// Whether a lower-cased command names what a builder mustn't change from the shell either: the
-/// project's manifest (where its approvals are kept), its inbox (where answers are written), or the
-/// tool that sets approvals (`craft-anything-cli` can call it). A command that reaches them without
-/// naming them (a script that builds the path) isn't caught here.
+/// project's manifest (where its approvals are kept), its inbox (where answers are written), the
+/// tool that sets approvals (`craft-anything-cli` can call it) or the marker that makes our CLI call
+/// as an agent ([`crate::AGENT_ENV`]). Read with quotes and escapes taken out, as the shell joins
+/// `approv'als-set'`. A command that reaches them without naming them (a script that builds the
+/// path) isn't caught: with commands allowed, the builder is trusted that far.
 fn names_records(c: &str, ws: Option<&Workspace>) -> bool {
-    c.contains("craft.json") || c.contains("approvals_set") || c.contains("approvals-set") || ws.is_some_and(|w| mentions(c, &w.inbox_dir()))
+    let joined: String = c.chars().filter(|ch| !matches!(ch, '"' | '\'' | '\\' | '`')).collect();
+    let agent = crate::AGENT_ENV.to_ascii_lowercase();
+    ["craft.json", "approvals_set", "approvals-set", agent.as_str()].iter().any(|n| joined.contains(n)) || ws.is_some_and(|w| mentions(c, &w.inbox_dir()))
 }
 
 /// A program's name as typed, without its folder or a Windows extension (`/usr/bin/npm`, `npm.cmd`).
@@ -1150,6 +1154,9 @@ mod tests {
             "python -c \"import json; d=json.load(open('craft.json'))\"",
             "echo '{}' > ../craft.json",
             &format!("echo yes > \"{inbox}/1.answer.json\""),
+            // The shell joins quoted pieces, and the marker can be taken away first.
+            "env -u CRAFT_ANYTHING_AGENT craft-anything-cli project-approv'als-set' --kind publish --mode allow",
+            "unset CRAFT_ANYTHING_AGENT; cat craft.\"json\"",
         ] {
             assert_eq!(kind_of(Some(&w), "Bash", &json!({"command": cmd})), ActionKind::System, "{cmd}");
             assert!(matches!(outcome(Some(&w), true, "Bash", &json!({"command": cmd})), Outcome::Refuse(_)), "{cmd}");

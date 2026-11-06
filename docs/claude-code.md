@@ -31,7 +31,10 @@ integration does, why it is shaped this way, and what remains to confirm.
   delete or system change allows that whole kind for the project. A builder's own call to
   `project_approvals_set` can only make a kind stricter, also through `craft-anything-cli` run
   from its shell (agents we start have `CRAFT_ANYTHING_AGENT` set), and a command that names
-  `craft.json`, the inbox or the approvals tool counts as a system change.
+  `craft.json`, the inbox, the approvals tool or that variable counts as a system change. These
+  raise the bar; they aren't a wall: a builder allowed to run any command runs with the person's
+  own permissions and could change those files another way, so "commands: allow" (Auto mode's
+  default) trusts the builder.
 - Questions: Claude Code's own question tool is disabled for these runs (`--disallowedTools
   AskUserQuestion`); the agent uses our `core_person_ask` tool, which shows a card with buttons.
 - Before a build starts, `claude auth status` is checked. If Claude Code isn't signed in, the run

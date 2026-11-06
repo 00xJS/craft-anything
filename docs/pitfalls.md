@@ -69,6 +69,9 @@ Don't close or rewrite other people's work without asking.
 comments were acted on; the fixes went to its branch and the threads were answered "Fixed", while
 `main` had the code without them. Read `gh pr view --json state,headRefOid` before pushing to a PR's
 branch, and land anything late in a new PR from `main`.
+It happened again with the check in place: `gh pr view 1022 --json state -q .state && … git push`
+printed `MERGED` and went on, because printing a state isn't failing. The check has to stop the
+command: `test "$(gh pr view <n> --json state -q .state)" = OPEN && …`.
 
 **A report checked against main, not the release it ran.** #736 (a build looping on an empty `app/`)
 was read against main, where the stop after two unchanged turns already existed, so it looked fixed.
