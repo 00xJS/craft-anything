@@ -103,11 +103,50 @@ fn the_word_player_alone_is_not_a_game() {
 }
 
 #[test]
+fn italian_requests_keep_their_project_kind() {
+    for request in ["Un semplice gioco del serpente", "Per esempio: lo stesso gioco, con una classifica", "Fai un gioco che si gioca così"] {
+        assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");
+    }
+    for request in ["Un sito per la mia panetteria", "Ricostruisci questo sito", "Per esempio: ricostruisci questo sito"] {
+        assert_eq!(choose(request, &TargetRef::None), ("website", stacks::BUILDERS_CHOICE), "{request}");
+    }
+}
+
+#[test]
 fn german_requests_keep_their_project_kind() {
     for request in ["Ein einfaches Snake-Spiel", "Dasselbe Spiel mit einer Bestenliste"] {
         assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");
     }
     for request in ["Eine Website für meine Bäckerei", "Diese Webseite nachbauen"] {
+        assert_eq!(choose(request, &TargetRef::None), ("website", stacks::BUILDERS_CHOICE), "{request}");
+    }
+}
+
+#[test]
+/// A request written in Spanish keeps the project kind its English equivalent would get, which is
+/// what the German and Chinese cases assert for their own words.
+fn spanish_requests_keep_their_project_kind() {
+    for request in ["Un juego de serpiente sencillo", "El mismo juego, con una tabla de récords"] {
+        assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");
+    }
+    for request in ["Un sitio web para mi panadería", "Recrea este sitio web", "Una página web de mi taller"] {
+        assert_eq!(choose(request, &TargetRef::None), ("website", stacks::BUILDERS_CHOICE), "{request}");
+    }
+    assert_eq!(choose("La misma app, pero más simple", &TargetRef::None).0, "app");
+    // "juego" also names a set: a tool set is not a game.
+    assert_eq!(choose("Una app para llevar el inventario de mi juego de herramientas", &TargetRef::None).0, "app");
+    // "web" alone says nothing: a web app is built as an app, not as a website.
+    for request in ["Una aplicación web de notas", "A web app in Rust"] {
+        assert_eq!(choose(request, &TargetRef::None).0, "app", "{request}");
+    }
+}
+
+#[test]
+fn vietnamese_requests_keep_their_project_kind() {
+    for request in ["Một trò chơi rắn săn mồi đơn giản", "Trò chơi đó, thêm bảng xếp hạng"] {
+        assert_eq!(choose(request, &TargetRef::None), ("game", "Unity"), "{request}");
+    }
+    for request in ["Một trang web cho tiệm bánh của tôi", "Dựng lại Trang web này"] {
         assert_eq!(choose(request, &TargetRef::None), ("website", stacks::BUILDERS_CHOICE), "{request}");
     }
 }

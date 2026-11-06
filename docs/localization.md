@@ -1,7 +1,8 @@
 # UI localisation
 
-The desktop app offers **Čeština** (`cs`), **Deutsch** (`de`), **ქართული** (`ka`), **한국어** (`ko`), **Русский** (`ru`), **简体中文** (`zh-hans`)
-and **繁體中文** (`zh-hant`), alongside English, French and Japanese, in **Settings → General → Language**. The choice is saved in the
+The desktop app offers **Čeština** (`cs`), **Deutsch** (`de`), **Español** (`es`), **Italiano** (`it`), **ქართული** (`ka`),
+**한국어** (`ko`), **Русский** (`ru`), **Tiếng Việt** (`vi`), **简体中文** (`zh-hans`) and **繁體中文** (`zh-hant`), alongside
+English, French and Japanese, in **Settings → General → Language**. The choice is saved in the
 existing `language` setting. **System** uses the operating system's preferred
 supported language; if none matches, it uses English. An explicit choice takes
 precedence over the system language.
@@ -27,10 +28,34 @@ so a translated suggestion keeps its project kind.
 `crates/ui-egui/src/i18n/ka.tsv` has the same keys as the other catalogs. Written with Claude Code from the
 meaning of each English string; terminology and doubtful strings decided by a native Georgian speaker (@devius).
 Glyphs come from Noto Sans Georgian in craft-fonts, which the pinned craft-fonts already has; a test checks it.
+## Italian
+
+**Italiano** (`it`) uses the informal "tu". `it` and `it-IT` select it, as does the system language when it is
+Italian. `crates/ui-egui/src/i18n/it.tsv` has the same keys as the other catalogs, written from the English
+source strings. It was drafted with an AI and not yet reviewed by a native speaker; corrections are welcome.
+Product and technology names, tool ids and shortcuts keep their spelling. The kind detection that reads a
+request also knows *gioco* and *sito*, so a translated suggestion keeps its project kind. Clean room is
+*Camera bianca* and Deep mode is *modalità Approfondita*.
+
+## Vietnamese
+
+**Tiếng Việt** (`vi`) addresses the person as *bạn*. `vi` and `vi-VN` select it, as does the system
+language when it is Vietnamese. `crates/ui-egui/src/i18n/vi.tsv` has the same keys as the other
+catalogs, written from the English source strings in NFC (precomposed) Unicode. It was drafted with
+an AI and not yet reviewed by a native speaker; corrections are welcome. Product, technology and
+engine names, tool ids and shortcuts keep their spelling. The glossary: *Phòng sạch* (Clean room),
+*Chuyên sâu* (Deep), *Tìm hiểu / Xây dựng / Kiểm tra / Tinh chỉnh / Sẵn sàng*
+(Study / Build / Check / Refine / Ready), *Bằng chứng* (Evidence), *Phát hiện* (finding),
+*Dự án* (Project), *Mục tiêu* (target), *Công cụ* (tool), *Bàn làm việc* (workbench),
+*Cài đặt* (Settings) and *Dựng lại* (rebuild).
+
+The kind detection that reads a request also knows *trò chơi* for a game and *trang web* for a
+website, so a translated suggestion keeps its project kind.
 
 ## Scope and format
 
-`crates/ui-egui/src/i18n/cs.tsv`, `de.tsv`, `ka.tsv`, `ko.tsv`, `ru.tsv`, `zh-hans.tsv` and `zh-hant.tsv` contain original
+`crates/ui-egui/src/i18n/cs.tsv`, `de.tsv`, `es.tsv`, `it.tsv`, `ka.tsv`, `ko.tsv`, `ru.tsv`, `vi.tsv`, `zh-hans.tsv` and
+`zh-hant.tsv` contain original
 translations under the repository's MIT OR Apache-2.0 licence. Each UTF-8 line
 has two columns: `English source<TAB>translation`. Comments begin with `#`;
 `\n` represents a newline. The language registry in `i18n.rs` embeds the catalogs.
@@ -46,12 +71,34 @@ descriptions, logs and exported reports retain their original text. The CLI,
 MCP, tool IDs, stored project data and the separate browser viewer are unchanged.
 
 Keep placeholders such as `{name}` and `{n}` intact, along with command IDs,
-shortcuts, escapes and trailing `…`. Update every catalog (`cs`, `de`, `ka`, `ko`, `ru`, `zh-hans`, `zh-hant`)
+shortcuts, escapes and trailing `…`. Update every catalog (`cs`, `de`, `es`, `it`, `ka`, `ko`, `ru`, `vi`, `zh-hans`, `zh-hant`)
 when English source keys change; the tests require matching key sets. Common terms include 净室 / 淨室 (Clean room), 深度 (Deep),
 构建 / 建置 (Build), 证据 / 證據 (Evidence), and 项目 / 專案 (Project).
 The Korean catalog `ko.tsv` uses 클린룸 (Clean room), 심층 (Deep), 분석 / 만들기 / 검사 / 완성
 (Study / Build / Check / Ready), 근거 (Evidence) and 프로젝트 (Project); short labels are nouns and
 sentences use the formal 합니다 style.
+
+## Spanish
+
+**Español** (`es`) uses informal "tú", Mexican vocabulary (*agregar*, *computadora*, *presiona*) and
+`es`, `es-MX`, `es-419` and the other `es-` regions select it. The register, the Mexican vocabulary
+and the glossary below were chosen by a native speaker; the catalog itself was drafted with AI
+assistance from the English source, so corrections from other speakers are welcome.
+
+Product, technology and mode names keep their spelling: **Clean room** and **Deep** stay in English
+because they name the two modes in the title bar, as do tool and engine names (Ghidra, Unity, Unreal,
+Godot, Claude Code). The terms the app itself translates follow one glossary: *construir* /
+*construcción* (Build), *evidencia* (Evidence), *proyecto* (Project), *hallazgo* (finding),
+*objetivo* (target), *herramienta* (tool), *banco de trabajo* (workbench), *constructor* (builder),
+*Configuración* (Settings) and *Estudiar / Construir / Verificar / Listo* for
+Study / Build / Check / Ready. *Plugin* stays as it is, in all 16 strings that use it, rather than the
+suite's *complemento*: it is the word the people using the interface say in Mexican Spanish, and a
+catalogue that changes term halfway reads worse than one that keeps a loanword.
+
+The kind detection that reads a request also knows the Spanish words *juego*, *juegos*, *jugabilidad*
+and *videojuego* for a game, and *sitio web* and *página web* for a website, so a translated
+suggestion keeps its project kind. The bare word *web* is deliberately not a signal: *una aplicación
+web* is an app, not a website.
 
 ## Validation
 
@@ -78,6 +125,11 @@ cargo run -p craft-anything-ui-egui --example snapshot -- --lang zh-hant --only 
 ```
 
 Chinese, Korean and Georgian glyphs use the existing craft-fonts fallback, which release and CI builds
+Spanish is Latin script and needs no extra glyphs. Chinese and Korean glyphs use the existing craft-fonts fallback, which release and CI builds
+Vietnamese needs craft-fonts too: the bundled DM Sans and egui's default fonts lack the letters with
+stacked marks (ạ, ả, ấ, ế, ơ, ư, ữ…), so a build without craft-fonts shows them as boxes. With
+craft-fonts, Noto Sans CJK SC supplies those letters (a different face from the DM Sans around them);
+the script test in `theme.rs` checks every one of them. Chinese and Korean glyphs use the existing craft-fonts fallback, which release and CI builds
 already include. Local builds must set `CRAFT_FONTS_DIR` to a craft-fonts checkout
 before compiling to get the same glyph coverage. The catalogs add no font assets.
 Check each script, clipping, narrow windows and native file dialogs visually

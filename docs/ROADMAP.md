@@ -781,6 +781,10 @@ Gaps found while using the app for real projects.
       the system's Edit items need the text box to answer them, so they'd show greyed out today
 - [x] The Advanced console's prompt box starts tall enough to read what's typed (#942)
       — claimed: justinjohn0306, branch bugfix/942-console-input-height
+- [ ] Vietnamese letters with stacked marks (ạ ả ấ ế ơ ư ữ…) aren't in the bundled DM Sans or egui's
+      default fonts: without craft-fonts they show as boxes, and with it each such letter comes from
+      Noto Sans CJK while the rest of the word is DM Sans. Bundle a DM Sans build that has the
+      Vietnamese set (with its OFL notice) so Tiếng Việt renders in one face
 
 ### R2.10 Pinned builds
 Owner: maintainers · Status: in progress
