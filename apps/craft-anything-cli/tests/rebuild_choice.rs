@@ -2,9 +2,10 @@
 //! Each test gives the binary its own config, home and `PATH`, so the person's settings and the
 //! agents installed on the machine don't decide the result.
 //!
-//! The command stops when it opens `--continue-in`'s empty folder, right after the builder check:
-//! the test sees exactly the choice `rebuild` made before doing any work. An invalid command is
-//! refused before that check, so it cannot add an agent either.
+//! A run with no `--backend`, or an enabled one, stops when it opens `--continue-in`'s empty
+//! folder, right after the builder check: the test sees exactly the choice `rebuild` made before
+//! doing any work. An invalid command, an unknown name or a switched-off backend is refused before
+//! that, so it cannot add an agent or leave a new project folder behind.
 #![cfg(unix)]
 
 use craft_anything_platform::process::{Output, Process};
@@ -38,6 +39,15 @@ fn api_config(config: &Path) {
     std::fs::write(
         config.join("config.toml"),
         "[[ai.backends]]\nname = \"API\"\nkind = \"openai_compatible\"\nmodel = \"test-model\"\nbase_url = \"http://127.0.0.1:9/v1\"\nenabled = true\n",
+    )
+    .unwrap();
+}
+
+/// A configured backend that is switched off, plus an enabled one for the default path.
+fn disabled_config(config: &Path) {
+    std::fs::write(
+        config.join("config.toml"),
+        "[[ai.backends]]\nname = \"Off\"\nkind = \"anthropic\"\nmodel = \"claude-test\"\nenabled = false\n\n[[ai.backends]]\nname = \"API\"\nkind = \"openai_compatible\"\nmodel = \"test-model\"\nbase_url = \"http://127.0.0.1:9/v1\"\nenabled = true\n",
     )
     .unwrap();
 }
@@ -123,9 +133,10 @@ fn a_named_installed_agent_is_added_when_missing() {
     assert!(saved.contains("agent_cli") && saved.contains("name = \"Claude Code\""), "the named agent must be saved:\n{saved}");
 }
 
-/// An unknown name must not add a different agent that happens to be installed.
+/// An unknown name is named in the error, and must not add a different agent that happens to be
+/// installed or blame a missing setup.
 #[test]
-fn an_unknown_backend_does_not_add_an_agent() {
+fn an_unknown_backend_is_named_and_does_not_add_an_agent() {
     let config = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let bin = tempfile::tempdir().unwrap();
@@ -136,11 +147,51 @@ fn an_unknown_backend_does_not_add_an_agent() {
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let out = cli(&refs, config.path(), home.path(), bin.path());
     let log = out.stderr_text();
-    assert!(!out.success, "the empty project folder must stop the run:\n{log}");
-    assert!(log.contains("craft.json"), "the run must stop at the missing project, before any build:\n{log}");
+    assert!(!out.success, "an unknown backend must stop the run:\n{log}");
+    assert!(log.contains("No AI backend named") && log.contains("No Such AI"), "the error must name the name:\n{log}");
+    assert!(!log.contains("Building needs a coding agent"), "the error must not blame the setup:\n{log}");
     assert!(!log.contains("Using "), "an unknown name must not pick an installed agent:\n{log}");
     let saved = std::fs::read_to_string(config.path().join("config.toml")).unwrap_or_default();
     assert!(!saved.contains("agent_cli"), "an unknown name must not save an agent:\n{saved}");
+}
+
+/// A backend the person switched off must not be used just because it was named: refuse it before
+/// a project is made or opened, and say how to turn it on.
+#[test]
+fn a_disabled_backend_is_refused_before_a_project_is_opened_or_created() {
+    let config = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let parent = tempfile::tempdir().unwrap();
+    disabled_config(config.path());
+    fake_claude(bin.path());
+
+    let project = parent.path().join("new-project");
+    let out = cli(
+        &["rebuild", "-", "make a small page", "--project-folder", project.to_str().unwrap(), "--backend", "Off", "--rounds", "0", "--unattended"],
+        config.path(),
+        home.path(),
+        bin.path(),
+    );
+    let log = out.stderr_text();
+    assert!(!out.success, "the switched-off backend must stop the run:\n{log}");
+    assert!(log.contains("Off") && log.contains("turned off"), "the error must name the backend and its state:\n{log}");
+    assert!(log.contains("Turn it on"), "the error must say how to fix it:\n{log}");
+    assert!(!log.contains("Project:"), "it must stop before a project is made:\n{log}");
+    assert!(!project.exists(), "a refused command must not leave a project folder:\n{log}");
+
+    // An existing project is refused before it is opened or a build starts.
+    let existing = tempfile::tempdir().unwrap();
+    let out = cli(
+        &["rebuild", "-", "make a small page", "--continue-in", existing.path().to_str().unwrap(), "--backend", "Off", "--rounds", "0", "--unattended"],
+        config.path(),
+        home.path(),
+        bin.path(),
+    );
+    let log = out.stderr_text();
+    assert!(!out.success, "the switched-off backend must stop an existing project too:\n{log}");
+    assert!(log.contains("Off") && log.contains("turned off"), "the error must name the backend and its state:\n{log}");
+    assert!(!log.contains("craft.json") && !log.contains("Couldn't reach"), "it must stop before opening or building:\n{log}");
 }
 
 /// A command refused before any build starts must not change the person's AI settings either.

@@ -339,8 +339,13 @@ Owner: open · Status: todo
       settings and prints "Using Claude Code (…)": `ensure_agent` (`rebuild_cmd.rs`) runs whenever no
       agent app is set up, though this run won't use one. Run it only when the build needs one
       — claimed: AlexJoaquimPereira, branch `bugfix/r5.5-no-agent-with-api-backend`
-- [ ] `--backend <a name that is turned off>` still builds with it: `builder_backend`'s named
-      branch doesn't check `enabled`, while Settings treats an AI that is off as unusable
+- [x] `--backend <a name that is turned off or unknown>` is refused with a specific message: a
+      turned-off backend is named and must be turned on, and a name that matches nothing is named
+      instead of saying to install an agent or add a key
+      — claimed: AlexJoaquimPereira, branch `bugfix/r5.5-disabled-backend-name`; commit a380b3e
+- [ ] When a project's saved builder was turned off, Start builds with the default AI without
+      saying so: the UI picker filters the stale name out (`ui-egui/src/builders.rs`) instead of
+      reporting that the chosen AI was replaced
 - [x] Bound accumulated data across all lines of one server-sent event, so short lines cannot
       grow a streamed API response without limit
       — claimed: Afloat16, branch bugfix/r5.5-bounded-sse-events-20261103
@@ -694,6 +699,8 @@ Gaps found while using the app for real projects.
 - [x] A prompt brought back with Up keeps its pictures (their paths are absolute, so they don't
       come back after the project is moved)
 - [ ] Change a project's builder from its page (a tool, so the CLI and MCP can too) — in PR #245
+- [ ] `chat --backend <a name that is turned off>` (and `compare`) still talks to it:
+      `AiHub::start` accepts a named backend without checking `enabled`, unlike a build
 - [x] Ctrl+V (Shift+Insert, Cmd+V) in a prompt box that takes pictures pastes a copied image (saved
       as a PNG) or copied picture files; attachments show as square picture tiles, the whole
       picture on hover, decoded on a worker

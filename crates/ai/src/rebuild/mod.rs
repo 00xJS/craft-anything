@@ -1236,17 +1236,28 @@ pub fn project_builder<'a>(cfg: &crate::AiConfig, ws: &'a Workspace) -> Option<&
     ws.manifest.builder.as_deref().filter(|n| cfg.get(n).is_some_and(|b| b.config.enabled))
 }
 
-/// The backend that builds: the one named, else the Builder role's, else an agent app, else any
-/// enabled AI backend (which builds with our own agent loop and the Build tools).
+/// The backend that builds: the one named while it is set up and on, else the Builder role's,
+/// else an agent app, else any enabled AI backend (which builds with our own agent loop and the
+/// Build tools).
 pub fn builder_backend(cfg: &crate::AiConfig, named: Option<&str>) -> Result<crate::BackendEntry, ToolError> {
-    let found = match named {
-        Some(n) => cfg.get(n).cloned(),
-        None => {
-            cfg.backend_for(Role::Builder).or_else(|| cfg.enabled().find(|b| b.config.kind == BackendKind::AgentCli)).or_else(|| cfg.enabled().next()).cloned()
+    if let Some(n) = named {
+        let Some(entry) = cfg.get(n) else {
+            return Err(
+                ToolError::invalid(format!("No AI backend named {n:?}")).with_remediation("See `craft-anything-cli ai list`, or add one in Settings → AI.")
+            );
+        };
+        if !entry.config.enabled {
+            return Err(ToolError::new(ErrorCode::BadSettings, format!("{} is turned off.", entry.config.name))
+                .with_remediation("Turn it on in Settings → AI, or choose another backend for this build."));
         }
-    };
-    found.ok_or_else(|| {
-        ToolError::new(ErrorCode::BadSettings, "Building needs a coding agent (such as Claude Code) or an AI backend with an API key.")
-            .with_remediation("Install a coding agent or add an API key in Settings → AI, then try again.")
-    })
+        return Ok(entry.clone());
+    }
+    cfg.backend_for(Role::Builder)
+        .or_else(|| cfg.enabled().find(|b| b.config.kind == BackendKind::AgentCli))
+        .or_else(|| cfg.enabled().next())
+        .cloned()
+        .ok_or_else(|| {
+            ToolError::new(ErrorCode::BadSettings, "Building needs a coding agent (such as Claude Code) or an AI backend with an API key.")
+                .with_remediation("Install a coding agent or add an API key in Settings → AI, then try again.")
+        })
 }

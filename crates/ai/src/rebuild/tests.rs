@@ -2822,6 +2822,28 @@ fn a_project_is_built_by_the_ai_it_was_started_with_while_that_one_is_on() {
     assert_eq!(builder_backend(&cfg, super::project_builder(&cfg, &ws)).unwrap().config.name, "Claude Code");
 }
 
+/// A name given on purpose is never ignored: a backend that is off is refused in words that say
+/// how to fix it, and a name that matches nothing names the name instead of blaming the setup.
+#[test]
+fn a_named_backend_that_is_off_or_unknown_is_refused() {
+    use crate::{AiConfig, BackendConfig, BackendEntry, BackendKind};
+    let mut cfg = AiConfig::default();
+    for (name, enabled) in [("Claude Code", true), ("Codex", false)] {
+        let c = BackendConfig { name: name.into(), kind: BackendKind::AgentCli, model: String::new(), base_url: None, ssh_host: None, enabled };
+        cfg.upsert(BackendEntry { config: c, options: Default::default() });
+    }
+    assert_eq!(builder_backend(&cfg, Some("Claude Code")).unwrap().config.name, "Claude Code");
+
+    let off = builder_backend(&cfg, Some("Codex")).unwrap_err();
+    assert_eq!(off.code, ErrorCode::BadSettings);
+    assert!(off.message.contains("Codex") && off.message.contains("turned off"), "{off:?}");
+    assert!(off.remediation.as_deref().is_some_and(|r| r.contains("Turn it on")), "{off:?}");
+
+    let unknown = builder_backend(&cfg, Some("No Such AI")).unwrap_err();
+    assert!(unknown.message.contains("No AI backend named"), "{unknown:?}");
+    assert!(unknown.remediation.as_deref().is_some_and(|r| r.contains("ai list")), "{unknown:?}");
+}
+
 /// #446: a project copied from another computer keeps the id of a Claude Code session that lives
 /// only there. The builder (a stand-in that answers like Claude Code 2.1) can't resume it, so the
 /// turn starts a new session from the brief and what's in app/, and keeps the new id.

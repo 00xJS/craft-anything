@@ -149,8 +149,8 @@ pub struct StartParams {
     /// project_assets_allow.
     #[serde(default)]
     pub generate_assets: bool,
-    /// The coding agent to use (a backend name), kept with a new project for its later changes;
-    /// default: the one set up for building.
+    /// The coding agent to use (an enabled backend name), kept with a new project for its later
+    /// changes; default: the one set up for building.
     #[serde(default)]
     pub backend: Option<String>,
     /// Refinement rounds after the first build (default 2).
@@ -301,6 +301,11 @@ fn rebuild_start(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolErr
     })?;
     let runs = runs(ctx);
     let settings: &Settings = &ctx.session.settings;
+    // Refuse an unknown or switched-off name before opening or making a project or adding pictures:
+    // a refused start must not leave anything behind.
+    if let Some(name) = p.backend.as_deref() {
+        builder_backend(&crate::AiConfig::from_settings(settings), Some(name))?;
+    }
     let (ws, message) = match &p.project {
         Some(dir) => {
             if p.build_with.is_some() {
@@ -518,6 +523,21 @@ mod tests {
         assert!(e.call("rebuild_note", json!({"project": ws.root, "text": "blue"}), ok()).is_err());
         assert!(e.call("rebuild_note_withdraw", json!({"project": ws.root, "id": 1}), ok()).is_err());
         assert!(e.call("rebuild_stop", json!({"project": ws.root}), ok()).is_err());
+    }
+
+    #[test]
+    fn a_disabled_or_unknown_backend_is_refused_before_the_tool_makes_a_project() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = craft_anything_engine::testing::session();
+        s.settings.ai = toml::from_str("[[backends]]\nname = \"Off\"\nkind = \"anthropic\"\nmodel = \"claude-test\"\nenabled = false\n").unwrap();
+        let e = Engine::shared(s, specs());
+        let ok = || CallOptions::new(Caller::Cli).with_consent(Consent::Granted);
+        for (backend, expected) in [("Off", "turned off"), ("No Such AI", "No AI backend named")] {
+            let p = json!({"request": "A page", "target": "-", "projects_dir": d.path(), "backend": backend});
+            let err = e.call("rebuild_start", p, ok()).unwrap_err();
+            assert!(err.message.contains(expected), "{backend}: {err:?}");
+            assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 0, "{backend}: a refused start must not make a project");
+        }
     }
 
     #[test]

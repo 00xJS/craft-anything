@@ -38,7 +38,8 @@ pub struct RebuildArgs {
     /// the computer stopped); the request is ignored.
     #[arg(long, requires = "continue_in")]
     pub resume: bool,
-    /// The coding agent to use (a backend name from `ai list`, or an installed agent such as `Claude Code`).
+    /// The coding agent to use (an enabled backend name from `ai list`, or an installed agent
+    /// such as `Claude Code`).
     #[arg(long)]
     pub backend: Option<String>,
     /// Refinement rounds after the first build.
@@ -78,8 +79,8 @@ fn ensure_agent(hub: &AiHub, requested: Option<&str>) -> Result<(), ToolError> {
     if requested.is_none() && configured.iter().any(|b| b.enabled) {
         return Ok(());
     }
-    // A name that is configured is used as it is (including a backend that is off): don't add a
-    // second one under the same name.
+    // A name that is configured is left alone (including a backend that is off): don't add a
+    // second one under the same name; the run itself refuses a backend that is off.
     if requested.is_some_and(|name| configured.iter().any(|b| b.name == name)) {
         return Ok(());
     }
@@ -103,6 +104,11 @@ fn run(cli: &Cli, a: &RebuildArgs) -> Result<bool, ToolError> {
         return Err(ToolError::invalid("--generate-assets is for new projects.").with_remediation("Use project-assets-allow for an existing project."));
     }
     ensure_agent(&hub, a.backend.as_deref())?;
+    // Refuse an unknown or switched-off name before opening or making a project: a command that
+    // can't build must not leave a new folder behind.
+    if let Some(name) = a.backend.as_deref() {
+        rebuild::builder_backend(&hub.config(), Some(name))?;
+    }
     let (ws, message) = match &a.continue_in {
         Some(dir) => (Workspace::open(&std::path::absolute(dir).map_err(|e| ToolError::io(dir.display(), e))?)?, (!a.resume).then(|| a.request.clone())),
         None => {
