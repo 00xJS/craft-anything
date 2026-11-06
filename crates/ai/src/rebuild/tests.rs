@@ -1305,6 +1305,17 @@ fn clean_room_studies_nothing_inside_and_deep_mode_looks() {
 }
 
 #[test]
+fn an_electron_programs_runtime_is_not_analysed() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("resources")).unwrap();
+    let program = d.path().join("App.exe");
+    std::fs::write(&program, b"MZ").unwrap();
+    assert!(!super::study::is_electron_runtime(&program), "a program with no asar beside it is analysed");
+    std::fs::write(d.path().join("resources/app.asar"), b"asar").unwrap();
+    assert!(super::study::is_electron_runtime(&program));
+}
+
+#[test]
 fn deep_mode_maps_the_javascript_beside_an_exe_target() {
     let d = tempfile::tempdir().unwrap();
     let app = d.path().join("App");

@@ -2011,6 +2011,7 @@ impl eframe::App for CraftApp {
         for j in self.jobs.running() {
             j.cancel.cancel();
         }
+        craft_anything_engine::tools::deep::stop_analyses(std::time::Duration::from_secs(12));
         // A change not written yet (or one being written as the window closed) is written now.
         if self.persist && (self.settings_dirty || self.save_due.is_some() || self.saving.is_some()) {
             let saved = if let Some(mut session) = self.engine.try_session() {

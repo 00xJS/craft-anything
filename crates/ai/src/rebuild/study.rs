@@ -3,6 +3,12 @@
 
 use super::*;
 
+/// An Electron program is the Chromium and Node runtime, and analysing that takes hours: the app's
+/// own logic is the JavaScript in `resources/app.asar` beside it, which the study maps (#947).
+pub(super) fn is_electron_runtime(program: &Path) -> bool {
+    program.parent().is_some_and(|dir| dir.join("resources/app.asar").is_file())
+}
+
 impl Worker {
     pub(super) fn study(&mut self, ws: &mut Workspace, kind: &dyn TargetKind) -> Result<(), ToolError> {
         match ws.manifest.target.clone() {
@@ -238,7 +244,7 @@ impl Worker {
     /// rather than starting another), and it carries on if the person pauses, so nothing is lost.
     pub(super) fn prepare_ghidra(&self, program: &Path) -> Option<Receiver<Result<(), String>>> {
         // A folder (nothing in it recognised as the program) isn't something Ghidra can open.
-        if !program.is_file() {
+        if !program.is_file() || is_electron_runtime(program) {
             return None;
         }
         let settings = {
