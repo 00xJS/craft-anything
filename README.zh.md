@@ -314,7 +314,7 @@ RISC-V（riscv64）：`craft-anything-<ver>-linux-riscv64.tar.gz`，只有 tarba
 ## 许可与致谢
 
 Craft Anything 采用 [MIT](LICENSE-MIT) 或 [Apache-2.0](LICENSE-APACHE) 双许可，任你选择。
-Copyright (c) 2026 ArtCraft Team and the Craft Anything contributors。必需的声明在 [NOTICE](NOTICE)。
+Copyright (c) 2026 ArtCraft Team and the Craft Anything contributors ([CONTRIBUTORS.md](CONTRIBUTORS.md))。必需的声明在 [NOTICE](NOTICE)。
 
 随附的字体、图标、图片和其他资源各自保留其开源许可；每一项都在 [ATTRIBUTION.md](ATTRIBUTION.md) 里列出了作者、来源和许可。
 
