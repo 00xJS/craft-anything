@@ -167,6 +167,20 @@ cheapest help we can give anyone, so nothing below should hold it up for long.
 
 ### R5.2 Keeping contributions moving
 Owner: maintainers · Status: in progress
+- [x] Fix PR #1030's Windows descendant fixture startup and stop the watched launch before
+      startup assertions can fail; cover the failure cleanup path
+      — claimed: Codex, branch bugfix/r5.2-watched-launch-tests
+- [ ] Run PR #1030's shell-free parent/descendant fixture and startup-timeout cleanup test
+      on Windows; the contributor reproduced startup failure and leaked processes on 07671fe
+- [x] Clarify PR #1030's test Rustdoc: post-stop heartbeat sampling, child-fixture guard,
+      and the direct-run no-write check
+      — claimed: Codex, branch bugfix/r5.2-watched-launch-tests
+- [x] Address PR #1030 review: take the heartbeat baseline after stopping, guard the descendant
+      stand-in against direct ignored-test runs, and document the test helpers
+      — claimed: Codex, branch bugfix/r5.2-watched-launch-tests
+- [ ] `regression_preview_limits_connections_and_releases_listener` (platform) fails on macOS
+      with `Invalid argument` in its socket fixture, also reported before PR #1030's review fixes.
+      Investigate the fixture separately from the watched descendant shutdown test
 Review comes before new work while the queue is long, smallest and clean PRs first. A PR is merged
 only when it's green and a maintainer has fully reviewed it, code as well as wording.
 - [ ] Maintainers: protect `main` (PRs required, squash only); the only ruleset covers `release`

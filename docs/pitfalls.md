@@ -81,6 +81,16 @@ names (`git merge-base --is-ancestor <fix> <release tag>`), and check the messag
 
 ## Tests
 
+**A heartbeat sampled before shutdown raced a successful stop.** A child could write between
+the baseline read and `stop()`, failing the descendant cleanup test even when cleanup worked.
+Probe for exit instead of timing writes: the child holds a file lock the system releases only
+when it exits, and the test takes it after the stop. Ignored child fixtures also need
+an explicit launch guard so running ignored tests directly cannot write in the working directory.
+The replacement's quoted `cmd /C` script still failed on Windows, and startup assertions skipped
+cleanup. Use a guarded Rust parent instead of shell syntax, and stop before asserting on startup.
+Its child must inherit the watched group/job: another `Process` or `Launch` creates a separate
+Unix group and would no longer test the ancestor's shutdown.
+
 **An isolated PATH still assumed system utilities lived in `/bin`.** The remote setup fixture
 linked `mkdir`, `chmod` and `mv` there, so a host with utilities elsewhere got dangling links.
 Resolve fixture utilities on the host, make their paths absolute, then populate the private PATH.
@@ -168,6 +178,10 @@ fast machines and failed in CI on unrelated PRs. When work moves to a worker, gr
 call it and make them `wait` for the result, not `run_steps(n)`.
 
 ## Building and running
+
+**A documentation edit rebuilt dependencies in a separate cache.** A sequential review follow-up
+used another target directory for its commit hook, triggering an unnecessary build. Separate
+build caches are for concurrent work; reuse the current checkout's cache for sequential work.
 
 **A runner's PID isn't the window owner's.** `go run` starts a compiled child, so picturing the
 runner missed the app (or a name fallback found another app). Search only the launched process
