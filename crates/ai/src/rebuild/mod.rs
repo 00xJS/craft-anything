@@ -246,13 +246,14 @@ impl RebuildRun {
             editor: None,
             notes: notes.clone(),
             feed: feed.clone(),
-            assets: hub.has_asset_keys(),
+            assets: false,
             decompiled: false,
             usage: Some(UsageClock { root: root.clone(), since: Instant::now() }),
             self_check: None,
             reset_progress_after_notes: false,
         };
         let r2 = running.clone();
+        let key_store = hub.keys.clone();
         std::thread::Builder::new()
             .name("rebuild".into())
             .spawn(move || {
@@ -261,7 +262,10 @@ impl RebuildRun {
                 // A clone can run for hours: keep the computer from sleeping until it ends.
                 let awake = craft_anything_platform::keep_awake();
                 let _here = self_check::BuildingHere::new(&ws.root);
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ctx.run(&mut ws, entry, api, extractor, &opts)));
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    ctx.load_asset_keys(&key_store);
+                    ctx.run(&mut ws, entry, api, extractor, &opts)
+                }));
                 let (ok, message, paused) = match result {
                     Ok(Ok(m)) => (true, m, false),
                     Ok(Err(e)) if e.code == ErrorCode::Cancelled => {
@@ -494,6 +498,21 @@ impl Worker {
         let result = self.engine.call(tool, params, opts);
         self.emit(RunEvent::Agent(AgentEvent::ToolFinished { call_id, tool: tool.to_string(), ok: result.is_ok(), summary: String::new(), evidence_id: None }));
         result
+    }
+
+    /// An API backend's builder runs its tools in this session, not in a tool server that loads the
+    /// keys itself (#923). Read on the worker because the keychain can block, and for each run so a
+    /// key saved outside the app since the last one counts. The session stays held through the
+    /// read, so a key removed meanwhile can't be put back by keys read before it went. What the
+    /// brief says about assets comes from the same read, so the two agree.
+    fn load_asset_keys(&mut self, store: &crate::KeyStore) {
+        let mut session = self.engine.session();
+        session.label("Load the asset keys");
+        let providers = session.ext.get::<craft_anything_engines::assets::AssetProviders>().map(|p| p.as_ref().clone()).unwrap_or_default();
+        let keys = crate::keys::asset_keys(store, &providers);
+        // The brief offers the built-in models, so a key for another provider doesn't count.
+        self.assets = craft_anything_engines::assets::AssetProviders::built_in().ids().into_iter().any(|id| keys.get(id).is_some());
+        session.ext.insert(Arc::new(keys));
     }
 
     /// Point the engine at this workspace: its investigation project and inbox.

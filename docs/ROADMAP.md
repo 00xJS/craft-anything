@@ -316,6 +316,9 @@ been run live.
       tool, with only words before or between them, now runs them all (`fenced_calls`, ids
       `react_N` as other text calls); words after the last fence, other code, an unclosed fence or
       a tool that wasn't offered keep it text (#753)
+- [ ] A call followed by a summary isn't run, and the model isn't told: in a second live run of
+      #417's case both turns put "### Summary:" after their one `json` fence, nothing ran, and the
+      build stopped after two turns with no files. Say in the next message that it wasn't run
 - [ ] A local builder spends its rounds on the project file and never writes the app: run 4 had a
       compiling `Cargo.toml` by check 3, its last, with `main.rs` still "Hello, world!". See whether
       more rounds get there, or whether a small model needs the window and the `--screenshot`
@@ -335,6 +338,20 @@ been run live.
       `TurnDone` left them out while coding agents count them. It counts them now; a live run on
       Ollama 0.40.7 had recorded 5,323 input tokens of 75,014
       — claimed: SoldierPePe, branch bugfix/r5.4-usage-cached-tokens
+- [ ] Told that its `cargo new app` made `app/app/`, the model kept editing `app/app/Cargo.toml`
+      and running `cargo build` in `app/`, and checks 2 and 3 still found the project one folder
+      down (live, GPU). See whether naming the move gets it out, or whether the run should move it
+- [x] The model reads file paths from the project folder and commands from `app/` as one base:
+      it ran `cargo init app` and `cd app && cargo build` after writing `app/Cargo.toml`.
+      `build_command_run`'s result now says where it ran (`ran_in`), a command that makes a project
+      in `app/app/` is told it goes in `app/` itself, and one that starts with `cd app` where
+      there's none is told to leave it out. Live (Ollama, `qwen2.5-coder:14b`) the first command
+      was still `cargo new app`, before any result could say so. On a GPU (Ollama 0.40.7) the note
+      then reached the model; on the CPU a second run wrote the call with a summary after it, so
+      nothing ran (the open line on a call followed by a summary)
+      — claimed: SoldierPePe, branch bugfix/r5.4-build-command-folder
+- [ ] `usage.json` after a local build says about 4,200 input tokens and 6.5 s of work, while
+      Ollama logged about six requests of 4,000-5,000 tokens each: find what it leaves out
 - [x] An assistant turn with no text sends an empty string, not `content: null`, which Ollama
       refused as `invalid message content type: <nil>` (#403, #536)
 - [x] Understand a tool call a model writes as JSON in its text (#417; implementation `dfe9a4db2dcb3e27edbd67311cbb4202584e7af6`). The fallback protocol reads
@@ -387,6 +404,15 @@ Owner: open · Status: todo
       "400: Provider returned error" (#369): a request with tools now sets
       `provider.require_parameters`, and a 404 "no provider for these parameters" falls back to the
       text protocol like any server that rejects tools
+- [x] A saved fal.ai key reaches an API-key build's asset tools; every call said "No fal.ai key"
+      (#923). Outside a project the tools now say that instead. Not checked with a real fal.ai key
+      or API build
+- [x] An API-key build works alone: it shares the app's session, whose `attach` points at whichever
+      project started last, so another build beside it sent its files and asset spending to the
+      wrong project (`build.parallel` is 2 by default). Others wait their turn in the queue
+- [ ] Let API-key builds run side by side: give each an engine of its own, as a question has. This
+      also closes the gap left in working alone: the app and the `rebuild_start` tool each keep a
+      queue, so a build the in-app chat starts isn't kept apart from one the app started
 - [ ] Check #369 live with Kimi K3 and a key limited to Kimi/Moonshot models (needs the person's
       OpenRouter key): that the build starts, or that the error now names the provider's reason
 - [ ] A live API-key build (needs a key on the test machine)
@@ -399,12 +425,15 @@ Owner: open · Status: todo
 
 ### R5.6 Tools report only what they saw
 Owner: open · Status: todo
-Golden rule 3: the result is evidence. All four tickets are confirmed in the code, with no PR yet.
-Each fix needs a Mac to test on.
+Golden rule 3: the result is evidence. Each fix needs a Mac to test on.
 - [x] macOS: a denied Accessibility permission is reported as success with an empty tree (#240)
       — claimed: mavericzz, branch bugfix/r5.6-accessibility-denied; PR #887
-- [ ] macOS: `runtime_ui_read` ignores `screenshot` (#248) and `accessibility` (#307): the Swift
-      helper declares both and reads neither
+- [ ] macOS: `runtime_ui_read` ignores `screenshot` (#248): the Swift helper declares it but
+      never captures an image
+- [x] macOS: `runtime_ui_read` honours `accessibility: false` (#307): the Swift helper skips
+      the tree and its permission check, returns no nodes without truncation, and the evidence
+      records the flag and says the tree was skipped. Walkthroughs still require Accessibility
+      — claimed: Codex, branch bugfix/r5.6-macos-ui-flags
 - [ ] macOS: call observation writes a literal `\n` into its lldb callback, so the Python is
       invalid and it reports zero calls (#251)
 
