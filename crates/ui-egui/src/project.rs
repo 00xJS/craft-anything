@@ -700,14 +700,27 @@ fn checklist(ui: &mut Ui, steps: &[PlanStep], t: &Tokens, began: Option<std::tim
                             PlanStatus::Todo => {
                                 ui.painter().circle_stroke(r.center(), 6.5, egui::Stroke::new(1.0, t.field_border));
                             }
+                            // #504: a run ended with this step open.
+                            PlanStatus::Stopped => {
+                                ui.painter().circle_stroke(r.center(), 6.5, egui::Stroke::new(1.5, t.warning));
+                                ui.painter().circle_filled(r.center(), 3.0, t.warning);
+                            }
                         }
                         let text = RichText::new(&s.text).size(theme::BODY);
                         let text = match s.status {
                             PlanStatus::Done => text.color(t.text_faint).strikethrough(),
                             PlanStatus::Doing => text.color(t.text).strong(),
                             PlanStatus::Todo => text.color(t.text_dim),
+                            PlanStatus::Stopped => text.color(t.text_dim),
                         };
-                        ui.add(egui::Label::new(text).wrap());
+                        let resp = ui.add(egui::Label::new(text).wrap());
+                        if s.status == PlanStatus::Stopped {
+                            // Sighted users get the warning marker above; screen readers
+                            // get the status through the accessible label and the text.
+                            let name = format!("{}: {}", s.text, tr("Stopped here"));
+                            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &name));
+                            ui.label(RichText::new(tr("Stopped here")).size(theme::SMALL).color(t.warning));
+                        }
                     });
                 }
             });
