@@ -472,14 +472,25 @@ fn outcome(ws: Option<&Workspace>, auto_mode: bool, tool: &str, input: &Value) -
         Decision::Deny(m) => return Outcome::Refuse(m),
         Decision::Ask { title, kind } => (title, kind),
     };
-    let kind = kind_of(ws, tool, input);
-    let chosen = ws.and_then(|w| w.manifest.approvals.get(&kind).copied());
+    // The strictest of what each of its kinds gets decides (the first kind on a tie): a command
+    // that pushes and changes the system needs both allowed.
+    let gets = |kind: ActionKind| {
+        let chosen = ws.and_then(|w| w.manifest.approvals.get(&kind).copied());
+        (kind, chosen, chosen.unwrap_or_else(|| kind.default_in(auto_mode)))
+    };
+    let kinds = kinds_of(ws, tool, input);
+    let Some((kind, chosen, approval)) = kinds.iter().map(|k| gets(*k)).fold(None, |best: Option<(ActionKind, Option<Approval>, Approval)>, next| match best {
+        Some(b) if b.2.strictness() >= next.2.strictness() => Some(b),
+        _ => Some(next),
+    }) else {
+        return Outcome::Ask { title, remember: Remember::Action(action) };
+    };
     // "Always" on an earlier card, for kinds where that was one action rather than the whole kind
     // (a `cd` before a push mustn't let the push through), unless the kind is refused now.
-    if remembers_actions(kind) && chosen != Some(Approval::Refuse) && ws.is_some_and(|w| w.manifest.allowed_actions.contains(&action)) {
+    if kinds.iter().all(|k| remembers_actions(*k)) && chosen != Some(Approval::Refuse) && ws.is_some_and(|w| w.manifest.allowed_actions.contains(&action)) {
         return Outcome::Allow;
     }
-    match chosen.unwrap_or_else(|| kind.default_in(auto_mode)) {
+    match approval {
         Approval::Allow => Outcome::Allow,
         Approval::Refuse => Outcome::Refuse(refusal(kind, chosen.is_some())),
         Approval::Ask => Outcome::Ask { title, remember: if remembers_actions(kind) { Remember::Action(action) } else { Remember::Kind(kind) } },
@@ -573,23 +584,36 @@ pub fn kind_of(ws: Option<&Workspace>, tool: &str, input: &Value) -> ActionKind 
             };
             if opened_at(ws, &target).iter().flatten().any(|p| system(p)) { ActionKind::System } else { ActionKind::OutsideFiles }
         }
-        "Bash" | "PowerShell" => {
-            let command = s("command");
-            let c = command.to_ascii_lowercase();
-            if publishes(&c) {
-                ActionKind::Publish
-            } else if SYSTEM_COMMANDS.iter().any(|k| c.contains(k)) || names_records(&c, ws) {
-                ActionKind::System
-            // Paths keep their case: on a Mac or Linux `/Users/x` isn't `/users/x`.
-            } else if DELETES.iter().any(|k| c.contains(k)) && deletes_outside(&command, ws) {
-                ActionKind::DeleteOutside
-            } else {
-                ActionKind::Commands
-            }
-        }
+        "Bash" | "PowerShell" => kinds_of(ws, tool, input).first().copied().unwrap_or(ActionKind::Commands),
         "WebFetch" | "WebSearch" => ActionKind::Web,
         _ => ActionKind::OtherTools,
     }
+}
+
+/// Every kind an action is: one for most, but a shell command can be several at once (a push and
+/// a system change, `git push && craft-anything-cli …`), and each of their choices applies. The
+/// first is [`kind_of`]'s.
+pub fn kinds_of(ws: Option<&Workspace>, tool: &str, input: &Value) -> Vec<ActionKind> {
+    if !matches!(tool, "Bash" | "PowerShell") {
+        return vec![kind_of(ws, tool, input)];
+    }
+    let command = input.get("command").and_then(Value::as_str).unwrap_or_default();
+    let c = command.to_ascii_lowercase();
+    let mut kinds = Vec::new();
+    if publishes(&c) {
+        kinds.push(ActionKind::Publish);
+    }
+    if SYSTEM_COMMANDS.iter().any(|k| c.contains(k)) || names_records(&c, ws) {
+        kinds.push(ActionKind::System);
+    }
+    // Paths keep their case: on a Mac or Linux `/Users/x` isn't `/users/x`.
+    if DELETES.iter().any(|k| c.contains(k)) && deletes_outside(command, ws) {
+        kinds.push(ActionKind::DeleteOutside);
+    }
+    if kinds.is_empty() {
+        kinds.push(ActionKind::Commands);
+    }
+    kinds
 }
 
 /// Whether "always for this project" on a card of this kind remembers that one action (`bash:npm`,
@@ -642,9 +666,35 @@ fn publishes(c: &str) -> bool {
 /// `approv'als-set'`. A command that reaches them without naming them (a script that builds the
 /// path) isn't caught: with commands allowed, the builder is trusted that far.
 fn names_records(c: &str, ws: Option<&Workspace>) -> bool {
-    let joined: String = c.chars().filter(|ch| !matches!(ch, '"' | '\'' | '\\' | '`')).collect();
+    let without = |gone: &[char]| c.chars().filter(|ch| !gone.contains(ch)).collect::<String>();
+    // Names, with every escape out; a path, with only the quotes out, as its backslashes are
+    // separators on Windows (`C:\p\in'box'\x` is `C:\p\inbox\x`).
+    let (joined, path) = (without(&['"', '\'', '\\', '`']), without(&['"', '\'', '`']));
     let agent = crate::AGENT_ENV.to_ascii_lowercase();
-    ["craft.json", "approvals_set", "approvals-set", agent.as_str()].iter().any(|n| joined.contains(n)) || ws.is_some_and(|w| mentions(c, &w.inbox_dir()))
+    ["craft.json", "approvals_set", "approvals-set", agent.as_str()].iter().any(|n| joined.contains(n))
+        || ws.is_some_and(|w| [c, path.as_str(), joined.as_str()].iter().any(|t| mentions(t, &w.inbox_dir())) || reaches_inbox(c, w))
+}
+
+/// Whether one of a command's arguments, read as the shell reads it (`in'box'` is `inbox`), is a
+/// path into the project's inbox from a folder the shell may be in: the project folder (where agents
+/// start) or app/ (`../inbox/x`). Also after `=` or a redirection written without a space
+/// (`--out=inbox/x`, `>inbox/x`). Only an argument that names the inbox counts, so an app's own
+/// `src/inbox/` stays a command like any other.
+fn reaches_inbox(c: &str, ws: &Workspace) -> bool {
+    let inbox = ws.inbox_dir();
+    let bases = [ws.root.clone(), ws.app_dir()];
+    let pieces = shell_words(c).into_iter().flat_map(|w| w.split(['=', '>', '<', '|', ';', '&']).map(str::to_string).collect::<Vec<_>>());
+    // Each piece as written, with `\` as a separator (PowerShell's, on any system), with Bash's
+    // escapes out (`inb\ox`), and a PowerShell parameter's value after its colon (`-Path:inbox/x`;
+    // a drive's `C:` isn't one).
+    let readings = pieces.flat_map(|w| {
+        let value = w.strip_prefix('-').and_then(|p| p.split_once(':')).map(|(_, v)| v.to_string());
+        let mut out = vec![w.replace('\\', "/"), w.replace('\\', "")];
+        out.extend(value.map(|v| v.replace('\\', "/")));
+        out.push(w);
+        out
+    });
+    readings.filter(|w| w.contains("inbox")).any(|w| bases.iter().any(|b| resolve(b, &w).is_some_and(|p| inside(&inbox, &p))))
 }
 
 /// A program's name as typed, without its folder or a Windows extension (`/usr/bin/npm`, `npm.cmd`).
@@ -1162,6 +1212,62 @@ mod tests {
             assert!(matches!(outcome(Some(&w), true, "Bash", &json!({"command": cmd})), Outcome::Refuse(_)), "{cmd}");
         }
         assert_eq!(kind_of(Some(&w), "Bash", &json!({"command": "cat package.json"})), ActionKind::Commands);
+    }
+
+    #[test]
+    fn a_command_of_several_kinds_needs_each_allowed() {
+        let (_d, mut w) = ws();
+        let mixed = json!({"command": "git push && env -u CRAFT_ANYTHING_AGENT craft-anything-cli project-approvals-set --kind system --mode allow"});
+        assert_eq!(kinds_of(Some(&w), "Bash", &mixed), [ActionKind::Publish, ActionKind::System]);
+        // Pushing allowed, system changes refused: refused, and the message names the refused kind.
+        w.manifest.approvals.insert(ActionKind::Publish, Approval::Allow);
+        w.manifest.approvals.insert(ActionKind::System, Approval::Refuse);
+        let Outcome::Refuse(why) = outcome(Some(&w), true, "Bash", &mixed) else { panic!("refused") };
+        assert!(why.contains("\"system\""), "{why}");
+        // The other way round: refused for pushing.
+        w.manifest.approvals.insert(ActionKind::Publish, Approval::Refuse);
+        w.manifest.approvals.insert(ActionKind::System, Approval::Allow);
+        let Outcome::Refuse(why) = outcome(Some(&w), true, "Bash", &mixed) else { panic!("refused") };
+        assert!(why.contains("\"publish\""), "{why}");
+        // Asked about when one asks and the other allows; allowed only when both allow.
+        w.manifest.approvals.insert(ActionKind::Publish, Approval::Ask);
+        assert!(matches!(outcome(Some(&w), true, "Bash", &mixed), Outcome::Ask { remember: Remember::Kind(ActionKind::Publish), .. }));
+        w.manifest.approvals.insert(ActionKind::Publish, Approval::Allow);
+        assert_eq!(outcome(Some(&w), true, "Bash", &mixed), Outcome::Allow);
+        // An earlier "always" on the command's first word lets none of it through.
+        w.manifest.approvals.clear();
+        w.manifest.allowed_actions.push("bash:git".into());
+        assert!(matches!(outcome(Some(&w), true, "Bash", &mixed), Outcome::Refuse(_)));
+    }
+
+    #[test]
+    fn an_inbox_path_split_by_quotes_is_still_the_inbox() {
+        let (_d, w) = ws();
+        let inbox = w.inbox_dir().display().to_string().replace('\\', "/");
+        let (head, tail) = inbox.split_at(inbox.len() - 3);
+        let cmd = format!("echo yes > {head}'{tail}'/1.answer.json");
+        assert_eq!(kind_of(Some(&w), "Bash", &json!({"command": cmd})), ActionKind::System, "{cmd}");
+        // With Windows' separators, as PowerShell writes it.
+        let (head, tail) = (head.replace('/', "\\"), tail.replace('/', "\\"));
+        let cmd = format!("Set-Content -Path {head}'{tail}'\\1.answer.json -Value yes");
+        assert_eq!(kind_of(Some(&w), "PowerShell", &json!({"command": cmd})), ActionKind::System, "{cmd}");
+        // Relative, from the project folder or from app/, however it's quoted or attached.
+        for cmd in [
+            "echo yes > in'box'/1.answer.json",
+            "cd app && echo yes > ../inbox/1.answer.json",
+            "echo yes >inbox/1.answer.json",
+            "tool --out=./inbox/x",
+            "echo yes > inb\\ox/1.answer.json",
+            "Set-Content -Path:inbox/1.answer.json -Value yes",
+            "Set-Content -Path:..\\inbox\\1.answer.json -Value yes",
+        ] {
+            assert_eq!(kind_of(Some(&w), "Bash", &json!({"command": cmd})), ActionKind::System, "{cmd}");
+            assert!(matches!(outcome(Some(&w), true, "Bash", &json!({"command": cmd})), Outcome::Refuse(_)), "{cmd}");
+        }
+        // An app's own inbox folder is the builder's work.
+        for cmd in ["mkdir -p src/inbox", "cat app/src/inbox/view.rs"] {
+            assert_eq!(kind_of(Some(&w), "Bash", &json!({"command": cmd})), ActionKind::Commands, "{cmd}");
+        }
     }
 
     #[test]
