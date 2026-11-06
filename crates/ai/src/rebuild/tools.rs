@@ -309,7 +309,9 @@ fn rebuild_start(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolErr
             if p.generate_assets {
                 return Err(ToolError::invalid("generate_assets is for new projects.").with_remediation("Use project_assets_allow for an existing project."));
             }
-            (open(dir)?, (!p.resume).then(|| p.request.clone()))
+            let ws = open(dir)?;
+            ctx.session.remember_project(&ws.root)?;
+            (ws, (!p.resume).then(|| p.request.clone()))
         }
         None if p.resume => return Err(ToolError::invalid("resume is for an existing project.").with_remediation("Pass its folder as `project`.")),
         None => {
@@ -321,7 +323,7 @@ fn rebuild_start(ctx: &mut Ctx<'_>, params: Value) -> Result<ToolOutput, ToolErr
                 (None, None) => project::Place::Projects,
             };
             let ws = project::new_project(settings, target, &p.request, place, p.build_with.as_deref(), p.generate_assets, p.backend.as_deref())?;
-            if p.project_folder.is_some() {
+            if p.project_folder.is_some() || matches!(place, project::Place::At(..)) {
                 ctx.session.remember_project(&ws.root)?;
             }
             (ws, None)

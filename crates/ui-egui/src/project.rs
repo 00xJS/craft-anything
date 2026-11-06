@@ -100,6 +100,7 @@ impl CraftApp {
         // network drive must not freeze the window); `created` starts the build.
         self.creating = Some(self.jobs.spawn(tr("Create the project"), false, move |_| {
             let created = match &draft.folder {
+                Some(folder) if folder.join(craft_anything_engine::workspace::MANIFEST).is_file() => Workspace::open(folder),
                 Some(folder) => Workspace::create_at(folder, &name, &request, target, draft.existing),
                 None => Workspace::create(&projects_dir, &name, &request, target),
             };
@@ -128,6 +129,8 @@ impl CraftApp {
         }
         // A project in a folder of its own stays in the list.
         self.remember_project(&ws.root);
+        self.projects.retain(|p| p.root != ws.root);
+        self.projects.insert(0, ws.clone());
         // Make is cleared for the next one, unless the person has started on it meanwhile (a
         // project that waited for Ghidra).
         if self.state.make.request.trim() == request {
@@ -203,7 +206,11 @@ impl CraftApp {
             };
             self.load_asked(&ws);
         }
-        self.workspace = Some(ws);
+        self.workspace = Some(ws.clone());
+        if !self.projects.iter().any(|p| p.root == ws.root) {
+            self.projects.insert(0, ws);
+        }
+        self.remember_project(&root);
         self.refresh_side_panel();
         self.state.screen = Screen::Project;
         // A Send pressed before its picture checks finished, on a project they left: send now.
@@ -2451,6 +2458,30 @@ mod tests {
         apply(&mut feed, &RunEvent::Finished { ok: false, message: "Paused.".into(), paused: true });
         assert!(matches!(feed.last(), Some(FeedItem::Paused)));
         assert_eq!(feed.iter().filter(|f| matches!(f, FeedItem::Error { .. })).count(), 1, "a pause adds no error");
+    }
+
+    /// #966: a newly created project appears in app.projects immediately so the sidebar lists it.
+    #[test]
+    fn created_project_appears_in_projects_list_immediately() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = Workspace::create(d.path(), "Notes", "A notes app", TargetRef::None).unwrap();
+        let mut app = crate::demo::app(crate::demo::engine(craft_anything_engine::Mode::Beginner, true));
+        assert!(app.projects.is_empty());
+        app.created(ws.clone(), "A notes app".into(), "test-backend".into(), None);
+        assert!(!app.projects.is_empty(), "project is added to app.projects immediately");
+        assert_eq!(app.projects[0].root, ws.root);
+    }
+
+    /// #966: opening a project ensures it is listed in app.projects immediately.
+    #[test]
+    fn opening_project_adds_to_projects_list() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = Workspace::create(d.path(), "Timer", "A timer app", TargetRef::None).unwrap();
+        let mut app = crate::demo::app(crate::demo::engine(craft_anything_engine::Mode::Beginner, true));
+        assert!(app.projects.is_empty());
+        app.open_workspace(ws.clone());
+        assert!(!app.projects.is_empty(), "open project is listed in app.projects");
+        assert_eq!(app.projects[0].root, ws.root);
     }
 }
 

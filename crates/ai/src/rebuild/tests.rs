@@ -2682,6 +2682,19 @@ fn a_project_started_in_a_picked_folder_stays_in_the_list() {
 }
 
 #[test]
+fn starting_a_project_at_existing_project_folder_attaches_to_it() {
+    let session = craft_anything_engine::testing::session();
+    let d = tempfile::tempdir().unwrap();
+    let folder = d.path().join("mine");
+    let ws = project::new_project(&session.settings, "-", "Initial app", project::Place::At(&folder, None), None, false, None).unwrap();
+    assert_eq!(ws.root, folder);
+    // Starting again at the same folder attaches to the existing project rather than failing or duplicating
+    let reattached = project::new_project(&session.settings, "-", "Follow up", project::Place::At(&folder, None), None, false, None).unwrap();
+    assert_eq!(reattached.root, folder);
+    assert_eq!(reattached.manifest.name, ws.manifest.name);
+}
+
+#[test]
 fn a_project_edited_in_place_keeps_what_its_files_are_built_with() {
     use craft_anything_engine::workspace::ExistingFiles::{Edit, StartFrom};
     let first = |file: &str, request: &str, existing| {
