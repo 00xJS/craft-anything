@@ -117,8 +117,31 @@ impl OpenAi {
             system.push_str(&react_instructions(req.tools));
         }
         let mut messages = vec![json!({"role": "system", "content": system})];
+        let mut dropped_empty_assistant = false;
         for m in req.messages {
-            messages.extend(messages_json(m, self.react));
+            let next_wire = messages_json(m, self.react);
+            if m.role == Speaker::Assistant && next_wire.is_empty() {
+                dropped_empty_assistant = true;
+                continue;
+            }
+            for msg in next_wire {
+                let can_merge = dropped_empty_assistant
+                    && msg.get("role").and_then(Value::as_str) == Some("user")
+                    && messages.last().and_then(|m| m.get("role")).and_then(Value::as_str) == Some("user")
+                    && messages.last().and_then(|m| m.get("content")).and_then(Value::as_str).is_some()
+                    && msg.get("content").and_then(Value::as_str).is_some();
+                if can_merge {
+                    let new_text = msg.get("content").and_then(Value::as_str).unwrap_or_default();
+                    if let Some(last_val) = messages.last_mut().and_then(|m| m.get_mut("content"))
+                        && let Some(last_text) = last_val.as_str()
+                    {
+                        *last_val = Value::String(format!("{last_text}\n\n{new_text}"));
+                    }
+                } else {
+                    messages.push(msg);
+                }
+                dropped_empty_assistant = false;
+            }
         }
         let mut body = json!({
             "model": self.model,
@@ -253,11 +276,17 @@ pub fn messages_json(m: &Msg, react: bool) -> Vec<Value> {
                 .into_iter()
                 .map(|(id, name, input)| json!({"id": id, "type": "function", "function": {"name": name, "arguments": input.to_string()}}))
                 .collect();
-            let mut v = json!({"role": "assistant", "content": text});
-            if !calls.is_empty()
-                && let Some(o) = v.as_object_mut()
-            {
-                o.insert("tool_calls".into(), Value::Array(calls));
+            if text.is_empty() && calls.is_empty() {
+                return Vec::new();
+            }
+            let mut v = json!({"role": "assistant"});
+            if let Some(o) = v.as_object_mut() {
+                if !text.is_empty() {
+                    o.insert("content".into(), Value::String(text));
+                }
+                if !calls.is_empty() {
+                    o.insert("tool_calls".into(), Value::Array(calls));
+                }
             }
             vec![v]
         }
@@ -885,7 +914,7 @@ mod tests {
         let m = b["messages"].as_array().unwrap();
         assert_eq!(m[0]["role"], "system");
         assert_eq!(m[2]["tool_calls"][0]["function"]["arguments"], "{\"a\":1}");
-        assert_eq!(m[2]["content"], "");
+        assert!(m[2].get("content").is_none());
         assert_eq!(m[3]["role"], "tool");
         assert_eq!(m[4]["tool_call_id"], "c2");
         assert_eq!(b["tool_choice"], "auto");
@@ -895,5 +924,86 @@ mod tests {
         assert!(b.get("tools").is_none());
         assert!(b["messages"][0]["content"].as_str().unwrap().contains("Action Input:"));
         assert!(b["messages"][3]["content"].as_str().unwrap().contains("Observation (error): bad"));
+    }
+
+    #[test]
+    fn tool_only_assistant_omits_content_key() {
+        let tool_only = Msg { role: Speaker::Assistant, blocks: vec![Block::ToolUse { id: "c1".into(), name: "look".into(), input: json!({"path": "."}) }] };
+        let m = messages_json(&tool_only, false);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0]["role"], "assistant");
+        assert!(m[0].get("content").is_none(), "tool-only assistant must omit empty content");
+        assert_eq!(m[0]["tool_calls"][0]["function"]["name"], "look");
+    }
+
+    #[test]
+    fn empty_assistant_message_is_omitted() {
+        let empty = Msg { role: Speaker::Assistant, blocks: vec![] };
+        assert!(messages_json(&empty, false).is_empty(), "empty assistant turn must produce no wire messages");
+    }
+
+    #[test]
+    fn text_only_assistant_retains_content_key() {
+        let text_only = Msg { role: Speaker::Assistant, blocks: vec![Block::Text { text: "Hello".into() }] };
+        let m = messages_json(&text_only, false);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0]["role"], "assistant");
+        assert_eq!(m[0]["content"], "Hello");
+        assert!(m[0].get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn text_and_tools_assistant_retains_both_content_and_tools() {
+        let text_and_tool = Msg {
+            role: Speaker::Assistant,
+            blocks: vec![
+                Block::Text { text: "Checking directory".into() },
+                Block::ToolUse { id: "c2".into(), name: "look".into(), input: json!({"path": "."}) },
+            ],
+        };
+        let m = messages_json(&text_and_tool, false);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0]["role"], "assistant");
+        assert_eq!(m[0]["content"], "Checking directory");
+        assert_eq!(m[0]["tool_calls"][0]["id"], "c2");
+    }
+
+    #[test]
+    fn dropped_empty_assistant_merges_adjacent_user_text_messages() {
+        let client = OpenAi::compatible("test", "http://127.0.0.1", None, "test-model");
+        let msgs = vec![Msg::user_text("First instruction"), Msg { role: Speaker::Assistant, blocks: vec![] }, Msg::user_text("Second instruction")];
+        let b = client.body(&TurnRequest { system: "S", messages: &msgs, tools: &[], effort: Effort::Low, max_tokens: 100 });
+        let m = b["messages"].as_array().unwrap();
+        assert_eq!(m.len(), 2, "system + 1 merged user message expected, got: {m:?}");
+        assert_eq!(m[0]["role"], "system");
+        assert_eq!(m[1]["role"], "user");
+        assert_eq!(m[1]["content"], "First instruction\n\nSecond instruction");
+    }
+
+    #[test]
+    fn non_empty_assistant_keeps_user_messages_distinct() {
+        let client = OpenAi::compatible("test", "http://127.0.0.1", None, "test-model");
+        let msgs = vec![
+            Msg::user_text("First instruction"),
+            Msg { role: Speaker::Assistant, blocks: vec![Block::Text { text: "Acknowledged".into() }] },
+            Msg::user_text("Second instruction"),
+        ];
+        let b = client.body(&TurnRequest { system: "S", messages: &msgs, tools: &[], effort: Effort::Low, max_tokens: 100 });
+        let m = b["messages"].as_array().unwrap();
+        assert_eq!(m.len(), 4, "system + user + assistant + user expected: {m:?}");
+        assert_eq!(m[1]["content"], "First instruction");
+        assert_eq!(m[2]["content"], "Acknowledged");
+        assert_eq!(m[3]["content"], "Second instruction");
+    }
+
+    #[test]
+    fn adjacent_user_messages_without_dropped_assistant_stay_separate() {
+        let client = OpenAi::compatible("test", "http://127.0.0.1", None, "test-model");
+        let msgs = vec![Msg::user_text("First instruction"), Msg::user_text("Second instruction")];
+        let b = client.body(&TurnRequest { system: "S", messages: &msgs, tools: &[], effort: Effort::Low, max_tokens: 100 });
+        let m = b["messages"].as_array().unwrap();
+        assert_eq!(m.len(), 3, "system + 2 separate user messages expected: {m:?}");
+        assert_eq!(m[1]["content"], "First instruction");
+        assert_eq!(m[2]["content"], "Second instruction");
     }
 }
