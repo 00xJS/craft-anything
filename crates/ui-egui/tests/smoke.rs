@@ -2524,6 +2524,31 @@ fn only_the_claude_desktop_app_is_named_when_nothing_can_build() {
     h.run_steps(2);
     h.get_by_label("No coding agent was found on this computer yet.");
     h.get_by_label("The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.");
+
+    // Agents suggested from `~/.ssh/config` aren't checked, so the hint stays (review of #781).
+    use craft_anything_ai::{BackendConfig, Detected};
+    let remote = |name: &str| Detected {
+        suggestion: BackendConfig {
+            name: name.into(),
+            kind: craft_anything_ai::BackendKind::AgentCli,
+            model: "claude-code".into(),
+            base_url: None,
+            ssh_host: Some("box".into()),
+            enabled: true,
+        },
+        reason: "From ~/.ssh/config".into(),
+        needs_key: false,
+    };
+    h.state_mut().detected = Some(vec![remote("Claude Code on box")]);
+    h.run_steps(2);
+    h.get_by_label("The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.");
+    // An agent found on this computer can build, so the hint goes.
+    let mut local = remote("Codex");
+    local.suggestion.ssh_host = None;
+    local.suggestion.model = "codex".into();
+    h.state_mut().detected = Some(vec![remote("Claude Code on box"), local]);
+    h.run_steps(2);
+    assert!(h.query_by_label("The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.").is_none());
 }
 
 #[test]

@@ -144,6 +144,17 @@ cheapest help we can give anyone, so nothing below should hold it up for long.
       skip hardware adapters; needs a different route (another renderer, or a helper that starts
       the app with only WARP visible)
 - [x] Add to `docs/releasing.md`: before publishing, a Deep build through Claude Code from the
+- [x] #794: on some systems DX12 refuses egui's own pipeline (`egui_pipeline`, 0x80070057 from
+      `CreatePipelineState`) on AMD, Intel and NVIDIA cards and on WARP too (lightcraft#812,
+      pdfcraft#1046, wgpu#10771), so the software retry failed the same way every start, and the
+      dialog only said to update the driver. Each failed start now moves on to the next renderer
+      (DX12 → WARP → Vulkan → GL, `apps/craft-anything/src/renderer.rs`), keeps the one that worked
+      for this app version, and starts again by itself after a wgpu error. Checked with a build
+      that failed every DX12 start; the real failure wasn't reproduced (STATUS.md)
+      — claimed: 00xJS, branch bugfix/r5.1-renderer-fallback
+- [ ] Live-check #794's fallback on a machine where DX12 refuses `egui_pipeline` (the reporter's
+      780M, or lightcraft#812's)
+- [ ] Add to `docs/releasing.md`: before publishing, a Deep build through Claude Code from the
       finished package, on a Mac and on Windows. Starting the CLI from the package (#91) doesn't
       show whether Claude Code accepts its tools — PR #982; claimed: doubektomas,
       branch docs/r5.1-packaged-deep-build-check. The checklist is documented; live package runs
@@ -680,6 +691,10 @@ Owner: open · Status: in progress
 - [x] Say plainly when what's found is the Claude desktop app rather than the `claude` program
       (#259, a guess at its cause)
 - [ ] macOS: check that `Claude.app` is where the desktop app is found (#259's hint is untried there)
+- [x] #259's hint, the gaps left in review of #781: it's hidden when only `~/.ssh/config` suggestions are
+      found, a Store install without its `claude-desktop` alias isn't seen, and a desktop app's
+      `claude.exe` on PATH is taken for Claude Code (#824) — claimed: FuryNocturn, branch
+      bugfix/r2.2-claude-desktop-hint-gaps
 - [x] macOS: `/Applications/Antigravity.app` ended up as the agent's command (#467). Found: the "Where is
       the program?" picker (`pick_file`) returns the bundle, and `set_command` saved any path. Refuse a
       folder or app bundle when it's saved (`set_command`), and don't run one that was saved before

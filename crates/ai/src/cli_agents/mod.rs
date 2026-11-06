@@ -62,18 +62,52 @@ pub fn program_for(agent: &str) -> String {
 /// computer (ssh) the chosen command is used as it is.
 pub fn program_of(config: &BackendConfig, options: &BackendOptions) -> String {
     let usual = program_for(&config.model);
-    let Some(chosen) = options.command.as_deref().map(str::trim).filter(|c| !c.is_empty()) else { return usual };
     let local = config.ssh_host.as_deref().is_none_or(|h| h.trim().is_empty());
+    let Some(chosen) = options.command.as_deref().map(str::trim).filter(|c| !c.is_empty()) else {
+        return if local { usual_program(usual) } else { usual };
+    };
     // A folder or app bundle saved before set_command refused it (#467) can't be started: the usual
     // program is used, as when none is chosen.
     if local && Path::new(chosen).is_dir() {
-        return usual;
+        return usual_program(usual);
     }
     let path = Path::new(chosen);
     if !local || path.parent().is_none_or(|p| p.as_os_str().is_empty()) || path.exists() {
         return chosen.to_string();
     }
     moved_program(path).or_else(|| craft_anything_platform::which(&usual).map(|_| usual)).unwrap_or_else(|| chosen.to_string())
+}
+
+/// The usual name, or the real program's path when the name alone would start something else that
+/// comes first on the search path (the Claude desktop app's `claude.exe`).
+fn usual_program(usual: String) -> String {
+    match (craft_anything_platform::which(&usual), find_program(&usual)) {
+        (Some(first), Some(real)) if first != real => real.display().to_string(),
+        _ => usual,
+    }
+}
+
+/// Where an agent's program is on this computer: the first match on the search path that is
+/// really it. Detection, the desktop app hint and starting a run all look through this, so what's
+/// offered is what runs.
+pub fn find_program(program: &str) -> Option<PathBuf> {
+    find_program_in(program, craft_anything_platform::which::search_path())
+}
+
+fn find_program_in(program: &str, path: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    craft_anything_platform::which::which_in(program, path).into_iter().find(|p| program != "claude" || !is_claude_desktop(p))
+}
+
+/// A file inside the Claude desktop app, which can't build: its older installer names the app
+/// `claude.exe` (`AnthropicClaude\claude.exe`, `AnthropicClaude\app-<version>\claude.exe`), the
+/// Store package keeps it under `WindowsApps\Claude_<version>_<arch>__<publisher>`, and on macOS
+/// it's in `Claude.app`. Only names are compared; nothing is read.
+pub(crate) fn is_claude_desktop(path: &Path) -> bool {
+    path.ancestors().skip(1).take(4).any(|dir| {
+        let name = dir.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        let in_store = dir.parent().and_then(Path::file_name).is_some_and(|p| p.eq_ignore_ascii_case("WindowsApps"));
+        name == "anthropicclaude" || name == "claude.app" || (in_store && name.starts_with("claude_"))
+    })
 }
 
 /// The same file in the most recently changed sibling of its missing folder, if there is one.
@@ -1140,6 +1174,46 @@ mod tests {
         assert_eq!(program_of(&config(Some("box")), &chosen(&bundle)), bundle.display().to_string(), "another computer's path isn't checked here");
         let bare = BackendOptions { command: Some("my-codex".into()), ..Default::default() };
         assert_eq!(program_of(&config(None), &bare), "my-codex", "a bare name is left to PATH");
+    }
+
+    /// The Claude desktop app's older installer names its app `claude.exe`; with its folder on
+    /// PATH, it was offered as Claude Code (review of #781).
+    #[test]
+    fn the_claude_desktop_app_is_never_taken_for_claude_code() {
+        for app in [
+            r"C:\Users\x\AppData\Local\AnthropicClaude\claude.exe",
+            r"C:\Users\x\AppData\Local\AnthropicClaude\app-0.10.0\claude.exe",
+            r"C:\Program Files\WindowsApps\Claude_4.4212.0.0_x64__pzs8sxrjxfjjc\app\Claude.exe",
+            "/Applications/Claude.app/Contents/MacOS/Claude",
+        ] {
+            let app = PathBuf::from(app.replace('\\', std::path::MAIN_SEPARATOR_STR));
+            assert!(is_claude_desktop(&app), "{}", app.display());
+        }
+        for cli in [r"C:\Users\x\.local\bin\claude.exe", r"C:\Users\x\AppData\Roaming\npm\claude.cmd", "/Users/x/.claude/local/claude"] {
+            let cli = PathBuf::from(cli.replace('\\', std::path::MAIN_SEPARATOR_STR));
+            assert!(!is_claude_desktop(&cli), "{}", cli.display());
+        }
+
+        let d = tempfile::tempdir().unwrap();
+        let file = if cfg!(windows) { "claude.exe" } else { "claude" };
+        let app = d.path().join("AnthropicClaude").join(file);
+        let cli = d.path().join("bin").join(file);
+        for p in [&app, &cli] {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"").unwrap();
+            #[cfg(unix)]
+            std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        }
+        let path = |dirs: &[&Path]| std::env::join_paths(dirs).ok();
+        let (app_dir, cli_dir) = (app.parent().unwrap(), cli.parent().unwrap());
+        assert_eq!(find_program_in("claude", path(&[app_dir, cli_dir])), Some(cli.clone()), "the desktop app is passed over");
+        assert_eq!(find_program_in("claude", path(&[app_dir])), None, "only the desktop app: no Claude Code");
+        // Another agent's program in such a folder is only filtered for Claude.
+        let other = app_dir.join(if cfg!(windows) { "codex.exe" } else { "codex" });
+        std::fs::write(&other, b"").unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&other, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        assert_eq!(find_program_in("codex", path(&[app_dir])), Some(other));
     }
 
     #[test]
