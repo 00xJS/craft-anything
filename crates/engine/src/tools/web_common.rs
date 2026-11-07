@@ -113,6 +113,28 @@ fn profile_base(exe: &std::path::Path, home: Option<std::path::PathBuf>) -> std:
     }
 }
 
+/// The snap a small launcher script hands over to, when it does and that snap is there: Ubuntu's
+/// `/usr/bin/chromium-browser` ends in `exec /snap/bin/chromium "$@"` and comes first on the search
+/// path (#1054). The snap is what runs, so it's what to start, with a snap's profile.
+fn snap_behind(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    const LARGEST_SCRIPT: u64 = 64 * 1024;
+    if std::fs::metadata(exe).ok()?.len() > LARGEST_SCRIPT {
+        return None;
+    }
+    snap_in_script(&std::fs::read(exe).ok()?).filter(|snap| snap.exists())
+}
+
+fn snap_in_script(script: &[u8]) -> Option<std::path::PathBuf> {
+    if !script.starts_with(b"#!") {
+        return None;
+    }
+    String::from_utf8_lossy(script).lines().find_map(|line| {
+        let mut words = line.split_whitespace();
+        let target = words.next().filter(|w| *w == "exec").and(words.next())?.trim_matches(['"', '\'']);
+        target.starts_with("/snap/bin/").then(|| std::path::PathBuf::from(target))
+    })
+}
+
 impl Browser {
     /// A handle to a browser someone else owns (it is not killed when this drops).
     pub fn attached(endpoint: &Endpoint, product: &str, version: &str) -> Browser {
@@ -162,6 +184,7 @@ impl Browser {
                 ToolError::new(ErrorCode::EngineMissing, reason)
                     .with_remediation(format!("{fix} Or give a loopback CDP endpoint (start a browser with --remote-debugging-port)."))
             })?;
+        let exe = snap_behind(&exe).unwrap_or(exe);
         let profile = BrowserProfile(super::artifact_tools::fresh_dir_in(&profile_base(&exe, dirs::home_dir()), "craft-browser")?);
         let mut args: Vec<String> = vec![
             format!("--user-data-dir={}", profile.0.display()),
@@ -1123,6 +1146,19 @@ mod tests {
         assert_eq!(base("/snap/bin/chromium"), Path::new("/home/me/snap/chromium/common"));
         assert_eq!(base("/usr/bin/google-chrome"), std::env::temp_dir());
         assert_eq!(super::profile_base(Path::new("/var/lib/flatpak/exports/bin/com.google.Chrome"), None), std::env::temp_dir(), "no home folder");
+    }
+
+    /// #1054: Ubuntu's `/usr/bin/chromium-browser` is a script that hands over to the snap.
+    #[test]
+    fn a_script_that_hands_over_to_a_snap_is_read_and_nothing_else_is() {
+        use std::path::Path;
+        let ubuntu = b"#! /bin/sh\n# transitional package\nif ! [ -x /snap/bin/chromium ]; then\n  exit 1\nfi\nexec /snap/bin/chromium \"$@\"\n";
+        assert_eq!(super::snap_in_script(ubuntu).as_deref(), Some(Path::new("/snap/bin/chromium")));
+        assert_eq!(super::snap_in_script(b"#!/bin/sh\nexec \"/snap/bin/brave\" \"$@\"\n").as_deref(), Some(Path::new("/snap/bin/brave")));
+        assert_eq!(super::snap_in_script(b"#!/bin/sh\nexec /opt/chrome/chrome \"$@\"\n"), None, "not a snap");
+        assert_eq!(super::snap_in_script(b"#!/bin/sh\necho exec /snap/bin/chromium\n"), None, "only a line that runs it");
+        assert_eq!(super::snap_in_script(b"\x7fELF exec /snap/bin/chromium"), None, "a program, not a script");
+        assert_eq!(super::snap_behind(Path::new("no-such-browser")), None);
     }
 
     /// The capped encoder gives a PNG of the same pixels when it fits, and stops without one when
