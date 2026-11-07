@@ -433,9 +433,16 @@ Owner: open · Status: todo
       turned-off backend is named and must be turned on, and a name that matches nothing is named
       instead of saying to install an agent or add a key
       — claimed: AlexJoaquimPereira, branch `bugfix/r5.5-disabled-backend-name`; commit a380b3e
-- [ ] When a project's saved builder was turned off, Start builds with the default AI without
+- [x] When a project's saved builder was turned off, Start builds with the default AI without
       saying so: the UI picker filters the stale name out (`ui-egui/src/builders.rs`) instead of
-      reporting that the chosen AI was replaced
+      reporting that the chosen AI was replaced. The Make picker says so in a toast, and every
+      start (Start, Continue, a note, Try again) names the saved AI and the one building instead
+      — claimed: AlexJoaquimPereira, branch `bugfix/r5.5-stale-builder-notice`
+- [ ] `rebuild --continue-in`, `rebuild_start` on a project and `rebuild_question_ask` still use
+      the default AI when the saved builder is off or gone, and say nothing: report the replacement
+      there too
+- [ ] The saved-builder replacement notice is English only for now; add it to the catalogs after a
+      native speaker checks the wording
 - [x] Bound accumulated data across all lines of one server-sent event, so short lines cannot
       grow a streamed API response without limit
       — claimed: Afloat16, branch bugfix/r5.5-bounded-sse-events-20261103

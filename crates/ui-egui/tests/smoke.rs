@@ -2585,6 +2585,59 @@ fn make_says_who_builds_and_a_picked_builder_stays_with_the_project() {
 }
 
 #[test]
+fn a_turned_off_make_choice_says_who_builds_instead() {
+    let mut h = harness(|| {
+        let mut a = demo::app(demo::engine(Mode::Beginner, true));
+        a.backends.push(BackendConfig {
+            name: "Off".into(),
+            kind: BackendKind::Anthropic,
+            model: "test-model".into(),
+            base_url: None,
+            ssh_host: None,
+            enabled: false,
+        });
+        a.state.make.ai = Some("Off".into());
+        a
+    });
+    h.run_steps(3);
+    // The stale draft goes back to Automatic, and the toast says who builds instead.
+    assert!(h.state().state.make.ai.is_none());
+    assert_eq!(h.get_all_by_label("Built by").last().unwrap().value().as_deref(), Some("Automatic (Claude)"));
+    assert!(h.state().state.toasts.iter().any(|(t, err)| !*err && t.contains("Off") && t.contains("Claude")), "{:?}", h.state().state.toasts);
+}
+
+#[test]
+fn a_turned_off_or_removed_saved_builder_says_who_builds_instead() {
+    let mut h = harness(|| {
+        let mut a = demo::app(demo::engine(Mode::Beginner, true));
+        a.backends.push(BackendConfig {
+            name: "Off".into(),
+            kind: BackendKind::Anthropic,
+            model: "test-model".into(),
+            base_url: None,
+            ssh_host: None,
+            enabled: false,
+        });
+        a
+    });
+    h.run_steps(2);
+
+    // A turned-off saved builder: the default builds, and the person is told which one.
+    assert_eq!(h.state_mut().builder_backend(Some("Off")).as_deref(), Some("Claude"));
+    assert!(h.state().state.toasts.iter().any(|(t, err)| !*err && t.contains("Off") && t.contains("Claude")), "{:?}", h.state().state.toasts);
+
+    // A removed one too.
+    assert_eq!(h.state_mut().builder_backend(Some("Gone")).as_deref(), Some("Claude"));
+    assert!(h.state().state.toasts.iter().any(|(t, err)| !*err && t.contains("Gone") && t.contains("Claude")), "{:?}", h.state().state.toasts);
+
+    // An enabled choice, and Automatic, say nothing.
+    let quiet = h.state().state.toasts.len();
+    assert_eq!(h.state_mut().builder_backend(Some("Claude")).as_deref(), Some("Claude"));
+    assert_eq!(h.state_mut().builder_backend(None).as_deref(), Some("Claude"));
+    assert_eq!(h.state().state.toasts.len(), quiet, "no replacement notice when nothing was replaced");
+}
+
+#[test]
 fn with_nothing_to_build_with_start_offers_what_was_found_instead_of_a_dead_end() {
     use craft_anything_ui_egui::state::Modal;
     let mut h = harness(|| {
