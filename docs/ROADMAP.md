@@ -776,6 +776,11 @@ Owner: open · Status: in progress
       going through our server — claimed: 0231071, branch `feature/dsh-agent-adapter`
 - [ ] DeepSeek Harness: no resume (its headless profile keeps no session), a build on the harness's
       desktop profile is untried, and the task still goes over in argv (see the argv note above)
+- [ ] `setup` writes the plain `mcp` command, so it drops an `--all-tools` an entry already has, and
+      `doctor` then calls that entry "a different copy or shape of the command" and suggests the very
+      command that breaks it. The installed skill now warns against running `setup` on such an entry;
+      `doctor` and `setup` should keep the person's extra arguments instead
+      — claimed: 18923837179wjt-dot, branch fix/setup-skill-warns-before-setup-drops-all-tools
 
 ### R2.4 Runtime study for apps and games (with consent)
 Owner: maintainers · Status: in progress
