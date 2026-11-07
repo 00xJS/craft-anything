@@ -536,6 +536,19 @@ fn move_may_pass(e: &std::io::Error) -> bool {
     matches!(e.kind(), std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::WouldBlock)
 }
 
+/// The error for a move that cannot pass: the lock goes back first, because left behind it reads
+/// to every other process as an analysis in progress. What the person hears is the move, and a
+/// lock that also cannot be released is named beside it rather than hiding it.
+fn refuse_move(lock: &Path, project_dir: &Path, refusal: &std::io::Error) -> GhidraError {
+    let moving = format!("moving {} out of the way: {refusal}", project_dir.display());
+    match release(lock) {
+        Ok(()) => GhidraError::Launch(moving),
+        // The second reason without the outer "could not start Ghidra", which would read twice.
+        Err(GhidraError::Launch(also)) => GhidraError::Launch(format!("{moving}; and {also}")),
+        Err(other) => GhidraError::Launch(format!("{moving}; and {other}")),
+    }
+}
+
 /// Give the analysis lock back. A lock this process cannot release would read to everyone else as
 /// an analysis in progress, so it ends the attempt with the reason instead of waiting it out.
 fn release(lock: &Path) -> Result<(), GhidraError> {
@@ -653,15 +666,7 @@ pub fn analyse(
         // its own folder. A refusal to move it means that Ghidra is still working: wait for it.
         match set_aside(&project_dir) {
             Ok(aside) => break aside,
-            Err(e) if !move_may_pass(&e) => {
-                // Ending here, so the lock goes back first: left behind it reads to everyone else as
-                // an analysis in progress. The move is still what the person needs to hear about.
-                let why = match release(&lock) {
-                    Ok(()) => format!("moving {} out of the way: {e}", project_dir.display()),
-                    Err(also) => format!("moving {} out of the way: {e}; and {also}", project_dir.display()),
-                };
-                return Err(GhidraError::Launch(why));
-            }
+            Err(e) if !move_may_pass(&e) => return Err(refuse_move(&lock, &project_dir, &e)),
             Err(e) => {
                 release(&lock)?;
                 held_by = Some(e.to_string());
