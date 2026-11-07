@@ -268,10 +268,12 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
       present mode and frame latency tried (AutoVsync, Fifo, Mailbox, Immediate; latency 1, 2, 3),
       so nothing in our frame pacing causes or avoids it; GL alone stays idle. Seen in the same way
       with PdfCraft and PhotoCraft (pdfcraft#3255) — claimed: 00xJS, branch docs/r5.2-idle-cpu-amd
-- [ ] **decision** AMD's idle driver thread costs Radeon owners a core on DX12 and Vulkan. Say so
-      in the troubleshooting docs (with `WGPU_BACKEND=gl` as the way out, which loads AMD's OpenGL
+- [ ] **decision** On the one Radeon measured (RX 6900 XT, driver 32.0.21045.16010, Windows 11
+      build 26300), AMD's idle driver thread costs a core on DX12 and Vulkan; other Radeons
+      (integrated ones too), drivers and Windows builds haven't been checked. Say so in the
+      troubleshooting docs (with `WGPU_BACKEND=gl` as the way out, which loads AMD's OpenGL
       driver), report it to AMD, or leave it
-- [ ] Limit the decision line above to what was measured (one RX 6900 XT, one driver, one Windows
+- [x] Limit the decision line above to what was measured (one RX 6900 XT, one driver, one Windows
       build) and say other Radeons and drivers aren't checked (#912 review)
       — claimed: 00xJS, branch docs/r5.2-radeon-idle-scope
 
