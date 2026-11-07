@@ -146,7 +146,7 @@ fn main() -> eframe::Result {
             // Without a window the app would just vanish (#166): say why, and where the log is.
             let log = craft_anything_engine::settings::config_dir().join("desktop.log");
             #[cfg(windows)]
-            let retry = renderer.map(|r| format!(" The next start will draw with {}.", renderer::choose(Some(r), true).title())).unwrap_or_default();
+            let retry = next_start_note(renderer, shown.load(std::sync::atomic::Ordering::Relaxed));
             #[cfg(not(windows))]
             let retry = String::new();
             let _ = rfd::MessageDialog::new()
@@ -177,6 +177,17 @@ fn dx12_compiler(from_env: Option<eframe::wgpu::Dx12Compiler>) -> eframe::wgpu::
 #[cfg_attr(all(not(windows), not(test)), expect(dead_code, reason = "only Windows picks its own graphics adapter"))]
 fn wants_software(setting: Option<&str>) -> bool {
     setting.is_some_and(|s| s.trim().eq_ignore_ascii_case("software"))
+}
+
+/// What the error dialog says the next start will do. Only a start whose window was never shown
+/// leaves its mark, so only then does the next start move on to another renderer; after the window
+/// was shown the next start draws as this one did, and the dialog says nothing about it.
+#[cfg(windows)]
+fn next_start_note(renderer: Option<renderer::Renderer>, shown: bool) -> String {
+    match renderer {
+        Some(r) if !shown => format!(" The next start will draw with {}.", renderer::choose(Some(r), true).title()),
+        _ => String::new(),
+    }
 }
 
 /// The result of a run that may have panicked. A panic before the window's first frames were shown
@@ -467,5 +478,16 @@ mod graphics_tests {
     #[test]
     fn wants_software_reads_the_setting() {
         assert!(wants_software(Some(" Software ")) && !wants_software(Some("gpu")) && !wants_software(None));
+    }
+
+    /// #909 review: only a start whose window never showed moves on to another renderer, so only
+    /// then does the dialog say the next start will draw differently.
+    #[cfg(windows)]
+    #[test]
+    fn the_dialog_promises_another_renderer_only_before_the_window_was_shown() {
+        use renderer::Renderer;
+        assert_eq!(next_start_note(Some(Renderer::Dx12), false), " The next start will draw with Windows' software renderer.");
+        assert_eq!(next_start_note(Some(Renderer::Dx12), true), "");
+        assert_eq!(next_start_note(None, false), "", "a renderer from the environment is never changed");
     }
 }
