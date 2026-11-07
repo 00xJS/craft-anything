@@ -155,6 +155,9 @@ cheapest help we can give anyone, so nothing below should hold it up for long.
       — claimed: 00xJS, branch bugfix/r5.1-renderer-fallback
 - [ ] Live-check #794's fallback on a machine where DX12 refuses `egui_pipeline` (the reporter's
       780M, or lightcraft#812's)
+- [ ] A window that fails after it was shown still says "The next start will draw with …", but the
+      start mark is already gone, so the next start draws as before (#909 review): say it only when
+      the window was never shown — claimed: 00xJS, branch bugfix/r5.1-retry-text-after-shown
 - [ ] Add to `docs/releasing.md`: before publishing, a Deep build through Claude Code from the
       finished package, on a Mac and on Windows. Starting the CLI from the package (#91) doesn't
       show whether Claude Code accepts its tools — PR #982; claimed: doubektomas,
