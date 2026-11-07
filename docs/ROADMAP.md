@@ -659,6 +659,9 @@ Owner: open · Status: in progress
       assuming `/bin`; the shell uses the bounded process runner.
       Reproduced the old failure on macOS; the AI suite now passes (446 passed, 2 ignored). PR #1018
       — claimed: Codex, branch test/r2.2-posix-remote-helper
+- [x] Find OpenCode's CLI inside its Windows desktop app (`opencode-cli.exe`), for detection and for runs (#1060)
+- [ ] Settings → AI can only add an agent it detected: add one by choosing its program, for a CLI
+      kept somewhere we don't look (#1060)
 - [ ] Verify OpenCode model discovery and an explicit thinking selection on a live SSH host,
       and complete a live generation with the selected model and variant (local catalogue verified).
 

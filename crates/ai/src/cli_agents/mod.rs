@@ -104,7 +104,7 @@ fn program_in(config: &BackendConfig, options: &BackendOptions, search: Option<s
 fn usual_program(usual: &str, search: Option<std::ffi::OsString>) -> Result<Option<String>, ToolError> {
     let first = craft_anything_platform::which::which_in(usual, search.clone()).into_iter().next();
     match (first, find_program_in(usual, search)) {
-        (None, _) => Ok(None),
+        (None, _) => Ok(desktop_cli(usual, local_app_data().as_deref()).map(|cli| cli.display().to_string())),
         (Some(first), Some(real)) => Ok(Some(if first == real { usual.to_string() } else { real.display().to_string() })),
         (Some(app), None) => Err(desktop_app_error(&app)),
     }
@@ -122,7 +122,21 @@ fn desktop_app_error(app: &Path) -> ToolError {
 /// really it. Detection, the desktop app hint and starting a run all look through this, so what's
 /// offered is what runs.
 pub fn find_program(program: &str) -> Option<PathBuf> {
-    find_program_in(program, craft_anything_platform::which::search_path())
+    find_program_in(program, craft_anything_platform::which::search_path()).or_else(|| desktop_cli(program, local_app_data().as_deref()))
+}
+
+/// Agents whose Windows desktop app keeps the command-line program in its own folder, under
+/// another name and off the search path, relative to `%LOCALAPPDATA%` (#1060).
+const IN_DESKTOP_APP: &[(&str, &str)] = &[("opencode", r"Programs\ai.opencode.desktop\resources\opencode-cli.exe")];
+
+fn local_app_data() -> Option<PathBuf> {
+    cfg!(windows).then(|| std::env::var_os("LOCALAPPDATA")).flatten().map(PathBuf::from)
+}
+
+/// `program`'s command-line program inside its desktop app, if that's installed under `local_data`.
+fn desktop_cli(program: &str, local_data: Option<&Path>) -> Option<PathBuf> {
+    let (_, inside) = IN_DESKTOP_APP.iter().find(|(name, _)| *name == program)?;
+    Some(local_data?.join(inside)).filter(|cli| cli.is_file())
 }
 
 fn find_program_in(program: &str, path: Option<std::ffi::OsString>) -> Option<PathBuf> {
@@ -1449,6 +1463,19 @@ mod tests {
         }
         let mcp = McpCommand { command: "craft-anything-cli".into(), args: vec![], notes: None };
         assert!(adapter.mcp_env(&mcp).unwrap().is_some());
+    }
+
+    /// #1060: OpenCode's desktop app keeps its CLI in its own folder, as `opencode-cli.exe`.
+    #[test]
+    fn a_cli_inside_its_desktop_app_is_found() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(desktop_cli("opencode", Some(d.path())), None, "not installed");
+        assert_eq!(desktop_cli("opencode", None), None, "not Windows");
+        let cli = d.path().join(IN_DESKTOP_APP[0].1);
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(&cli, b"").unwrap();
+        assert_eq!(desktop_cli("opencode", Some(d.path())), Some(cli));
+        assert_eq!(desktop_cli("codex", Some(d.path())), None, "only the agents listed");
     }
 
     /// Validation failures finish exactly once, preserving cancellation status and other error details.
