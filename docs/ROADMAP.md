@@ -861,7 +861,9 @@ Gaps found while using the app for real projects.
       refuse): reading the web, commands, files outside the project, pushing and publishing,
       deleting outside the project, system changes, other tools. Unset kinds follow Auto mode as
       today. Found when Auto mode refused every `git push` without a card, so the person's OK in
-      the prompt box never reached the check, and refused `gh repo view` as publishing too
+      the prompt box never reached the check, and refused `gh repo view` as publishing too.
+      Tried live by a maintainer on Windows 10 (a release build of `main` at `b700e1d`,
+      2026-11-06): a builder's push was approved and went through
       — claimed: tanish2k09, branch feature/r2.9-project-approvals
 - [ ] Agents that don't ask our approval tool (OpenCode `--auto`, Hermes `-z`, Maki's `-p`) aren't
       held to a project's approval choices either; part of R2.2's approval decision
