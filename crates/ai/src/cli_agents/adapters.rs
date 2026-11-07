@@ -8,12 +8,14 @@ use super::*;
 mod antigravity;
 mod copilot;
 mod dsh;
+mod grok;
 mod hermes;
 mod maki;
 mod opencode;
 pub use antigravity::Antigravity;
 pub use copilot::Copilot;
 pub use dsh::DeepSeekHarness;
+pub use grok::Grok;
 pub use hermes::Hermes;
 pub use maki::Maki;
 pub use opencode::OpenCode;
@@ -86,9 +88,36 @@ pub trait AgentAdapter: Send + Sync {
     fn acp_mcp_options(&self, _mcp: &McpCommand) -> Vec<String> {
         Vec::new()
     }
+    /// Include `"type": "stdio"` on the MCP server in `session/new`. Grok's server enum requires
+    /// it. Other agents leave it off, so a session that has not been checked with the field
+    /// stays on the payload it already accepts.
+    fn acp_mcp_stdio_type(&self) -> bool {
+        false
+    }
+    /// Arguments after the ACP mode words and the model flag, still before a trailing subcommand.
+    /// The default adds none, so agents whose flags already sit in [`acp_options`](Self::acp_options)
+    /// stay unchanged.
+    fn acp_mode_options(&self, _options: &BackendOptions, _access: Access) -> Vec<String> {
+        Vec::new()
+    }
+    /// Words after every other ACP argument. Grok Build needs `stdio` last.
+    fn acp_trailing(&self) -> &'static [&'static str] {
+        &[]
+    }
+    /// Session options applied with `session/set_config_option` after the session opens, in order,
+    /// before the conversation is ready. Each value is sent as a JSON string. The default sets none.
+    fn acp_session_config(&self, _options: &BackendOptions) -> Vec<(String, String)> {
+        Vec::new()
+    }
     /// Refuse backend options that could bypass this adapter's restrictions, before its ACP
     /// process starts. The refusal is kept on the conversation and reported by `send`.
     fn validate_options(&self, _options: &BackendOptions) -> Result<(), ToolError> {
+        Ok(())
+    }
+    /// Refuse an access mode this agent cannot hold. The default allows every mode. A refusal
+    /// is kept beside [`validate_options`](Self::validate_options) and reported by `send`.
+    /// Model-list discovery sends no prompt, so it does not apply this check.
+    fn validate_access(&self, _access: Access) -> Result<(), ToolError> {
         Ok(())
     }
     /// The model shown in Settings: an explicit choice or the CLI's own default. `None` means
@@ -231,7 +260,7 @@ impl Default for AgentAdapters {
 }
 
 impl AgentAdapters {
-    /// The built-in coding agents, including Copilot's ACP-only adapter.
+    /// The built-in coding agents, including the ACP-only Copilot and Grok Build adapters.
     pub fn built_in() -> AgentAdapters {
         AgentAdapters {
             adapters: vec![
@@ -243,6 +272,7 @@ impl AgentAdapters {
                 Arc::new(Hermes),
                 Arc::new(Maki),
                 Arc::new(Copilot),
+                Arc::new(Grok),
                 Arc::new(DeepSeekHarness),
             ],
         }

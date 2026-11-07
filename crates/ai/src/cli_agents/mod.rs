@@ -42,6 +42,7 @@ pub const KNOWN: &[(&str, &str, &str)] = &[
     ("claude-code", "claude", "Claude Code"),
     ("codex", "codex", "Codex"),
     ("copilot", "copilot", "GitHub Copilot"),
+    ("grok", "grok", "Grok Build"),
     ("gemini-cli", "gemini", "Gemini CLI"),
     ("antigravity", "agy", "Antigravity"),
     ("opencode", "opencode", "OpenCode"),
@@ -611,27 +612,28 @@ fn acp_for(spec: &CliSpec) -> Option<AcpConversation> {
     let acp_args = selected_acp_args(adapter.as_ref(), &agent, &spec.options).filter(|_| local)?;
     // No program to start: the plain run reports why.
     let program = program_of(&spec.config, &spec.options).ok()?;
-    let access = match (spec.question, spec.deep, spec.builder.is_some()) {
-        (true, true, _) => Access::Question,
-        (true, false, _) => Access::CleanRoomQuestion,
-        (false, true, true) => Access::Build,
-        (false, false, true) => Access::CleanRoomBuild,
-        _ => Access::Analyse,
-    };
+    // Same modes as the plain runner, including Clean room chat (no builder, not deep).
+    let access = access_for(spec.builder.is_some(), spec.deep, spec.question);
     let mut args = adapter.acp_options(&spec.options, access);
     args.extend(acp_args.iter().map(|a| a.to_string()));
     args.extend(acp::model_args(&agent, spec.options.cli_model.as_deref()));
+    // After the mode words and model flag, still before a trailing subcommand (`stdio` for Grok).
+    args.extend(adapter.acp_mode_options(&spec.options, access));
     let cwd = spec.project.clone().or_else(|| std::env::current_dir().ok()).unwrap_or_else(std::env::temp_dir);
     let mcp = mcp_for(spec, false);
     if !spec.question {
         args.extend(adapter.acp_mcp_options(&mcp));
     }
+    args.extend(adapter.acp_trailing().iter().map(|word| (*word).to_string()));
     let preamble = spec.preamble.clone().unwrap_or_else(|| crate::prompt::cli_preamble(spec.beginner));
+    let session_config = adapter.acp_session_config(&spec.options);
     Some(
         AcpConversation::new(&spec.config.name, &agent, program, args, cwd, mcp, if spec.question { None } else { spec.resume.clone() })
             .with_validation(adapter.validate_options(&spec.options))
+            .with_access_limit(adapter.validate_access(access))
             .with_adapter(adapter)
             .with_question(spec.question)
+            .with_session_config(session_config)
             .with_preamble(preamble)
             .with_logs(spec.logs.clone()),
     )
@@ -2422,7 +2424,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
         reg.register(Arc::new(EchoAgent));
         assert_eq!(
             format!("{reg:?}"),
-            r#"["claude-code", "codex", "gemini-cli", "opencode", "antigravity", "hermes", "maki", "copilot", "dsh", "echo-agent"]"#
+            r#"["claude-code", "codex", "gemini-cli", "opencode", "antigravity", "hermes", "maki", "copilot", "grok", "dsh", "echo-agent"]"#
         );
     }
 
