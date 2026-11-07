@@ -271,6 +271,9 @@ only when it's green and a maintainer has fully reviewed it, code as well as wor
 - [ ] **decision** AMD's idle driver thread costs Radeon owners a core on DX12 and Vulkan. Say so
       in the troubleshooting docs (with `WGPU_BACKEND=gl` as the way out, which loads AMD's OpenGL
       driver), report it to AMD, or leave it
+- [ ] Limit the decision line above to what was measured (one RX 6900 XT, one driver, one Windows
+      build) and say other Radeons and drivers aren't checked (#912 review)
+      — claimed: 00xJS, branch docs/r5.2-radeon-idle-scope
 
 ### R5.3 A builder that can't make progress stops
 Owner: open · Status: todo
